@@ -1,108 +1,148 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import dotenv from "dotenv";
-import { HybridProviderResolver, type EndpointConfig } from "./providers/resolver.js";
+
+import * as anilist from "./domain/anime/adapters/anilist.js";
+import { buildAdapters } from "./providers/adapters.index.js";
+import { healthRegistry } from "./providers/health.js";
+import { resolveWithAdapters } from "./providers/registry.js";
 
 dotenv.config();
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.HOST || "0.0.0.0";
 
-const fastify = Fastify({
-  logger: true,
-});
+const fastify = Fastify({ logger: true });
 
-await fastify.register(cors, {
-  origin: true,
-});
+await fastify.register(cors, { origin: true });
 
-const resolver = new HybridProviderResolver();
-
-// Seeded in-memory provider endpoints fallback for API readiness
-const SEED_ENDPOINTS: EndpointConfig[] = [
-  {
-    id: "ep-1",
-    providerSlug: "anikoto",
-    providerName: "Anikoto",
-    endpointSlug: "sub",
-    displayName: "Anikoto Direct HD",
-    language: "sub",
-    accessType: "direct",
-    badge: "Direct HD",
-    urlTemplate: "https://vidsrc.me/embed/anime?anilist={anilist_id}&episode={episode}",
-    requiredIdType: "anilist",
-    priority: 1,
-  },
-  {
-    id: "ep-2",
-    providerSlug: "megaplay",
-    providerName: "Megaplay",
-    endpointSlug: "sub",
-    displayName: "Megaplay Embed",
-    language: "sub",
-    accessType: "embed",
-    badge: "Fast Embed",
-    urlTemplate: "https://player.smashy.stream/anime/{mal_id}?ep={episode}",
-    requiredIdType: "mal",
-    priority: 2,
-  },
-  {
-    id: "ep-3",
-    providerSlug: "vidnest",
-    providerName: "Vidnest",
-    endpointSlug: "dub",
-    displayName: "Vidnest Dub",
-    language: "dub",
-    accessType: "direct",
-    badge: "Dub HD",
-    urlTemplate: "https://vidsrc.me/embed/anime?anilist={anilist_id}&episode={episode}&dub=1",
-    requiredIdType: "anilist",
-    priority: 3,
-  },
-];
+const adapters = buildAdapters();
+fastify.log.info(
+  { adapters: adapters.map((a) => a.slug) },
+  `source adapters registered: ${adapters.length}`,
+);
 
 // Health Check
 fastify.get("/health", async () => {
   return { status: "ok", service: "zenkai-backend", timestamp: new Date().toISOString() };
 });
 
-// Decoupled Playback Sources Endpoint
+/**
+ * Which providers are enabled, and how healthy each is.
+ * Useful for confirming a provider is wired up and reachable.
+ */
+fastify.get("/api/v1/providers", async () => ({
+  adapters: adapters.map((adapter) => ({
+    slug: adapter.slug,
+    name: adapter.name,
+    kind: adapter.kind,
+    basePriority: adapter.basePriority,
+  })),
+  health: healthRegistry.snapshot(),
+}));
+
+/** Clear quarantined providers so they are retried. */
+fastify.post("/api/v1/providers/reset", async () => ({
+  cleared: healthRegistry.resetQuarantined(),
+}));
+
+/** Browse the anime catalogue via AniList. */
 fastify.get<{
-  Params: { episodeId: string };
-  Querystring: { anilistId?: string; malId?: string; tmdbId?: string; episodeNumber?: string; language?: string };
-}>("/api/v1/episodes/:episodeId/sources", async (request, reply) => {
-  const startTime = Date.now();
-  const { episodeId } = request.params;
-  const { anilistId, malId, tmdbId, episodeNumber = "1", language = "sub" } = request.query;
+  Querystring: {
+    page?: string;
+    perPage?: string;
+    season?: string;
+    seasonYear?: string;
+    format?: string;
+    status?: string;
+  };
+}>("/api/v1/anime", async (request) => {
+  const { page, perPage, season, seasonYear, format, status } = request.query;
+
+  const result = await anilist.browse("ANIME", {
+    page: page ? Number(page) : undefined,
+    perPage: perPage ? Number(perPage) : undefined,
+    season,
+    seasonYear: seasonYear ? Number(seasonYear) : undefined,
+    format,
+    status,
+  });
+
+  return { items: result.items, page: result.page, total: result.total, hasNextPage: result.hasNextPage };
+});
+
+/** Full detail for one anime, including relations. */
+fastify.get<{ Params: { id: string } }>("/api/v1/anime/:id", async (request, reply) => {
+  const result = await anilist.getWithRelations({ id: Number(request.params.id), type: "ANIME" });
+  if (!result) return reply.code(404).send({ error: "Not found" });
+  return result;
+});
+
+/** Search across anime titles. */
+fastify.get<{ Querystring: { q?: string; page?: string; perPage?: string } }>(
+  "/api/v1/anime/search",
+  async (request, reply) => {
+    const query = request.query.q?.trim();
+    if (!query) return reply.code(400).send({ error: "q is required" });
+
+    return anilist.search(query, "ANIME", {
+      page: request.query.page ? Number(request.query.page) : undefined,
+      perPage: request.query.perPage ? Number(request.query.perPage) : undefined,
+    });
+  },
+);
+
+/** Browse the manga catalogue via AniList. */
+fastify.get<{ Querystring: { page?: string; perPage?: string } }>(
+  "/api/v1/manga",
+  async (request) =>
+    anilist.browse("MANGA", {
+      page: request.query.page ? Number(request.query.page) : undefined,
+      perPage: request.query.perPage ? Number(request.query.perPage) : undefined,
+    }),
+);
+
+/**
+ * Resolve playable sources for an episode.
+ *
+ * Runs every enabled adapter in parallel, records each outcome against provider
+ * health, and returns the candidates ranked best-first.
+ */
+fastify.get<{
+  Params: { animeId: string };
+  Querystring: { episode?: string; language?: string; anilistId?: string; malId?: string; tmdbId?: string };
+}>("/api/v1/anime/:animeId/sources", async (request, reply) => {
+  const started = Date.now();
+  const { animeId } = request.params;
+  const { episode = "1", language = "sub", anilistId, malId, tmdbId } = request.query;
+
+  const episodeNumber = Number(episode);
+  if (!Number.isFinite(episodeNumber) || episodeNumber < 1) {
+    return reply.code(400).send({ error: "episode must be a positive number" });
+  }
 
   const externalIds: Record<string, string> = {};
-  if (anilistId) externalIds.anilist = anilistId;
+  if (anilistId ?? animeId) externalIds.anilist = anilistId ?? animeId;
   if (malId) externalIds.mal = malId;
   if (tmdbId) externalIds.tmdb = tmdbId;
 
-  // Fallback to episodeId if anilistId is passed as episodeId or query
-  if (!externalIds.anilist && !externalIds.mal) {
-    externalIds.anilist = episodeId.split("-")[0] || episodeId;
-  }
-
-  const sources = await resolver.resolveSources(
-    {
-      animeId: episodeId,
-      episodeNumber: Number(episodeNumber),
-      language: language as "sub" | "dub" | "multi",
-      externalIds,
-    },
-    SEED_ENDPOINTS
-  );
-
-  return reply.send({
-    episodeId,
-    animeId: externalIds.anilist || episodeId,
-    episodeNumber: Number(episodeNumber),
-    sources,
-    resolutionTimeMs: Date.now() - startTime,
+  const outcome = await resolveWithAdapters(adapters, {
+    animeId,
+    episodeNumber,
+    language: language as "sub" | "dub" | "multi",
+    externalIds,
   });
+
+  return {
+    animeId,
+    episodeNumber,
+    language,
+    sources: outcome.sources,
+    attempts: outcome.attempts,
+    resolutionTimeMs: Date.now() - started,
+  };
 });
+
 
 const start = async () => {
   try {
