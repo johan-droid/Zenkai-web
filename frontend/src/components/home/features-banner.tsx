@@ -1,6 +1,6 @@
 "use client";
 
-import { Zap, ShieldCheck, Cpu, PlayCircle, Sparkles, Layers } from "lucide-react";
+import { Zap, Cpu, PlayCircle, Sparkles, Layers } from "lucide-react";
 
 const FEATURES = [
   {
@@ -11,8 +11,8 @@ const FEATURES = [
   },
   {
     icon: PlayCircle,
-    title: "AniSkip Integration",
-    description: "Automatic intro and outro skip for uninterrupted binge watching.",
+    title: "Skip Controls",
+    description: "Intro and outro skip markers for uninterrupted binge watching.",
     color: "from-purple-500/20 to-indigo-500/20 text-purple-400 border-purple-500/30",
   },
   {
@@ -23,8 +23,8 @@ const FEATURES = [
   },
   {
     icon: Layers,
-    title: "AniList Metadata",
-    description: "Real-time scores, episode listings, character details and status.",
+    title: "Canonical Metadata",
+    description: "Scores, episode listings and status from the Zenkai backend's validated catalogue.",
     color: "from-emerald-500/20 to-teal-500/20 text-emerald-400 border-emerald-500/30",
   },
 ];

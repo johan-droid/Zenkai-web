@@ -1,31 +1,62 @@
+"use client";
+
 import { GenreChips } from "@/components/home/genre-chips";
 import { HeroCarousel } from "@/components/home/hero-carousel";
 import { MediaRow } from "@/components/home/media-row";
 import { ContinueRow } from "@/components/home/continue-row";
 import { FeaturesBanner } from "@/components/home/features-banner";
 import { CtaBanner } from "@/components/home/cta-banner";
+import { useHome, useMangaShelf } from "@/hooks/use-home";
+import {
+  catalogueToShelfState,
+  homeSectionToShelfState,
+  mangaCatalogueItemToMedia,
+} from "@/lib/api/zenkai";
 
-const CURRENT_YEAR = new Date().getFullYear();
-
+/**
+ * Home (P12).
+ *
+ * Every populated shelf here comes from the canonical Zenkai API: one
+ * `GET /api/v1/home` request feeds hero/trending/seasonal/top/upcoming (the
+ * backend composes and degrades the sections server-side), `/api/v1/genres`
+ * feeds the chips, and `/api/v1/manga` feeds the manga shelf. The continue
+ * rail stays local on purpose — IndexedDB progress has no backend endpoint
+ * and none is proposed (P11).
+ *
+ * Shelf order preserves the existing page composition; the exact Android
+ * shelf order is UNKNOWN (P11), so nothing here claims parity with it.
+ */
 export default function HomePage() {
+  const home = useHome(10);
+  const manga = useMangaShelf(14);
+
+  const trending = homeSectionToShelfState(home.data?.trending, {
+    isLoading: home.isLoading,
+    isError: home.isError,
+  });
+
+  const mangaItems = manga.data
+    ? manga.data.items.map(mangaCatalogueItemToMedia)
+    : undefined;
+
   return (
     <div className="flex flex-col gap-12">
       {/* Featured Hero Carousel */}
-      <HeroCarousel />
+      <div id="hero" className="scroll-mt-28">
+        <HeroCarousel
+          items={trending.kind === "items" ? trending.items : []}
+          isLoading={trending.kind === "loading"}
+        />
+      </div>
 
-      {/* Continue Watching Section */}
+      {/* Continue Watching Section (local progress only) */}
       <div id="continue" className="scroll-mt-28">
         <ContinueRow />
       </div>
 
       {/* Trending Now Section */}
       <div id="trending" className="scroll-mt-28">
-        <MediaRow
-          title="Trending Now"
-          href="/anime"
-          queryKey="trending"
-          params={{ type: "ANIME", perPage: 14, sort: ["TRENDING_DESC"] }}
-        />
+        <MediaRow title="Trending Now" href="/anime" state={trending} />
       </div>
 
       {/* Popular This Season Section */}
@@ -33,14 +64,10 @@ export default function HomePage() {
         <MediaRow
           title="Popular This Season"
           href="/anime"
-          queryKey="seasonal"
-          params={{
-            type: "ANIME",
-            perPage: 14,
-            season: seasonForDate(new Date()),
-            seasonYear: CURRENT_YEAR,
-            sort: ["POPULARITY_DESC"],
-          }}
+          state={homeSectionToShelfState(home.data?.seasonal, {
+            isLoading: home.isLoading,
+            isError: home.isError,
+          })}
         />
       </div>
 
@@ -49,8 +76,10 @@ export default function HomePage() {
         <MediaRow
           title="All-Time Top Rated Anime"
           href="/anime"
-          queryKey="top-rated"
-          params={{ type: "ANIME", perPage: 14, sort: ["SCORE_DESC"] }}
+          state={homeSectionToShelfState(home.data?.topRated, {
+            isLoading: home.isLoading,
+            isError: home.isError,
+          })}
         />
       </div>
 
@@ -64,18 +93,22 @@ export default function HomePage() {
         <MediaRow
           title="Top Rated Manga & Novels"
           href="/manga"
-          queryKey="manga-top"
-          params={{ type: "MANGA", perPage: 14, sort: ["SCORE_DESC"] }}
+          state={catalogueToShelfState(mangaItems, {
+            isLoading: manga.isLoading,
+            isError: manga.isError,
+          })}
         />
       </div>
 
-      {/* Most Anticipated Section */}
+      {/* Most Anticipated Section (canonical schedule upcoming) */}
       <div id="upcoming" className="scroll-mt-28">
         <MediaRow
           title="Most Anticipated Releases"
-          href="/anime"
-          queryKey="upcoming"
-          params={{ type: "ANIME", perPage: 14, status: "NOT_YET_RELEASED", sort: ["POPULARITY_DESC"] }}
+          href="/schedule"
+          state={homeSectionToShelfState(home.data?.upcoming, {
+            isLoading: home.isLoading,
+            isError: home.isError,
+          })}
         />
       </div>
 
@@ -86,12 +119,4 @@ export default function HomePage() {
       <CtaBanner />
     </div>
   );
-}
-
-function seasonForDate(date: Date): "WINTER" | "SPRING" | "SUMMER" | "FALL" {
-  const month = date.getMonth();
-  if (month <= 1 || month === 11) return "WINTER";
-  if (month <= 4) return "SPRING";
-  if (month <= 7) return "SUMMER";
-  return "FALL";
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Tv, BookOpen, Compass, ArrowRight } from "lucide-react";
+import { Tv, BookOpen, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 

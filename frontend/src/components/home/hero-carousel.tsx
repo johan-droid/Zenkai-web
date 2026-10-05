@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Info, Play, Star } from "lucide-react";
 import Link from "next/link";
@@ -9,20 +8,27 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { browseMedia } from "@/lib/api/anilist";
+import type { MediaSummary } from "@/lib/media";
 import { displayTitle, formatScore, mediaHref, seasonLabel } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 const ROTATE_MS = 7000;
 
-export function HeroCarousel() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["home", "hero"],
-    queryFn: () => browseMedia({ type: "ANIME", perPage: 6, sort: ["TRENDING_DESC"] }),
-    staleTime: 5 * 60_000,
-  });
-
-  const items = data?.items ?? [];
+/**
+ * Featured hero.
+ *
+ * Presentational: the page feeds it the trending shelf from the canonical API.
+ * Rotation and skeleton behaviour are web choices (P11), not Android facts.
+ * An unavailable/empty trending shelf renders nothing here — the featured
+ * area is decorative, and the shelves below carry the explicit state copy.
+ */
+export function HeroCarousel({
+  items,
+  isLoading,
+}: {
+  items: MediaSummary[];
+  isLoading?: boolean;
+}) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {

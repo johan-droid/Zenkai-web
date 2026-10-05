@@ -30,7 +30,11 @@ export type MediaStatus =
 
 export type MediaSeason = "WINTER" | "SPRING" | "SUMMER" | "FALL";
 
-export type MediaProvider = "anilist" | "mangadex" | "jikan" | "tmdb";
+/**
+ * Where a media record came from. `zenkai` marks records served by the
+ * canonical backend, which is the boundary Home and discovery use (P12).
+ */
+export type MediaProvider = "zenkai" | "anilist" | "mangadex" | "jikan" | "tmdb";
 
 export interface MediaTitle {
   romaji?: string | null;
