@@ -18,7 +18,6 @@ import { cache } from "../../cache/index.js";
 import { probeUrl } from "../../http/client.js";
 import { AppError, errorMessage } from "../../http/errors.js";
 import { healthRegistry } from "../../providers/streaming/health.js";
-import { playbackGateway } from "../../providers/streaming/gateway.js";
 import { dedupeSources } from "../../providers/streaming/dedupe.js";
 import { filterByLanguage, rankSources } from "../../providers/streaming/ranking.js";
 import {
@@ -304,6 +303,11 @@ export class PlaybackResolver {
    * ranked sixth is not going to be chosen over five working ones. Probing all of
    * them would make the common case slower for no benefit.
    *
+   * This is the only place a source URL is contacted. P6 removed the gateway's
+   * duplicate probe: the resolver already issues a real request per candidate and
+   * records the answer in `validated`, so probing again bought nothing and cost
+   * one extra round trip per candidate.
+   *
    * If every candidate fails to validate the originals are returned anyway:
    * a possibly-dead source is still more useful to a player than an empty list,
    * and the `validated` flag tells the client which is which.
@@ -312,9 +316,6 @@ export class PlaybackResolver {
     const results = await Promise.all(
       candidates.map(async (source) => {
         try {
-          const decision = await playbackGateway.plan(source);
-          if (!decision.direct) return { ...source, validated: true };
-
           const probe = await probeUrl(source.playbackUrl, {
             headers: source.referer ? { referer: source.referer } : {},
           });

@@ -52,6 +52,107 @@ export interface RankedSource extends PlaybackSource {
   rank: number;
 }
 
+/**
+ * How a client is expected to play a source (P6).
+ *
+ * This is the "how" half of the contract. `accessType` describes the *source* --
+ * what the provider published -- and is provider vocabulary the client should
+ * never branch on directly. `mechanism` describes the *player* and is derived
+ * from it deterministically, so a route can choose an `<video>` element, an HLS
+ * pipeline or an `<iframe>` without knowing which provider produced the source.
+ */
+export type PlaybackMechanism = "hls" | "progressive" | "iframe";
+
+/**
+ * Whether the client fetches the media itself or asks this service to relay it.
+ *
+ * `proxied` is never chosen for convenience: it requires the relay to be
+ * explicitly enabled *and* the upstream host to be on the configured allowlist.
+ * A default deployment is therefore never an open proxy.
+ */
+export type PlaybackDelivery = "client" | "proxied";
+
+/**
+ * Playback facts the player would like to know and the providers do not say.
+ *
+ * `null` means "unknown", never "no" and never a guess. P5 providers publish no
+ * evidence about seeking or range support, so the gateway records the absence of
+ * knowledge rather than inferring support from a file extension -- a `.mp4` that
+ * a CDN will not range-request fails exactly when a player assumed it could.
+ */
+export interface PlaybackCapabilities {
+  seekable: boolean | null;
+  ranged: boolean | null;
+}
+
+/**
+ * The canonical playback contract (P6).
+ *
+ * `PlaybackSource` answers *where* a stream is and *who* published it.
+ * `PlaybackPlan` answers *how* a client should consume that one source: the
+ * mechanism, the media type, the delivery path and whether it was actually
+ * validated. Every field here is either copied from a canonical source or derived
+ * from it by a pure rule; nothing is invented, and nothing is fetched.
+ *
+ * The plan is the boundary the future web player consumes. It is deliberately
+ * *not* provider vocabulary: a provider swap must not require a client change.
+ */
+export interface PlaybackPlan {
+  /** Identity of the canonical source this plan describes. */
+  sourceId: string;
+
+  /** Public provider identity: slugs, never internal database ids. */
+  providerSlug: string;
+  providerName: string;
+  endpointSlug: string;
+
+  /** What the provider published. Preserved verbatim, never reinterpreted. */
+  access: AccessType;
+  /** How a client plays it. Derived from `access` only. */
+  mechanism: PlaybackMechanism;
+  /**
+   * Deterministic MIME type, or `null` when the access mode does not declare one.
+   *
+   * Never a network request: a HEAD against the upstream would cost a round trip
+   * per candidate to learn something the access mode usually already says.
+   */
+  mediaType: string | null;
+
+  /** The playback URL, always originating from the canonical source. */
+  url: string;
+  delivery: PlaybackDelivery;
+  /** Present only when `delivery === "proxied"`. */
+  proxyUrl?: string;
+
+  language: AudioTrack;
+  quality?: string;
+  resolution?: number;
+
+  /**
+   * P5's explicit validation state, carried through unchanged.
+   *
+   * `true` means a real probe answered. The gateway never upgrades this, because
+   * a syntactically valid URL nobody contacted is not a playable source.
+   */
+  validated: boolean;
+  /**
+   * The client-facing verdict: whether this plan may be presented as playable.
+   *
+   * Equal to `validated` today, and kept separate because the two answer
+   * different questions -- "was this proven to work?" versus "may I offer it?".
+   */
+  playable: boolean;
+
+  capabilities: PlaybackCapabilities;
+
+  /**
+   * Subtitle sidecars the provider attached to *this* source, copied rather than
+   * shared. Absent when the source published none; never derived, never
+   * translated, never synchronised.
+   */
+  subtitles?: Array<{ language: string; url: string; kind?: string }>;
+}
+
 export interface ResolveRequest {
   animeId: string;
   anilistId: string;
