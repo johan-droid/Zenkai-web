@@ -13,6 +13,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { AppError } from "../../http/errors.js";
+import type { DiscoveryService } from "./discovery.js";
 import type { AnimeService } from "./service.js";
 
 const positiveInt = z.coerce.number().int().positive();
@@ -57,7 +58,19 @@ function parseOrThrow<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infe
   return result.data;
 }
 
-export function registerAnimeRoutes(app: FastifyInstance, service: AnimeService): void {
+/**
+ * Register the anime routes.
+ *
+ * `discovery` is injected separately from `service` rather than reaching for a
+ * provider inside a route: routes validate and delegate, and the discovery
+ * service owns the provider and the cache. That split is what keeps the HTTP
+ * layer free of provider knowledge and makes both halves testable on their own.
+ */
+export function registerAnimeRoutes(
+  app: FastifyInstance,
+  service: AnimeService,
+  discovery: DiscoveryService,
+): void {
   /**
    * Catalogue listing, served from Postgres.
    *
@@ -87,21 +100,6 @@ export function registerAnimeRoutes(app: FastifyInstance, service: AnimeService)
     return { items, page: query.page, perPage: query.perPage, total };
   });
 
-  /** Discovery buckets for the home page (P2). */
-  app.get("/api/v1/anime/discovery/:bucket", async (request) => {
-    const { bucket } = parseOrThrow(
-      z.object({ bucket: z.enum(["trending", "popular", "seasonal", "topRated", "updated"]) }),
-      request.params,
-    );
-
-    const query = parseOrThrow(
-      z.object({ ...pagination, season: season.optional(), seasonYear: z.coerce.number().int().optional() }),
-      request.query,
-    );
-
-    const result = await service.discovery(bucket, query);
-    return { ...result, page: query.page, perPage: query.perPage };
-  });
 
   app.get("/api/v1/anime/search", async (request) => {
     const { q, limit } = parseOrThrow(searchQuery, request.query);
@@ -135,48 +133,137 @@ export function registerAnimeRoutes(app: FastifyInstance, service: AnimeService)
     return episode;
   });
 
-  /**
-   * Pagination presets are exposed as their own routes so the frontend does not
-   * need to know the AniList sort vocabulary behind each bucket.
-   */
-  app.get("/api/v1/anime/browse/trending", async (request) => {
-    const query = parseOrThrow(z.object(pagination), request.query);
-    return service.discovery("trending", query);
-  });
+/**
+ * Pagination for every discovery endpoint.
+ *
+ * `perPage` is capped here as well as in the service, so an absurd value is
+ * rejected outright rather than silently clamped. A request for a million rows
+ * is a client bug or an attempt to make the backend do unbounded work, and
+ * answering it with a quietly reduced page hides the problem from whoever has
+ * to debug it.
+ */
+const discoveryPaging = {
+  page: z.coerce.number().int().min(1).max(1000).default(1),
+  perPage: z.coerce.number().int().min(1).max(50).default(20),
+};
 
-  /** Convenience routes for each discovery bucket (P2). */
-  app.get("/api/v1/anime/trending", async (request) => {
-    const query = parseOrThrow(z.object(pagination), request.query);
-    return service.discovery("trending", query);
-  });
+/** Seasonal accepts an explicit window, and defaults to the current season. */
+const seasonalQuery = z.object({
+  ...discoveryPaging,
+  season: season.optional(),
+  year: z.coerce.number().int().min(1900).max(2200).optional(),
+});
 
-  app.get("/api/v1/anime/popular", async (request) => {
-    const query = parseOrThrow(z.object(pagination), request.query);
-    return service.discovery("popular", query);
-  });
+/**
+ * Provider-derived rankings.
+ *
+ * Each bucket is a separate route rather than one endpoint taking a bucket
+ * parameter, so the frontend cannot ask for a bucket that does not exist and the
+ * response shape is fixed per endpoint. No AniList concept appears here: the
+ * route validates and delegates, and the service owns the provider.
+ */
+app.get("/api/v1/anime/trending", async (request) => {
+  const query = parseOrThrow(z.object(discoveryPaging), request.query);
+  return discovery.ranking("trending", query);
+});
 
-  app.get("/api/v1/anime/seasonal", async (request) => {
-    const query = parseOrThrow(
-      z.object({ ...pagination, season: season.optional(), seasonYear: z.coerce.number().int().optional() }),
-      request.query,
-    );
-    return service.discovery("seasonal", query);
-  });
+app.get("/api/v1/anime/popular", async (request) => {
+  const query = parseOrThrow(z.object(discoveryPaging), request.query);
+  return discovery.ranking("popular", query);
+});
 
-  app.get("/api/v1/anime/top", async (request) => {
-    const query = parseOrThrow(z.object(pagination), request.query);
-    return service.discovery("topRated", query);
+app.get("/api/v1/anime/seasonal", async (request) => {
+  const query = parseOrThrow(seasonalQuery, request.query);
+  // `seasonYear` becomes `year` in the public contract: the client should not
+  // have to know how AniList names that filter.
+  return discovery.ranking("seasonal", {
+    page: query.page,
+    perPage: query.perPage,
+    season: query.season,
+    year: query.year,
   });
+});
 
-  /** All genres in the catalogue. */
-  app.get("/api/v1/genres", async () => {
-    return { items: await service.genres() };
-  });
+/**
+ * Top rated.
+ *
+ * The score is AniList's `averageScore` (0-100), copied into the canonical
+ * `average_score` column by P1. Scores from different providers are never
+ * averaged together: a blended score would be a number this service invented.
+ */
+app.get("/api/v1/anime/top", async (request) => {
+  const query = parseOrThrow(z.object(discoveryPaging), request.query);
+  return discovery.ranking("topRated", query);
+});
 
-  /** Aggregate home-page payload (P2). */
-  app.get("/api/v1/home", async () => {
-    return service.home();
+/**
+ * Recently added to the catalogue.
+ *
+ * Canonical and database-backed: it answers even when AniList is unreachable,
+ * which is the whole point of keeping a catalogue.
+ */
+app.get("/api/v1/anime/recent", async (request) => {
+  const query = parseOrThrow(z.object(discoveryPaging), request.query);
+  return discovery.recent(query);
+});
+
+/**
+ * Recently updated upstream.
+ *
+ * Ordered by the provider's own `updatedAt`, not by when we last synchronised.
+ * See `DiscoveryService.recentlyUpdated` for why that distinction matters.
+ */
+app.get("/api/v1/anime/recently-updated", async (request) => {
+  const query = parseOrThrow(z.object(discoveryPaging), request.query);
+  return discovery.recentlyUpdated(query);
+});
+
+/**
+ * Bucket route kept for compatibility with the pre-P2 shape.
+ *
+ * Canonical bucket names only. The old `"updated"` bucket sorted by start date,
+ * which is not what "updated" means; callers wanting that should use `/recent`.
+ */
+app.get("/api/v1/anime/discovery/:bucket", async (request) => {
+  const { bucket } = parseOrThrow(
+    z.object({ bucket: z.enum(["trending", "popular", "seasonal", "topRated"]) }),
+    request.params,
+  );
+
+  const query: { page: number; perPage: number; season?: string; year?: number } =
+    bucket === "seasonal"
+      ? parseOrThrow(seasonalQuery, request.query)
+      : parseOrThrow(z.object(discoveryPaging), request.query);
+
+  return discovery.ranking(bucket, {
+    page: query.page,
+    perPage: query.perPage,
+    season: query.season,
+    year: query.year,
   });
+});
+
+/**
+ * All genres in the catalogue, from Postgres.
+ *
+ * Case variants are collapsed, so "Action", "action" and "ACTION" are one entry.
+ */
+app.get("/api/v1/genres", async () => {
+  return { items: await discovery.genres() };
+});
+
+/**
+ * Home payload.
+ *
+ * Aggregated server-side so the browser makes one request rather than five, and
+ * each section carries its own status so one failing provider does not blank the
+ * whole page.
+ */
+app.get("/api/v1/home", async (request) => {
+  const query = parseOrThrow(
+    z.object({ perPage: z.coerce.number().int().min(1).max(50).default(10) }),
+    request.query,
+  );
+  return discovery.home(query.perPage);
+});
 }
-
-export { parseOrThrow };

@@ -111,6 +111,18 @@ export class Cache {
     }
   }
 
+  /**
+   * Drop every cached entry in the in-process tier.
+   *
+   * Redis is left alone: it is a shared tier, and a local "clear" that silently
+   * invalidated another process's entries would be worse than not offering it.
+   * Exists for test isolation and for the case where a bad deploy has poisoned
+   * the memory tier and only a restart would otherwise clear it.
+   */
+  clear(): void {
+    this.#memory.clear();
+  }
+
   /** Read-through helper: return the cached value, else compute and store it. */
   async remember<T>(
     key: string,

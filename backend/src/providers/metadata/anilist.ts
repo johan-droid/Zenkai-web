@@ -280,8 +280,30 @@ export class AnilistProvider implements AnimeMetadataProvider {
     if (query.genre) filters.push(`genre_in: "${query.genre}"`);
     if (query.search) filters.push("search: $search");
 
+    // `$search` is declared only when the filter actually uses it. GraphQL
+    // requires every declared variable to be used, and AniList enforces this:
+    // declaring `$search` while omitting the filter fails the whole query with
+    // `Variable "$search" is never used` and a 400. Since browse() without a
+    // search term is exactly what every discovery endpoint does, declaring it
+    // unconditionally broke trending, popular, seasonal and top outright.
+    const declarations = ["$page: Int", "$perPage: Int", "$type: MediaType", "$sort: [MediaSort]"];
+    const variables: Record<string, unknown> = {
+      page,
+      perPage,
+      type: "ANIME",
+      sort: [SORT_MAP[query.sort ?? "TRENDING"]],
+    };
+
+    if (query.search) {
+      declarations.push("$search: String");
+      // The search term is a GraphQL *variable*, never interpolated into the
+      // query text. Interpolating it would break on any title containing a quote
+      // and would let a caller inject arbitrary query fragments.
+      variables.search = query.search;
+    }
+
     const gql = `
-      query($page: Int, $perPage: Int, $type: MediaType, $sort: [MediaSort], $search: String) {
+      query(${declarations.join(", ")}) {
         Page(page: $page, perPage: $perPage) {
           pageInfo { total currentPage hasNextPage }
           media(type: $type, sort: $sort, ${filters.join(", ")}) {
@@ -291,16 +313,7 @@ export class AnilistProvider implements AnimeMetadataProvider {
       }
     `;
 
-    const data = await this.#query<{ Page: Record<string, any> }>(gql, {
-      page,
-      perPage,
-      type: "ANIME",
-      sort: [SORT_MAP[query.sort ?? "TRENDING"]],
-      // The search term is a GraphQL *variable*, never interpolated into the
-      // query text. Interpolating it would break on any title containing a quote
-      // and would let a caller inject arbitrary query fragments.
-      search: query.search ?? null,
-    });
+    const data = await this.#query<{ Page: Record<string, any> }>(gql, variables);
 
     const pageInfo = data.Page?.pageInfo;
 

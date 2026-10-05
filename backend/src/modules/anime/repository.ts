@@ -23,6 +23,7 @@ import {
   episodeExternalIds,
 } from "../../db/schema/index.js";
 import { normalizeTitle } from "../../domain/media.js";
+import type { DiscoveryCard } from "./discovery.js";
 import type {
   AnimeDetail,
   AnimeSummary,
@@ -398,12 +399,16 @@ export class AnimeRepository {
 
     // A genre filter has to be applied inside the query, not on the returned
     // page: filtering 20 of 50 rows down to 3 would leave most pages empty.
+    //
+    // Matched case-insensitively. `anime_genres.genre` stores the provider's
+    // spelling ("Action"), so an exact match would silently return nothing for
+    // "action" — a filter that appears broken rather than one that is forgiving.
     const rows = options.genre
       ? await this.db
           .select({ record: anime })
           .from(anime)
           .innerJoin(animeGenres, eq(animeGenres.animeId, anime.id))
-          .where(and(base, eq(animeGenres.genre, options.genre)))
+          .where(and(base, sql`lower(${animeGenres.genre}) = lower(${options.genre})`))
           // Popularity correlates most reliably with "what people are actually
           // watching", so it drives the default order; score breaks ties.
           .orderBy(desc(anime.popularity), desc(anime.averageScore))
@@ -631,7 +636,73 @@ export class AnimeRepository {
     return Number(count ?? 0);
   }
 
-  /** All distinct genres across the catalogue, alphabetically. */
+  /**
+   * Discovery cards straight from the catalogue, with genres resolved in the same
+   * round trip rather than one query per row.
+   *
+   * This is the canonical half of discovery: it never calls a provider, so
+   * "recently added" and "recently updated" keep working when AniList is down.
+   */
+  async listCards(options: {
+    limit: number;
+    offset: number;
+    order: "recent" | "updated";
+  }): Promise<{ items: DiscoveryCard[]; total: number }> {
+    // `source_updated_at` is AniList's own `updatedAt`, not our sync timestamp.
+    // Sorting on `updated_at` here would surface whatever a background job last
+    // touched rather than what actually changed upstream, so `recent` uses
+    // `created_at` and `updated` uses `source_updated_at`.
+    const orderColumn = options.order === "recent" ? desc(anime.createdAt) : desc(anime.sourceUpdatedAt);
+
+    const rows = await this.db.select().from(anime).orderBy(orderColumn).limit(options.limit).offset(options.offset);
+
+    // Rows with no upstream marker sort last rather than pretending to be 1970.
+    const [total] = await this.db.select({ count: sql<number>`count(*)::int` }).from(anime);
+
+    if (rows.length === 0) return { items: [], total: Number(total?.count ?? 0) };
+
+    const ids = rows.map((row) => row.id);
+    const genreRows = await this.db
+      .select({ animeId: animeGenres.animeId, genre: animeGenres.genre })
+      .from(animeGenres)
+      .where(inArray(animeGenres.animeId, ids));
+
+    const genresByAnime = new Map<string, string[]>();
+    for (const row of genreRows) {
+      const list = genresByAnime.get(row.animeId) ?? [];
+      list.push(row.genre);
+      genresByAnime.set(row.animeId, list);
+    }
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        anilistId: row.anilistId != null ? String(row.anilistId) : "",
+        title: row.canonicalTitle,
+        titles: {
+          romaji: row.romajiTitle,
+          english: row.englishTitle,
+          native: row.nativeTitle,
+          synonyms: row.synonyms ?? [],
+        },
+        coverUrl: row.coverUrl,
+        coverImageLarge: row.coverImageLarge,
+        bannerUrl: row.bannerUrl,
+        format: row.format,
+        status: row.status,
+        season: row.season,
+        seasonYear: row.seasonYear,
+        year: row.year,
+        averageScore: row.averageScore != null ? Number(row.averageScore) : null,
+        totalEpisodes: row.totalEpisodes,
+        popularity: row.popularity,
+        genres: genresByAnime.get(row.id) ?? [],
+        isAdult: row.isAdult,
+      })),
+      total: Number(total?.count ?? 0),
+    };
+  }
+
   async listGenres(): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ genre: animeGenres.genre })
