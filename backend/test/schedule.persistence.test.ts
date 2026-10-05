@@ -26,6 +26,9 @@ const describeDb = url ? describe : describe.skip;
 /** 2026-06-01T00:00:00Z — a fixed instant unrelated to when this runs. */
 const NOW = new Date("2026-06-01T00:00:00Z");
 
+/** Every id this file creates, so cleanup cannot reach into another suite. */
+const TEST_IDS = [999201, 999202, 999203, 999204, 999205, 999206, 999207, 999208, 999209, 999210];
+
 const describeDbTest = describeDb;
 
 describeDbTest("schedule persistence", () => {
@@ -43,12 +46,16 @@ describeDbTest("schedule persistence", () => {
 
   after(async () => {
     // Cascade takes the schedule rows and episodes with the anime rows.
-    await sql`delete from anime where anilist_id >= 999200`;
+    // Scoped to this file's own ids. An open-ended `>= 999200` would silently
+    // delete fixtures belonging to any other suite that happens to use a higher
+    // range, and the resulting failures look like flaky tests rather than a
+    // cleanup that is too broad.
+    await sql`delete from anime where anilist_id in ${sql(TEST_IDS)}`;
     await sql.end();
   });
 
   beforeEach(async () => {
-    await sql`delete from anime where anilist_id >= 999200`;
+    await sql`delete from anime where anilist_id in ${sql(TEST_IDS)}`;
   });
 
   /** Create a catalogued title so a schedule row has something to attach to. */

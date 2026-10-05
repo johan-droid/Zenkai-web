@@ -376,14 +376,19 @@ export class AnilistProvider implements AnimeMetadataProvider {
     const total = summary.totalEpisodes;
     if (!total || total <= 0) return undefined;
 
+    // `undefined`, not `null`, for everything AniList did not tell us. These rows
+    // are our own scaffolding derived from an episode *count*, so a null here
+    // would claim "the provider reported this field as empty" and would clear a
+    // real title or duration that a richer sync had already stored. Undefined
+    // means "we only know the number", which is exactly the truth.
     return Array.from({ length: total }, (_unused, index) => ({
       episodeNumber: index + 1,
-      absoluteNumber: null,
-      title: null,
-      description: null,
-      durationSeconds: null,
-      thumbnailUrl: null,
-      airDate: null,
+      absoluteNumber: undefined,
+      title: undefined,
+      description: undefined,
+      durationSeconds: undefined,
+      thumbnailUrl: undefined,
+      airDate: undefined,
       isFiller: false,
     }));
   }

@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { AppError } from "../../http/errors.js";
 import type { DiscoveryService } from "./discovery.js";
+import type { EpisodeService } from "./episodes.js";
 import type { AnimeService } from "./service.js";
 
 const positiveInt = z.coerce.number().int().positive();
@@ -70,6 +71,7 @@ export function registerAnimeRoutes(
   app: FastifyInstance,
   service: AnimeService,
   discovery: DiscoveryService,
+  episodes: EpisodeService,
 ): void {
   /**
    * Catalogue listing, served from Postgres.
@@ -119,10 +121,73 @@ export function registerAnimeRoutes(
     return { relations: detail.relations ?? [] };
   });
 
-  /** Episode catalog (P4). */
+  /**
+   * Canonical episode catalogue for a title.
+   *
+   * Not paginated: the Zenkai episode list is one scrollable column, and paging a
+   * 24-episode show would be pagination applied for its own sake. The full list
+   * is cheap, it is what a client needs to render, and the response is a
+   * lightweight card rather than full rows.
+   *
+   * Seeds from the provider on first read so the endpoint is useful on a cold
+   * catalogue. A provider failure there surfaces as an error rather than an
+   * empty list, so a client can tell "no episodes" from "we could not check".
+   */
   app.get("/api/v1/anime/:id/episodes", async (request) => {
     const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
-    return { items: await service.getEpisodes(id) };
+
+    await service.getEpisodes(id);
+
+    const catalogue = await episodes.catalogue(id);
+    if (!catalogue) throw AppError.notFound(`anime ${id} not found`);
+
+    return catalogue;
+  });
+
+  /**
+   * One episode by number.
+   *
+   * Addressed by (title, number) because episode numbers are not globally
+   * unique -- Anime A Episode 1 and Anime B Episode 1 are different episodes.
+   */
+  app.get("/api/v1/anime/:id/episodes/:number", async (request) => {
+    const { id, number } = parseOrThrow(
+      z.object({
+        id: z.string().trim().min(1),
+        number: z.coerce.number().int().positive(),
+      }),
+      request.params,
+    );
+
+    await service.getEpisodes(id);
+
+    const episode = await episodes.byNumber(id, number);
+    if (!episode) throw AppError.notFound(`episode ${number} of anime ${id} not found`);
+
+    return { episode };
+  });
+
+  /**
+   * The next episode to air, derived from canonical episodes and airing slots.
+   *
+   * No `next_episode` column exists: a stored value would go stale the moment an
+   * episode airs, which is the same staleness P3 removed from airing state.
+   */
+  app.get("/api/v1/anime/:id/episodes-next", async (request) => {
+    const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
+    return { episode: await episodes.nextEpisode(id) };
+  });
+
+  /** Deterministic previous/next episode numbers, honouring gaps. */
+  app.get("/api/v1/anime/:id/episodes/:number/navigation", async (request) => {
+    const { id, number } = parseOrThrow(
+      z.object({
+        id: z.string().trim().min(1),
+        number: z.coerce.number().int().positive(),
+      }),
+      request.params,
+    );
+    return episodes.navigation(id, number);
   });
 
   /** Single episode by local id (P4). */

@@ -28,6 +28,7 @@ import { healthRegistry } from "./providers/streaming/health.js";
 import { AnimeRepository } from "./modules/anime/repository.js";
 import { AnimeService } from "./modules/anime/service.js";
 import { DiscoveryService } from "./modules/anime/discovery.js";
+import { EpisodeService } from "./modules/anime/episodes.js";
 import { registerAnimeRoutes } from "./modules/anime/routes.js";
 import { MangaRepository } from "./modules/manga/repository.js";
 import { MangaService } from "./modules/manga/service.js";
@@ -124,6 +125,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   // discovery importing the schedule module.
   const scheduleService = new ScheduleService(deps.db, animeRepo);
 
+  const episodeService = new EpisodeService(animeRepo);
   const discoveryService = new DiscoveryService(animeRepo, new AnilistProvider(), undefined, {
     async upcoming({ limit }) {
       const rows = await scheduleService.upcoming({ limit });
@@ -213,7 +215,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     cleared: healthRegistry.resetQuarantined(),
   }));
 
-  registerAnimeRoutes(app, animeService, discoveryService);
+  registerAnimeRoutes(app, animeService, discoveryService, episodeService);
   registerMangaRoutes(app, mangaService);
   registerScheduleRoutes(app, scheduleService);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo);

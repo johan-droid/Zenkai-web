@@ -19,6 +19,7 @@ import {
   animeRelations,
   animeSearchIndex,
   animeStudios,
+  airingSchedule,
   episodes,
   episodeExternalIds,
 } from "../../db/schema/index.js";
@@ -155,6 +156,47 @@ export function dedupePreservingSpelling(values: string[]): string[] {
   }
 
   return out;
+}
+
+
+/** Column values for a new episode row, from a provider's episode. */
+function episodeValues(episode: ProviderEpisode) {
+  return {
+    episodeNumber: episode.episodeNumber,
+    absoluteNumber: episode.absoluteNumber ?? null,
+    title: episode.title ?? null,
+    description: episode.description ?? null,
+    durationSeconds: episode.durationSeconds ?? null,
+    thumbnailUrl: episode.thumbnailUrl ?? null,
+    airDate: episode.airDate ? new Date(episode.airDate * 1000) : null,
+    isFiller: episode.isFiller,
+  };
+}
+
+/**
+ * The update half of an episode upsert: only the fields the provider supplied.
+ *
+ * P1's contract, applied to episodes. `undefined` means "the provider said
+ * nothing" and is left out entirely, so the stored value survives. `null` means
+ * "the provider says this is empty" and is written, clearing a stale value.
+ *
+ * `isFiller` is included whenever it is a boolean because `false` is a real
+ * answer; omitting it would make a filler episode impossible to un-mark.
+ */
+function episodePatch(episode: ProviderEpisode): Partial<typeof episodes.$inferInsert> {
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+
+  if (episode.title !== undefined) patch.title = episode.title;
+  if (episode.description !== undefined) patch.description = episode.description;
+  if (episode.durationSeconds !== undefined) patch.durationSeconds = episode.durationSeconds;
+  if (episode.thumbnailUrl !== undefined) patch.thumbnailUrl = episode.thumbnailUrl;
+  if (episode.absoluteNumber !== undefined) patch.absoluteNumber = episode.absoluteNumber;
+  if (episode.airDate !== undefined) {
+    patch.airDate = episode.airDate ? new Date(episode.airDate * 1000) : null;
+  }
+  if (typeof episode.isFiller === "boolean") patch.isFiller = episode.isFiller;
+
+  return patch as Partial<typeof episodes.$inferInsert>;
 }
 
 export class AnimeRepository {
@@ -365,6 +407,27 @@ export class AnimeRepository {
     };
   }
 
+  /**
+   * The provider's stated episode total, or null.
+   *
+   * Deliberately not derived from the number of episode rows. A show airing now
+   * has a stated total of 24 and may have 7 rows; reporting 7 as "total
+   * episodes" tells a reader the show is finished.
+   */
+  async getTotalEpisodes(anilistId: string): Promise<number | null> {
+    const numericId = Number(anilistId);
+    if (!Number.isFinite(numericId)) return null;
+
+    const [row] = await this.db
+      .select({ totalEpisodes: anime.totalEpisodes })
+      .from(anime)
+      .where(eq(anime.anilistId, numericId))
+      .limit(1);
+
+    // Null stays null. Coercing to 0 would claim the show has no episodes.
+    return row?.totalEpisodes ?? null;
+  }
+
   async getLocalIdByAnilistId(anilistId: string): Promise<string | null> {
     const numericId = Number(anilistId);
     if (!Number.isFinite(numericId)) return null;
@@ -487,33 +550,52 @@ export class AnimeRepository {
   async upsertEpisodes(animeId: string, incoming: ProviderEpisode[]): Promise<number> {
     if (incoming.length === 0) return 0;
 
+    // Two steps rather than one ON CONFLICT DO UPDATE, because the merge has to
+    // happen before the SQL is built.
+    //
+    // Assigning `excluded.title` means a provider that omits a field sends NULL
+    // and erases what we already had: a sparse re-sync would blank out every
+    // title, description and duration in the catalogue. That is the same defect
+    // P1 fixed for the anime row, reintroduced one level down.
+    //
+    // A SQL COALESCE would stop the erasing, but it cannot express the other
+    // half of the contract: `coalesce` treats an explicit null and an omitted
+    // field identically, so a provider that genuinely reports "this episode has
+    // no description" could never clear a stale one. Once the value is a column,
+    // "absent" and "null" are the same thing, so the decision has to be made
+    // here, in JS, where the difference is still visible.
     const inserted = await this.db
       .insert(episodes)
-      .values(
-        incoming.map((episode) => ({
-          animeId,
-          episodeNumber: episode.episodeNumber,
-          absoluteNumber: episode.absoluteNumber,
-          title: episode.title,
-          description: episode.description,
-          durationSeconds: episode.durationSeconds,
-          thumbnailUrl: episode.thumbnailUrl,
-          airDate: episode.airDate ? new Date(episode.airDate * 1000) : null,
-          isFiller: episode.isFiller,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [episodes.animeId, episodes.episodeNumber],
-        set: {
-          title: sql`excluded.title`,
-          description: sql`excluded.description`,
-          durationSeconds: sql`excluded.duration_seconds`,
-          thumbnailUrl: sql`excluded.thumbnail_url`,
-          isFiller: sql`excluded.is_filler`,
-          updatedAt: new Date(),
-        },
-      })
+      .values(incoming.map((episode) => ({ animeId, ...episodeValues(episode) })))
+      .onConflictDoNothing()
       .returning({ id: episodes.id, episodeNumber: episodes.episodeNumber });
+
+    const insertedNumbers = new Set(inserted.map((row) => row.episodeNumber));
+    const existing = incoming.filter((episode) => !insertedNumbers.has(episode.episodeNumber));
+
+    // Only the episodes that already existed need a merge pass. On a first sync
+    // this is empty, so the common case stays a single insert. A re-sync pays
+    // one update per episode, which is acceptable here because this is a write
+    // path driven by sync, not a read path on a request.
+    for (const episode of existing) {
+      const patch = episodePatch(episode);
+      if (Object.keys(patch).length === 0) continue;
+
+      await this.db
+        .update(episodes)
+        .set(patch)
+        .where(and(eq(episodes.animeId, animeId), eq(episodes.episodeNumber, episode.episodeNumber)));
+    }
+
+    const byNumber = new Map(inserted.map((row) => [row.episodeNumber, row.id]));
+    for (const episode of existing) {
+      const [row] = await this.db
+        .select({ id: episodes.id })
+        .from(episodes)
+        .where(and(eq(episodes.animeId, animeId), eq(episodes.episodeNumber, episode.episodeNumber)))
+        .limit(1);
+      if (row) byNumber.set(episode.episodeNumber, row.id);
+    }
 
     // Link provider-native episode ids so playback skips a re-lookup per play.
     const withExternal = incoming.filter((episode) => episode.externalId);
@@ -539,6 +621,53 @@ export class AnimeRepository {
   }
 
   /** Episodes for one title, oldest first. */
+  /**
+   * Canonical episodes for one title, joined with their airing slot.
+   *
+   * A left join, not an inner one: an episode with no slot is a real and common
+   * state (a show that has not started, or one whose provider gave no schedule),
+   * and an inner join would silently hide those episodes from the catalogue.
+   *
+   * Ordered by `episode_number` on an integer column, so 1, 2, 10 -- never
+   * 1, 10, 2.
+   */
+  async listEpisodesWithAiring(animeId: string): Promise<Record<string, any>[]> {
+    return this.db
+      .select({
+        id: episodes.id,
+        episodeNumber: episodes.episodeNumber,
+        absoluteNumber: episodes.absoluteNumber,
+        title: episodes.title,
+        description: episodes.description,
+        durationSeconds: episodes.durationSeconds,
+        thumbnailUrl: episodes.thumbnailUrl,
+        isFiller: episodes.isFiller,
+        airingAt: airingSchedule.airingAt,
+        slotStatus: airingSchedule.status,
+        slotSource: airingSchedule.source,
+      })
+      .from(episodes)
+      .leftJoin(
+        airingSchedule,
+        and(
+          eq(airingSchedule.animeId, episodes.animeId),
+          eq(airingSchedule.episodeNumber, episodes.episodeNumber),
+        ),
+      )
+      .where(eq(episodes.animeId, animeId))
+      .orderBy(episodes.episodeNumber);
+  }
+
+  /** One episode by number within a title. */
+  async getEpisodeByNumber(animeId: string, episodeNumber: number): Promise<Record<string, any> | null> {
+    const [row] = await this.db
+      .select()
+      .from(episodes)
+      .where(and(eq(episodes.animeId, animeId), eq(episodes.episodeNumber, episodeNumber)))
+      .limit(1);
+    return row ?? null;
+  }
+
   async listEpisodes(animeId: string): Promise<Record<string, any>[]> {
     return this.db
       .select()
