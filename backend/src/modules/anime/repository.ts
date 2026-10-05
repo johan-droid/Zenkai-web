@@ -510,4 +510,13 @@ export class AnimeRepository {
     const [{ count }] = await this.db.select({ count: sql<number>`count(*)::int` }).from(anime);
     return Number(count ?? 0);
   }
+
+  /** All distinct genres across the catalogue, alphabetically. */
+  async listGenres(): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ genre: animeGenres.genre })
+      .from(animeGenres)
+      .orderBy(animeGenres.genre);
+    return rows.map((row) => row.genre);
+  }
 }
