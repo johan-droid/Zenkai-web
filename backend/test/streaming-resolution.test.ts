@@ -11,7 +11,8 @@
  */
 
 import assert from "node:assert/strict";
-import { beforeEach, describe, it } from "node:test";
+import { createServer, type Server } from "node:http";
+import { after, before, beforeEach, describe, it } from "node:test";
 
 import { PlaybackResolver } from "../src/modules/playback/service.js";
 import { partitionProviders, requiredIdTypeOf } from "../src/modules/playback/identity.js";
@@ -307,5 +308,145 @@ describe("source de-duplication", () => {
     const a = sourceIdentity(ranked({ providerSlug: "p", language: "sub" }));
     const b = sourceIdentity(ranked({ providerSlug: "p", language: "dub" }));
     assert.notEqual(a, b, "identity must distinguish language");
+  });
+});
+
+
+describe("source validation", () => {
+  // A loopback server rather than an external host, so the probe is a real
+  // reachability check against a real socket while the test stays hermetic: no
+  // traffic leaves the machine and nothing depends on a third party being up.
+  let server: Server;
+  let reachable: string;
+  let refused: string;
+
+  before(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
+      res.end("#EXTM3U\n");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    reachable = `http://127.0.0.1:${port}/stream.m3u8`;
+
+    // A port nothing is listening on: structurally valid, unreachable.
+    refused = "http://127.0.0.1:1/nothing.m3u8";
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  function providerServing(url: string): StreamingProvider {
+    return {
+      slug: "local",
+      name: "local",
+      kind: "api",
+      basePriority: 10,
+      version: "1.0.0",
+      enabled: true,
+      capabilities: CAPS,
+      async resolve() {
+        return [source("local", { playbackUrl: url })];
+      },
+      async healthCheck() {
+        return true;
+      },
+    } as StreamingProvider;
+  }
+
+  it("marks a source validated only when a probe actually answers", async () => {
+    // The distinction P5 requires: a syntactically valid URL that nobody has
+    // contacted is not "playable". Reporting it as validated would be a claim
+    // the service has not verified.
+    const resolver = new PlaybackResolver([providerServing(reachable)], stubRepo());
+    const result = await resolver.resolve(req({ anilistId: `v1${Date.now()}` }));
+
+    assert.equal(result.sources.length, 1);
+    assert.equal(result.sources[0]?.validated, true, "a source that answered is validated");
+  });
+
+  it("does not mark an unreachable source as validated", async () => {
+    const resolver = new PlaybackResolver([providerServing(refused)], stubRepo());
+    const result = await resolver.resolve(req({ anilistId: `v2${Date.now()}` }));
+
+    assert.equal(result.sources.length, 1, "an unreachable source is still offered");
+    assert.equal(
+      result.sources[0]?.validated,
+      false,
+      "offered but explicitly not claimed as playable",
+    );
+  });
+
+  it("drops structurally invalid sources before any probe", async () => {
+    // A non-http scheme can never play, so it is filtered structurally rather
+    // than wasting a probe on it.
+    const resolver = new PlaybackResolver(
+      [providerServing("file:///etc/passwd")],
+      stubRepo(),
+    );
+    const result = await resolver.resolve(req({ anilistId: `v3${Date.now()}` }));
+
+    assert.equal(result.sources.length, 0, "a file:// url is not a playable source");
+  });
+});
+
+
+describe("ranking", () => {
+  /**
+   * Two providers offering the same kind of source, differing only in health.
+   * Health is driven through the registry rather than by mutating scores, so the
+   * test exercises the same path production does.
+   */
+  function healthyAndDegraded(): [StreamingProvider, StreamingProvider] {
+    const weak = stub("weak", { count: 1 });
+    const strong = stub("strong", { count: 1 });
+
+    // A provider that has been failing is scored below a healthy one.
+    for (let i = 0; i < 3; i++) healthRegistry.record("weak", "error", 50, "boom");
+    healthRegistry.record("strong", "ok", 20);
+
+    return [weak, strong];
+  }
+
+  it("orders the healthier provider first", async () => {
+    const resolver = new PlaybackResolver(healthyAndDegraded(), stubRepo());
+    const result = await resolver.resolve(req({ anilistId: `rk1${Date.now()}` }));
+
+    assert.equal(result.sources.length, 2);
+    assert.equal(
+      result.sources[0]?.providerSlug,
+      "strong",
+      "a healthy provider outranks a degraded one, whichever order they were supplied",
+    );
+  });
+
+  it("is deterministic for identical inputs", async () => {
+    // Same providers, same health, same request: the same order every time. A
+    // client that renders "best source first" must not see it move.
+    const first = await new PlaybackResolver(healthyAndDegraded(), stubRepo()).resolve(
+      req({ anilistId: `rk2${Date.now()}` }),
+    );
+    const second = await new PlaybackResolver(healthyAndDegraded(), stubRepo()).resolve(
+      req({ anilistId: `rk2${Date.now()}` }),
+    );
+
+    assert.deepEqual(
+      first.sources.map((s) => s.providerSlug),
+      second.sources.map((s) => s.providerSlug),
+      "the same request must produce the same ordering",
+    );
+  });
+
+  it("does not depend on the order providers were registered in", async () => {
+    // Supplying the providers in the opposite order must not change which one
+    // is considered best, or adding a provider would silently re-rank every
+    // episode.
+    const [weak, strong] = healthyAndDegraded();
+    const resolver = new PlaybackResolver([strong, weak], stubRepo());
+    const result = await resolver.resolve(req({ anilistId: `rk3${Date.now()}` }));
+
+    assert.equal(result.sources[0]?.providerSlug, "strong");
   });
 });
