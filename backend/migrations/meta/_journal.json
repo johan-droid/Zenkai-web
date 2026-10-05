@@ -15,6 +15,13 @@
       "when": 1791186062987,
       "tag": "0001_many_the_hand",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791190072733,
+      "tag": "0002_polite_veda",
+      "breakpoints": true
     }
   ]
 }

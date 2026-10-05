@@ -60,10 +60,18 @@ export interface MediaSummary {
   canonicalFrom?: string;
 }
 
+/** Block-level tags whose boundaries should become line breaks. */
+const BLOCK_TAGS = /<\/?(?:p|div|li|br|h[1-6]|section|article)\b[^>]*>/gi;
+
 /** Strip HTML tags and decode the common entities. */
 export function stripHtml(input?: string | null): string | null {
-  if (!input) return null;
-  const withoutTags = input.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
+if (!input) return null;
+
+  // Block tags must become newlines *before* tag stripping, otherwise
+  // "<p>one</p><p>two</p>" collapses to "onetwo" and every paragraph in a
+  // description runs together.
+  const withoutTags = input.replace(BLOCK_TAGS, "\n").replace(/<[^>]+>/g, "");
+
   const entities: Record<string, string> = {
     "&amp;": "&",
     "&lt;": "<",
@@ -106,7 +114,18 @@ export function normalizeTitle(value: string): string {
     .trim();
 }
 
-/** Score two titles 0-1, ignoring case, punctuation and articles. */
+/**
+ * Score two titles 0-1, ignoring case, punctuation and articles.
+ *
+ * Important limitation: this is a *token overlap* score, so it matches spelling
+ * variants ("Kimi no Na wa" / "Kimi No Na Wa.") but not translations
+ * ("Shingeki no Kyojin" / "Attack on Titan"), which share no tokens and score 0.
+ *
+ * That is acceptable here because cross-provider joins are keyed on shared
+ * external ids wherever possible; title matching is the fallback for titles only
+ * one provider knows about. For those, matching a translated title reliably
+ * would need a translation table, which is out of scope.
+ */
 export function titleSimilarity(a: string, b: string): number {
   const left = normalizeTitle(a);
   const right = normalizeTitle(b);

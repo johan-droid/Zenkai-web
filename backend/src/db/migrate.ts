@@ -6,6 +6,7 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import dotenv from "dotenv";
 
@@ -15,7 +16,8 @@ const url =
   process.env.DATABASE_URL ??
   "postgresql://zenkai:zenkai_password@localhost:5432/zenkai_db?sslmode=disable";
 
-const MIGRATIONS_DIR = new URL("../../migrations/", import.meta.url).pathname;
+// One level up from src/db/ to reach the backend root, where migrations/ lives.
+const MIGRATIONS_DIR = fileURLToPath(new URL("../../migrations", import.meta.url));
 
 async function main() {
   const sql = postgres(url, { max: 1 });

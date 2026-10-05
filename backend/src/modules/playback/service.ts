@@ -164,7 +164,7 @@ export class PlaybackResolver {
           // which is what stops a good provider being quarantined over one
           // missing episode.
           const outcome = sources.length > 0 ? "ok" : "empty";
-          healthRegistry.record(provider.slug, provider.slug, outcome, latencyMs);
+          healthRegistry.record(provider.slug, outcome, latencyMs);
 
           collected.push(...sources);
           attempts.push({ providerSlug: provider.slug, outcome, count: sources.length, latencyMs });
@@ -176,7 +176,7 @@ export class PlaybackResolver {
               ? "timeout"
               : "error";
 
-          healthRegistry.record(provider.slug, provider.slug, outcome, latencyMs, message);
+          healthRegistry.record(provider.slug, outcome, latencyMs, message);
           attempts.push({
             providerSlug: provider.slug,
             outcome,
@@ -281,7 +281,7 @@ export class PlaybackResolver {
       kind: provider.kind,
       basePriority: provider.basePriority,
       capabilities: provider.capabilities,
-      health: healthRegistry.get(provider.slug, provider.slug),
+      health: healthRegistry.get(provider.slug),
     }));
   }
 
@@ -295,7 +295,6 @@ export class PlaybackResolver {
           const ok = await provider.healthCheck();
           healthRegistry.record(
             provider.slug,
-            provider.slug,
             ok ? "ok" : "error",
             Date.now() - started,
             ok ? undefined : "health check failed",
@@ -303,7 +302,6 @@ export class PlaybackResolver {
           return { slug: provider.slug, ok };
         } catch (error) {
           healthRegistry.record(
-            provider.slug,
             provider.slug,
             "error",
             Date.now() - started,

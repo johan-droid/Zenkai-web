@@ -137,13 +137,13 @@ export function eligibleProviders(
   return providers
     .filter((provider) => {
       if (!provider.enabled) return false;
-      if (healthRegistry.isQuarantined(provider.slug, provider.slug)) return false;
+      if (healthRegistry.isQuarantined(provider.slug)) return false;
       if (requirements.needsMalId && !provider.capabilities.requiresMalId) return false;
       return provider.capabilities.languages.includes(requirements.language);
     })
     .sort((a, b) => {
-      const healthA = healthRegistry.get(a.slug, a.slug).score;
-      const healthB = healthRegistry.get(b.slug, b.slug).score;
+      const healthA = healthRegistry.get(a.slug).score;
+      const healthB = healthRegistry.get(b.slug).score;
       if (healthA !== healthB) return healthB - healthA;
       return a.basePriority - b.basePriority;
     });
