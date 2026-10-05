@@ -12,16 +12,37 @@
  * provider always wins over a guess.
  */
 
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lte } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { airingSchedule, anime } from "../../db/schema/index.js";
+import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
+import {
+  airingStateAt,
+  localDateKey,
+  secondsUntil,
+  startOfDay,
+  startOfNextDay,
+  weekWindow,
+} from "./time.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { JikanProvider } from "../../providers/metadata/jikan.js";
 import type { AiringSlot } from "../../providers/metadata/types.js";
 import type { AnimeRepository } from "../anime/repository.js";
 
 const DAY_MS = 86_400_000;
+
+/**
+ * Upper bound on one schedule page.
+ *
+ * Schedule rows are small but unbounded in number, and this endpoint is read on
+ * every home page load. The cap keeps a single request from becoming a full
+ * table scan dressed up as pagination.
+ */
+const MAX_SCHEDULE_ITEMS = 100;
+
+/** How far back "recently aired" looks by default. */
+const RECENT_AIRING_WINDOW_DAYS = 14;
 
 /** Days of the week, indexed to match `Date.getUTCDay()`. */
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -33,6 +54,14 @@ export class ScheduleService {
   constructor(
     private readonly db: Db,
     private readonly animeRepo: AnimeRepository,
+    /**
+     * Injected so airing state is deterministic in tests. Business decisions such
+     * as "has this aired" must not read an ambient clock, or they can only be
+     * tested by freezing time globally.
+     */
+    private readonly now: () => Date = () => new Date(),
+    /** Calendar days for "today" and "this week". Timestamps stay UTC. */
+    private readonly timeZone: string = config.SCHEDULE_TIMEZONE,
   ) {}
 
   /**
@@ -144,8 +173,9 @@ export class ScheduleService {
 
   /** Everything airing within a window, joined with title metadata. */
   async list(options: { from?: Date; to?: Date; limit?: number }): Promise<Record<string, any>[]> {
-    const from = options.from ?? new Date(Date.now() - DAY_MS);
-    const to = options.to ?? new Date(Date.now() + 7 * DAY_MS);
+    const now = this.now();
+    const from = options.from ?? new Date(now.getTime() - DAY_MS);
+    const to = options.to ?? new Date(now.getTime() + 7 * DAY_MS);
 
     const rows = await this.db
       .select({
@@ -167,12 +197,139 @@ export class ScheduleService {
       .orderBy(asc(airingSchedule.airingAt))
       .limit(options.limit ?? 200);
 
+    const readAt = this.now();
+
     return rows.map((row) => ({
       ...row,
+      // Derived from the clock on every read, never from the stored label.
+      // `status` is what the provider claimed when the row was written, and it
+      // is not maintained afterwards: without this, a slot written as
+      // NOT_YET_AIRED still reads that way weeks after the episode has aired.
+      airingState: airingStateAt(row.airingAt, readAt),
+      providerStatus: row.status,
       dayOfWeek: DAY_NAMES[row.airingAt.getUTCDay()],
       // Computed per read so a cached day view still shows a live countdown.
-      secondsUntil: Math.floor((row.airingAt.getTime() - Date.now()) / 1000),
+      secondsUntil: secondsUntil(row.airingAt, readAt),
     }));
+  }
+
+  /**
+   * The next episodes to air, soonest first.
+   *
+   * Strictly future relative to the injected clock, so a slot that airs in the
+   * next few minutes drops off this list once it has aired rather than lingering
+   * as a countdown stuck at zero. Paged because a long-running show contributes
+   * many rows and a client asking for more should be able to.
+   */
+  async upcoming(
+    options: { limit?: number; offset?: number } = {},
+  ): Promise<Record<string, any>[]> {
+    const now = this.now();
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), MAX_SCHEDULE_ITEMS);
+    const offset = Math.max(options.offset ?? 0, 0);
+
+    const rows = await this.db
+      .select({
+        episodeNumber: airingSchedule.episodeNumber,
+        airingAt: airingSchedule.airingAt,
+        providerStatus: airingSchedule.status,
+        source: airingSchedule.source,
+        animeId: anime.id,
+        anilistId: anime.anilistId,
+        title: anime.canonicalTitle,
+        coverUrl: anime.coverUrl,
+        totalEpisodes: anime.totalEpisodes,
+        slug: anime.slug,
+      })
+      .from(airingSchedule)
+      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+      .where(gt(airingSchedule.airingAt, now))
+      .orderBy(asc(airingSchedule.airingAt))
+      .limit(limit)
+      .offset(offset);
+
+    return rows.map((row) => ({
+      ...row,
+      airingState: airingStateAt(row.airingAt, now),
+      secondsUntil: secondsUntil(row.airingAt, now),
+    }));
+  }
+
+  /**
+   * Episodes that have already aired, most recent first.
+   *
+   * Aired is derived from the stored timestamp, never from when the row was
+   * written or from `source_updated_at`. A sync can backfill months of history
+   * in one pass, so insert time would report the whole backfill as "just aired".
+   */
+  async recent(
+    options: { limit?: number; offset?: number; withinDays?: number } = {},
+  ): Promise<Record<string, any>[]> {
+    const now = this.now();
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), MAX_SCHEDULE_ITEMS);
+    const offset = Math.max(options.offset ?? 0, 0);
+    const withinDays = Math.min(Math.max(options.withinDays ?? RECENT_AIRING_WINDOW_DAYS, 1), 90);
+    const since = new Date(now.getTime() - withinDays * DAY_MS);
+
+    const rows = await this.db
+      .select({
+        episodeNumber: airingSchedule.episodeNumber,
+        airingAt: airingSchedule.airingAt,
+        providerStatus: airingSchedule.status,
+        source: airingSchedule.source,
+        animeId: anime.id,
+        anilistId: anime.anilistId,
+        title: anime.canonicalTitle,
+        coverUrl: anime.coverUrl,
+        totalEpisodes: anime.totalEpisodes,
+        slug: anime.slug,
+      })
+      .from(airingSchedule)
+      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+      .where(and(lte(airingSchedule.airingAt, now), gte(airingSchedule.airingAt, since)))
+      .orderBy(desc(airingSchedule.airingAt))
+      .limit(limit)
+      .offset(offset);
+
+    return rows.map((row) => ({
+      ...row,
+      airingState: airingStateAt(row.airingAt, now),
+      secondsUntil: secondsUntil(row.airingAt, now),
+    }));
+  }
+
+  /**
+   * Today's schedule in the configured calendar zone.
+   *
+   * The window is a civil day in `SCHEDULE_TIMEZONE`, not a 24 hour span from
+   * "now" and not the server's local day. The returned key is the local calendar
+   * date, so a client can label the day without recomputing the zone itself.
+   */
+  async today(): Promise<{ date: string; timeZone: string; items: Record<string, any>[] }> {
+    const now = this.now();
+    const from = startOfDay(now, this.timeZone);
+    const to = startOfNextDay(now, this.timeZone);
+
+    return {
+      date: localDateKey(now, this.timeZone),
+      timeZone: this.timeZone,
+      items: await this.list({ from, to }),
+    };
+  }
+
+  /**
+   * The current calendar week, Monday to Sunday, in the configured zone.
+   */
+  async week(): Promise<{ from: string; to: string; timeZone: string; days: Record<string, any>[] }> {
+    const now = this.now();
+    const { from, to } = weekWindow(now, this.timeZone);
+
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timeZone: this.timeZone,
+      days: await this.grouped({ from, to }),
+    };
   }
 
   /** Schedule for one title. */
@@ -180,11 +337,22 @@ export class ScheduleService {
     const localId = await this.animeRepo.getLocalIdByAnilistId(anilistId);
     if (!localId) throw AppError.notFound(`anime ${anilistId} is not cached`);
 
-    return this.db
+    const rows = await this.db
       .select()
       .from(airingSchedule)
       .where(eq(airingSchedule.animeId, localId))
       .orderBy(asc(airingSchedule.episodeNumber));
+
+    // Same derived state as every other schedule read. Returning the raw table
+    // here would make this one endpoint report the provider's stored label,
+    // which is the bug the derived state exists to remove.
+    const readAt = this.now();
+    return rows.map((row) => ({
+      ...row,
+      airingState: airingStateAt(row.airingAt, readAt),
+      providerStatus: row.status,
+      secondsUntil: secondsUntil(row.airingAt, readAt),
+    }));
   }
 
   /**

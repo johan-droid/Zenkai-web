@@ -1,9 +1,13 @@
 /**
  * Schedule routes (P3).
  *
- * Day and week views read from the synced schedule table rather than asking a
- * provider on each request: the sync job keeps it current, so these endpoints
- * are cheap and cannot burn upstream rate limit on a page refresh.
+ * Every route here reads from the synced `airing_schedule` table rather than
+ * asking a provider. The sync job owns freshness; these endpoints own
+ * presentation. That split is what makes a week view cheap, and what keeps a
+ * provider outage from taking the schedule down.
+ *
+ * No route contains a timezone calculation, an airing-state decision, or a
+ * provider call. Those belong to the service.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -24,8 +28,18 @@ const windowQuery = z.object({
   to: z.coerce.date().optional(),
 });
 
+/** Bounded pagination. Rejected, not clamped, so a client bug stays visible. */
+const paged = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).max(10_000).default(0),
+});
+
+const recentQuery = paged.extend({
+  withinDays: z.coerce.number().int().min(1).max(90).default(14),
+});
+
 export function registerScheduleRoutes(app: FastifyInstance, service: ScheduleService): void {
-  /** Everything in the default window. */
+  /** Everything airing within an explicit window, or a sensible default. */
   app.get("/api/v1/schedule", async (request) => {
     const query = parseOrThrow(windowQuery, request.query);
     return { items: await service.list(query) };
@@ -34,27 +48,34 @@ export function registerScheduleRoutes(app: FastifyInstance, service: ScheduleSe
   /**
    * Today's releases.
    *
-   * The window is the calendar day in UTC rather than "the next 24 hours": a
-   * schedule view is read as days, and a rolling window would split one day's
-   * episodes across two pages.
+   * "Today" is a calendar day in `SCHEDULE_TIMEZONE`, and the response says
+   * which zone that was so a client never has to guess. A rolling 24 hour window
+   * would split one broadcast day across two pages.
    */
-  app.get("/api/v1/schedule/today", async () => {
-    const start = new Date();
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(start.getTime() + 86_400_000);
+  app.get("/api/v1/schedule/today", async () => service.today());
 
-    return { date: start.toISOString().slice(0, 10), items: await service.list({ from: start, to: end }) };
+  /** The current calendar week, Monday to Sunday, in the configured zone. */
+  app.get("/api/v1/schedule/week", async () => service.week());
+
+  /**
+   * Upcoming episodes, soonest first.
+   *
+   * Strictly future, so a slot disappears as soon as it has aired rather than
+   * lingering as a countdown that never resolves.
+   */
+  app.get("/api/v1/schedule/upcoming", async (request) => {
+    const query = parseOrThrow(paged, request.query);
+    return { items: await service.upcoming(query) };
   });
 
-  /** Seven days grouped by date. */
-  app.get("/api/v1/schedule/week", async (request) => {
-    const query = parseOrThrow(windowQuery, request.query);
-
-    const from = query.from ?? new Date();
-    from.setUTCHours(0, 0, 0, 0);
-    const to = query.to ?? new Date(from.getTime() + 7 * 86_400_000);
-
-    return { days: await service.grouped({ from, to }) };
+  /**
+   * Recently aired episodes, most recent first.
+   *
+   * Derived from stored airing timestamps, not from when the row was written.
+   */
+  app.get("/api/v1/schedule/recent", async (request) => {
+    const query = parseOrThrow(recentQuery, request.query);
+    return { items: await service.recent(query) };
   });
 
   /** Schedule for one title. */
@@ -63,7 +84,14 @@ export function registerScheduleRoutes(app: FastifyInstance, service: ScheduleSe
     return { items: await service.forAnime(id) };
   });
 
-  /** Force a sync for one title; used by the background job and for debugging. */
+  /**
+   * Force a sync for one title.
+   *
+   * The only route in this module that talks to a provider, and it is a write
+   * rather than a read. A provider failure here surfaces as an error: reporting
+   * an empty schedule after a failed sync would be indistinguishable from a
+   * show with nothing scheduled.
+   */
   app.post("/api/v1/schedule/sync/:id", async (request) => {
     const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
     return { anilistId: id, written: await service.syncAnime(id) };

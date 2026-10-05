@@ -182,12 +182,34 @@ export function toCard(summary: AnimeSummary, localId: string | null = null): Di
   };
 }
 
+/**
+ * The subset of the schedule the home page needs.
+ *
+ * Declared here rather than imported from the schedule module so discovery does
+ * not depend on it. The two features are peers that meet at the composition
+ * root, which is what keeps "home" from becoming the place where every domain
+ * has to be wired.
+ */
+export interface UpcomingSource {
+  upcoming(options: { limit: number }): Promise<UpcomingItem[]>;
+}
+
+export interface UpcomingItem {
+  anilistId: number | null;
+  title: string;
+  coverUrl: string | null;
+  episodeNumber: number;
+  airingAt: string | Date;
+}
+
 export class DiscoveryService {
   constructor(
     private readonly repo: AnimeRepository,
     private readonly provider: AnimeMetadataProvider,
     /** Injected so the default-season rule is testable without a fake timer. */
     private readonly now: () => Date = () => new Date(),
+    /** Optional: home degrades that shelf when the schedule is not wired. */
+    private readonly upcomingSource?: UpcomingSource,
   ) {}
 
   /**
@@ -358,15 +380,64 @@ export class DiscoveryService {
       }
     };
 
-    const [trending, popular, seasonal, recent, topRated] = await Promise.all([
+    // Upcoming is a different shape to a discovery card, so it gets its own
+    // section type rather than being forced through DiscoveryCard.
+    const upcoming = async (): Promise<HomeSection> => {
+      if (!this.upcomingSource) {
+        return { status: "unavailable", items: [], reason: "not_configured" };
+      }
+      try {
+        const rows = await this.upcomingSource.upcoming({ limit: size });
+        return {
+          status: "ok",
+          items: rows.map((row) => ({
+            id: null,
+            anilistId: row.anilistId != null ? String(row.anilistId) : "",
+            title: row.title,
+            titles: { romaji: null, english: null, native: null, synonyms: [] },
+            coverUrl: row.coverUrl,
+            coverImageLarge: null,
+            bannerUrl: null,
+            format: null,
+            status: null,
+            season: null,
+            seasonYear: null,
+            year: null,
+            averageScore: null,
+            totalEpisodes: null,
+            popularity: null,
+            genres: [],
+            isAdult: false,
+            // Carried through so a client can show "in 3 days" without a
+            // second request, and so the shelf is not ambiguous about which
+            // episode it is listing.
+            episodeNumber: row.episodeNumber,
+            airingAt: new Date(row.airingAt).toISOString(),
+          })) as unknown as DiscoveryCard[],
+        };
+      } catch (error) {
+        const reason = error instanceof AppError ? error.reason : "internal";
+        return { status: "unavailable", items: [], reason };
+      }
+    };
+
+    const [trending, popular, seasonal, recent, topRated, upcomingShelf] = await Promise.all([
       section(() => this.ranking("trending", { perPage: size })),
       section(() => this.ranking("popular", { perPage: size })),
       section(() => this.ranking("seasonal", { perPage: size })),
       section(() => this.recent({ perPage: size })),
       section(() => this.ranking("topRated", { perPage: size })),
+      upcoming(),
     ]);
 
-    return { trending, popular, seasonal, recent, topRated };
+    return {
+      trending,
+      popular,
+      seasonal,
+      recent,
+      topRated,
+      upcoming: upcomingShelf,
+    };
   }
 }
 
@@ -384,4 +455,5 @@ export interface HomePayload {
   seasonal: HomeSection;
   recent: HomeSection;
   topRated: HomeSection;
+  upcoming: HomeSection;
 }

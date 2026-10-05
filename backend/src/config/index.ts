@@ -23,6 +23,22 @@ const booleanish = z
     typeof value === "boolean" ? value : ["1", "true", "yes", "on"].includes(value.toLowerCase()),
   );
 
+/**
+ * Whether a string is a timezone this runtime actually knows.
+ *
+ * Checked with Intl rather than a list, so it accepts whatever the host's ICU
+ * data supports and rejects a typo immediately at boot instead of throwing on
+ * the first schedule request.
+ */
+function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().default("0.0.0.0"),
@@ -72,6 +88,22 @@ const schema = z.object({
 
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
+
+  /**
+   * Timezone whose calendar days define "today" and "this week" in the schedule.
+   *
+   * Airing timestamps are always stored in UTC and are never affected by this.
+   * It only decides where the day boundary falls, so a viewer in Tokyo sees the
+   * JST day rather than a window that cuts their evening shows in half.
+   *
+   * Defaults to UTC, which is what the service did before this was configurable.
+   * Any IANA zone name is accepted (`Asia/Tokyo`, `America/New_York`); it is
+   * validated at boot rather than at request time so a typo fails loudly
+   * immediately instead of once a day view is requested.
+   */
+  SCHEDULE_TIMEZONE: z.string().refine(isValidTimeZone, {
+    message: "must be an IANA timezone name, e.g. UTC or Asia/Tokyo",
+  }).default("UTC"),
 
   /** How long discovery payloads stay warm in Redis before a refetch. */
   CACHE_TTL_DISCOVERY_S: z.coerce.number().int().min(1).default(1800),

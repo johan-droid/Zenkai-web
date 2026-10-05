@@ -119,11 +119,25 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   const animeService = new AnimeService(animeRepo);
   // Discovery owns the metadata provider and the cache, so routes never reach
   // for a provider directly and provider swaps stay confined to this file.
-  const discoveryService = new DiscoveryService(animeRepo, new AnilistProvider());
-  const mangaRepo = new MangaRepository(deps.db);
-  const mangaService = new MangaService(mangaRepo);
+  // Schedule first, because home takes the upcoming shelf from it. The two
+  // modules are peers: home depends on a narrow interface here rather than
+  // discovery importing the schedule module.
   const scheduleService = new ScheduleService(deps.db, animeRepo);
 
+  const discoveryService = new DiscoveryService(animeRepo, new AnilistProvider(), undefined, {
+    async upcoming({ limit }) {
+      const rows = await scheduleService.upcoming({ limit });
+      return rows.map((row) => ({
+        anilistId: row.anilistId as number | null,
+        title: String(row.title),
+        coverUrl: (row.coverUrl as string | null) ?? null,
+        episodeNumber: Number(row.episodeNumber),
+        airingAt: row.airingAt as Date,
+      }));
+    },
+  });
+  const mangaRepo = new MangaRepository(deps.db);
+  const mangaService = new MangaService(mangaRepo);
   const providers =
     deps.providers ??
     (config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders());
