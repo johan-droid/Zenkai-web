@@ -20,7 +20,7 @@ import {
   type MediaFormat,
   type MediaStatus,
 } from "../../domain/media.js";
-import type { AnimeDetail, AnimeSummary } from "./types.js";
+import type { AiringSlot, AnimeDetail, AnimeSummary } from "./types.js";
 
 interface JikanAnime {
   mal_id: number;
@@ -47,6 +47,11 @@ interface JikanAnime {
     entry: Array<{ mal_id: number; name: string; type: string }>;
   }>;
   images?: { jpg?: { large_image_url?: string; image_url?: string } };
+  broadcast?: {
+    day?: string;
+    time?: string;
+    timezone?: string;
+  };
 }
 
 /** Jikan reports status in prose; map it onto the canonical enum. */
@@ -124,6 +129,52 @@ export class JikanProvider {
       `${this.#endpoint}/anime/${encodeURIComponent(String(malId))}`,
     );
     return Boolean(response?.data);
+  }
+
+  /**
+   * Airing slots from Jikan, used as a fallback when AniList has no data.
+   *
+   * Jikan reports `airing: true/false` and a `broadcast` object with the day and
+   * time, but no episode number. The slot returned here is a best-effort
+   * projection: episode 1 at the next broadcast time. The schedule service
+   * extrapolates from there.
+   */
+  async getAiringSlots(malId: string | number): Promise<AiringSlot[]> {
+    const response = await fetchJson<{ data: JikanAnime }>(
+      `${this.#endpoint}/anime/${encodeURIComponent(String(malId))}`,
+    );
+
+    const entry = response?.data;
+    if (!entry?.airing) return [];
+
+    const broadcast = entry.broadcast as
+      | { day?: string; time?: string; timezone?: string }
+      | undefined;
+    if (!broadcast?.day || !broadcast?.time) return [];
+
+    const dayMap: Record<string, number> = {
+      monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 0,
+    };
+    const targetDay = dayMap[broadcast.day.toLowerCase()] ?? 0;
+    const [hours, minutes] = broadcast.time.split(":").map(Number);
+
+    const now = new Date();
+    const next = new Date(now);
+    next.setUTCHours(hours, minutes, 0, 0);
+
+    const currentDay = now.getUTCDay();
+    let delta = targetDay - currentDay;
+    if (delta < 0) delta += 7;
+    if (delta === 0 && next.getTime() <= now.getTime()) delta = 7;
+    next.setUTCDate(next.getUTCDate() + delta);
+
+    return [
+      {
+        episodeNumber: 1,
+        airingAt: Math.floor(next.getTime() / 1000),
+        status: "NOT_YET_AIRRED",
+      },
+    ];
   }
 
   #toSummary(entry: JikanAnime): AnimeSummary {
