@@ -12,6 +12,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { AppError } from "../../http/errors.js";
 import type { AnimeService } from "./service.js";
 
 const positiveInt = z.coerce.number().int().positive();
@@ -124,6 +125,14 @@ export function registerAnimeRoutes(app: FastifyInstance, service: AnimeService)
   app.get("/api/v1/anime/:id/episodes", async (request) => {
     const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
     return { items: await service.getEpisodes(id) };
+  });
+
+  /** Single episode by local id (P4). */
+  app.get("/api/v1/episodes/:id", async (request) => {
+    const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
+    const episode = await service.getEpisode(id);
+    if (!episode) throw AppError.notFound(`episode ${id} not found`);
+    return episode;
   });
 
   /**

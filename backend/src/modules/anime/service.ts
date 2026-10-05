@@ -197,4 +197,9 @@ export class AnimeService {
     await this.repo.upsertEpisodes(localId, seeded);
     return this.repo.listEpisodes(localId);
   }
+
+  /** Single episode by local id. */
+  async getEpisode(episodeId: string): Promise<Record<string, any> | null> {
+    return this.repo.getEpisode(episodeId);
+  }
 }
