@@ -23,8 +23,15 @@ If port 3000 is busy, pick another: `npm start -- -p 3001`.
 
 ### Data sources
 
-Metadata comes from **AniList** (GraphQL) — no API key needed. Chapters and page
-images come from **MangaDex** (REST + the MangaDex@Home image network).
+**The frontend currently talks to AniList and MangaDex directly from the
+browser.** `src/lib/api/anilist.ts` and `src/lib/api/mangadex.ts` hold the
+provider endpoints and their response schemas, and `src/lib/sources/registry.ts`
+plus `resolver.ts` re-implement the backend's source resolution. No file under
+`frontend/src` references the Zenkai API, so the backend's canonical model is not
+what the UI renders today.
+
+The backend is the intended single gateway. Migrating the client is tracked in
+`backend/TODO-frontend-migration.md`.
 
 AniList and MangaDex use unrelated id spaces, so the reader resolves an AniList
 title to a MangaDex edition by title match before opening a chapter. That match
@@ -34,8 +41,9 @@ is a heuristic and can pick the wrong edition for ambiguous titles.
 
 The bundled source registry points at public demo HLS streams (Big Buck Bunny
 and similar test assets) so the player can be exercised without a licensed
-provider. They are not real episodes. Register a licensed or self-hosted
-provider in `frontend/src/lib/sources/registry.ts` to play real content.
+provider. They are not real episodes. The backend resolves real sources through
+`GET /api/v1/episodes/:id/sources`; register a licensed or self-hosted provider
+in `backend/src/providers/streaming/registry.ts`.
 
 ### Local data
 

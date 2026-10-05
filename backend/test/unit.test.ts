@@ -258,8 +258,22 @@ describe("normalisation", () => {
 
     assert.equal(mapped.canonicalTitle, "One Piece");
     assert.equal(mapped.description, "pirates");
+    // An explicit `episodes: null` means "AniList has no count yet", which is
+    // distinct from a field the response never mentioned. Neither is a count of
+    // zero, and the distinction matters: `null` clears a stored value, while
+    // `undefined` preserves it.
     assert.equal(mapped.totalEpisodes, null);
     assert.equal(mapped.year, 1999);
     assert.equal(mapped.externalIds.mal, "21");
+  });
+
+  it("distinguishes an omitted episode count from an explicitly empty one", () => {
+    // Guarding the merge contract at its source: a sparse response must not be
+    // able to erase a known episode count on re-sync.
+    const omitted = toSummary({ id: 21, title: { romaji: "One Piece" } });
+    assert.equal(omitted.totalEpisodes, undefined, "an absent field must not clear a value");
+
+    const explicit = toSummary({ id: 21, episodes: null, title: { romaji: "One Piece" } });
+    assert.equal(explicit.totalEpisodes, null, "an explicit null is a real answer");
   });
 });

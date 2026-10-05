@@ -41,7 +41,13 @@ export interface AnimeSummary {
   coverImageLarge?: string | null;
   bannerUrl?: string | null;
   format?: MediaFormat | null;
-  status: MediaStatus;
+  /**
+   * Airing status. Optional because a partial provider response may omit it, and
+   * absence must stay distinguishable from a real value: `undefined` keeps the
+   * stored status, whereas defaulting it would overwrite a known RELEASING or
+   * FINISHED with a fabricated UNKNOWN.
+   */
+  status?: MediaStatus;
   isAdult: boolean;
   year?: number | null;
   season?: string | null;
@@ -52,8 +58,13 @@ export interface AnimeSummary {
   favourites?: number | null;
   totalEpisodes?: number | null;
   durationMinutes?: number | null;
-  genres: string[];
-  studios: string[];
+  /**
+   * Genres, normalised. `undefined` means the provider did not report the field
+   * and the stored set must be kept; `[]` means the title genuinely has none and
+   * the stored set should be cleared. The same distinction applies to studios.
+   */
+  genres?: string[];
+  studios?: string[];
   externalIds: AnimeExternalIdSet;
   /** Upstream update marker, so sync can skip unchanged rows. */
   sourceUpdatedAt?: number | null;

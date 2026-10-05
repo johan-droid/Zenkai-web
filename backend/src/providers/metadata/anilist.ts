@@ -108,9 +108,9 @@ function toEpochSeconds(iso: string | undefined | null): number | null {
 /** Map one AniList media node onto the canonical summary. */
 export function toSummary(node: Record<string, any>): AnimeSummary {
   const titles = {
-    romaji: node.title?.romaji ?? null,
-    english: node.title?.english ?? null,
-    native: node.title?.native ?? null,
+    romaji: textOrUndefined(node.title?.romaji),
+    english: textOrUndefined(node.title?.english),
+    native: textOrUndefined(node.title?.native),
     synonyms: Array.isArray(node.synonyms) ? node.synonyms.filter(Boolean) : [],
   };
 
@@ -122,28 +122,97 @@ export function toSummary(node: Record<string, any>): AnimeSummary {
     anilistId: String(node.id),
     titles,
     canonicalTitle: displayTitle(titles, "Untitled"),
-    description: stripHtml(node.description),
-    coverUrl: imageUrl(node.coverImage?.medium, 300, 450),
-    coverImageLarge: imageUrl(node.coverImage?.extraLarge ?? node.coverImage?.large, 800),
-    bannerUrl: imageUrl(node.bannerImage, 1000),
-    format: (node.format as MediaFormat) ?? null,
-    status: (node.status as MediaStatus) ?? "UNKNOWN",
+    // Distinguish "the provider reported no description" from "the provider did
+    // not mention description at all". JSON renders both as null, so key
+    // presence is the only available signal: a present-but-null description is a
+    // deliberate empty and should clear the stored text, while an absent key must
+    // leave it alone.
+    description: present(node, "description")
+      ? stripHtml(node.description)
+      : undefined,
+    coverUrl: imageUrlOrUndefined(node.coverImage?.medium, 300, 450),
+    coverImageLarge: imageUrlOrUndefined(
+      node.coverImage?.extraLarge ?? node.coverImage?.large,
+      800,
+    ),
+    bannerUrl: imageUrlOrUndefined(node.bannerImage, 1000),
+    format: textOrUndefined(node.format) as MediaFormat | null | undefined,
+    // `status` is NOT defaulted to "UNKNOWN" when absent. A missing status means
+    // "the provider did not say", and defaulting it would overwrite a known
+    // RELEASING/FINISHED value with a fabricated UNKNOWN on any partial response.
+    // The column default still protects a brand-new insert.
+    status: (textOrUndefined(node.status) as MediaStatus | null | undefined) ?? undefined,
     isAdult: Boolean(node.isAdult),
     year: node.startDate?.year ?? node.seasonYear ?? null,
     season: node.season ?? null,
     seasonYear: node.seasonYear ?? null,
-    averageScore: node.averageScore ?? null,
-    popularity: node.popularity ?? null,
-    favourites: node.favourites ?? null,
-    totalEpisodes: node.episodes ?? null,
-    durationMinutes: node.duration ?? null,
-    genres: Array.isArray(node.genres) ? node.genres : [],
-    studios: (node.studios?.nodes ?? [])
-      .map((studio: Record<string, any>) => studio?.name)
-      .filter((name: string | undefined): name is string => typeof name === "string" && name.length > 0),
+    // `present` matters here: an explicit `episodes: null` means "AniList has no
+    // count yet" and should clear a stored value, while an absent key means the
+    // response did not mention it and must preserve what we hold. Treating both
+    // as absent would make a sparse response silently erase a good episode count.
+    averageScore: numberOrAbsent(present(node, "averageScore") ? node.averageScore : undefined),
+    popularity: numberOrAbsent(present(node, "popularity") ? node.popularity : undefined),
+    favourites: numberOrAbsent(present(node, "favourites") ? node.favourites : undefined),
+    totalEpisodes: numberOrAbsent(present(node, "episodes") ? node.episodes : undefined),
+    durationMinutes: numberOrAbsent(present(node, "duration") ? node.duration : undefined),
+    genres: Array.isArray(node.genres) ? node.genres : undefined,
+    studios: Array.isArray(node.studios?.nodes)
+      ? node.studios.nodes
+          .map((studio: Record<string, any>) => studio?.name)
+          .filter(
+            (name: unknown): name is string => typeof name === "string" && name.length > 0,
+          )
+      : undefined,
     externalIds,
     sourceUpdatedAt: toEpochSeconds(node.updatedAt),
   };
+}
+
+/**
+ * Whether the provider mentioned a field at all.
+ *
+ * Needed because JSON collapses "field absent" and "field present but null" into
+ * superficially similar values once accessed with `?.`, yet the two carry
+ * opposite meaning for a merge: one means "keep what you have", the other means
+ * "this is genuinely empty".
+ */
+function present(node: Record<string, any>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(node, key) && node[key] !== undefined;
+}
+
+/**
+ * Text field that distinguishes "absent" from "empty".
+ *
+ * A title the provider did not send is `undefined`, so a partial response cannot
+ * blank out a title we already hold. An explicitly blank string is not useful
+ * data and is also treated as absent rather than stored as an empty string.
+ */
+function textOrUndefined(value: unknown): string | null | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+/** As above, for image URLs: absent stays absent. */
+function imageUrlOrUndefined(
+  url: string | undefined,
+  width: number,
+  height?: number,
+): string | null | undefined {
+  if (url == null) return undefined;
+  return imageUrl(url, width, height);
+}
+
+/**
+ * Numeric field that distinguishes "absent" from "empty".
+ *
+ * `undefined` in means "the provider did not mention this", and passes through so
+ * the merge keeps what is stored. `null` in means "the provider says this is
+ * empty" and passes through so the merge clears it. Anything present but not a
+ * finite number is treated as absent, because storing `NaN` or a string in a
+ * numeric column is never the right answer.
+ */
+function numberOrAbsent(value: number | null | undefined): number | null | undefined {
+  if (value === null || value === undefined) return value;
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function toRelation(edge: Record<string, any>): AnimeRelation | null {

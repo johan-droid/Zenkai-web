@@ -45,10 +45,139 @@ export function slugify(title: string, anilistId: string): string {
   return `${base || "anime"}-${anilistId}`;
 }
 
+/**
+ * Build the update half of the upsert, keeping stored values for anything the
+ * provider omitted.
+ *
+ * `undefined` means "the provider did not tell us" and leaves the column alone;
+ * `null` means "the provider says this is empty" and clears it. AniList genuinely
+ * distinguishes the two: it omits `bannerImage` for entries without artwork while
+ * sending an explicit null for an entry whose description is empty, so collapsing
+ * both to null loses real information.
+ *
+ * `isAdult` is the exception that proves the rule: it is a non-null boolean and
+ * `false` is a meaningful value, so it is only skipped when genuinely undefined.
+ */
+function merged(summary: AnimeSummary): Partial<typeof anime.$inferInsert> {
+  // Each value below is passed through untouched. `keep` drops anything that is
+  // `undefined` ("the provider said nothing") while letting an explicit `null`
+  // through ("the provider says this field is empty"). Coercing with `?? null`
+  // before the filter would erase that distinction and defeat the whole merge.
+  return keep(
+    {
+      canonicalTitle: summary.canonicalTitle,
+      synonyms: summary.titles.synonyms,
+      status: summary.status,
+      sourceUpdatedAt: summary.sourceUpdatedAt,
+      updatedAt: new Date(),
+
+      romajiTitle: summary.titles.romaji,
+      englishTitle: summary.titles.english,
+      nativeTitle: summary.titles.native,
+      description: summary.description,
+      coverUrl: summary.coverUrl,
+      coverImageLarge: summary.coverImageLarge,
+      bannerUrl: summary.bannerUrl,
+      format: summary.format,
+      year: summary.year,
+      season: summary.season,
+      seasonYear: summary.seasonYear,
+      // `averageScore` is numeric in the domain but numeric(4,2) in Postgres, so
+      // it crosses the seam as a string. Only stringify a real number.
+      averageScore:
+        typeof summary.averageScore === "number" ? String(summary.averageScore) : undefined,
+      popularity: summary.popularity,
+      favourites: summary.favourites,
+      totalEpisodes: summary.totalEpisodes,
+      durationMinutes: summary.durationMinutes,
+      // `false` is meaningful here, so this is written whenever it is a boolean.
+      isAdult: typeof summary.isAdult === "boolean" ? summary.isAdult : undefined,
+    },
+    [
+      "canonicalTitle",
+      "synonyms",
+      "status",
+      "sourceUpdatedAt",
+      "updatedAt",
+      "romajiTitle",
+      "englishTitle",
+      "nativeTitle",
+      "description",
+      "coverUrl",
+      "coverImageLarge",
+      "bannerUrl",
+      "format",
+      "year",
+      "season",
+      "seasonYear",
+      "averageScore",
+      "popularity",
+      "favourites",
+      "totalEpisodes",
+      "durationMinutes",
+      "isAdult",
+    ],
+  );
+}
+
+/** Drop every key whose value is `undefined`, leaving explicit nulls in place. */
+function keep<T extends Record<string, unknown>>(values: T, keys: string[]): Partial<T> {
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (values[key] !== undefined) out[key] = values[key];
+  }
+  return out as Partial<T>;
+}
+
+/**
+ * De-duplicate a tag list case-insensitively, keeping the first spelling seen.
+ *
+ * The `anime_genres` primary key is (animeId, genre), which is case-sensitive, so
+ * a payload containing both "Action" and "action" would otherwise insert two rows
+ * for one tag. Collapsing them here keeps the identity a reader expects without
+ * inventing a global genre taxonomy, which is a larger product decision than P1
+ * should make.
+ */
+export function dedupePreservingSpelling(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) continue;
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    out.push(trimmed);
+  }
+
+  return out;
+}
+
 export class AnimeRepository {
   constructor(private readonly db: Db) {}
 
-  /** Insert or update one record and everything hanging off it. */
+  /**
+   * Insert or update one record and everything hanging off it.
+   *
+   * Merge semantics: a field the provider omitted keeps its stored value, and is
+   * only overwritten when the provider actually sends a value.
+   *
+   * The naive alternative -- assigning every canonical field from the incoming
+   * summary -- silently destroys the catalogue whenever a response is partial.
+   * That is not hypothetical: AniList omits `description`, `bannerImage` and
+   * `episodes` depending on the entry, and a degraded or schema-drifted response
+   * omits far more. Because `search` and `discovery` upsert every provider result
+   * they return, a single thin response would blank out descriptions, artwork and
+   * episode counts across the whole catalogue, and a later reader could never
+   * tell the difference from a genuinely empty catalogue.
+   *
+   * "Omitted" and "explicitly cleared" are therefore distinguished by `null` vs
+   * `undefined`. The adapter maps an absent field to `undefined`; only a provider
+   * that deliberately reports an empty value sends `null`.
+   */
   async upsert(summary: AnimeSummary): Promise<string> {
     const anilistId = Number(summary.anilistId);
 
@@ -85,30 +214,7 @@ export class AnimeRepository {
         // `anilist_id` carries a unique constraint, which is what makes this
         // an idempotent upsert rather than an accumulating one.
         target: anime.anilistId,
-        set: {
-          canonicalTitle: summary.canonicalTitle,
-          synonyms: summary.titles.synonyms,
-          romajiTitle: summary.titles.romaji,
-          englishTitle: summary.titles.english,
-          nativeTitle: summary.titles.native,
-          description: summary.description,
-          coverUrl: summary.coverUrl,
-          coverImageLarge: summary.coverImageLarge,
-          bannerUrl: summary.bannerUrl,
-          format: summary.format,
-          status: summary.status,
-          year: summary.year,
-          season: summary.season,
-          seasonYear: summary.seasonYear,
-          averageScore:
-            summary.averageScore != null ? String(summary.averageScore) : null,
-          popularity: summary.popularity,
-          favourites: summary.favourites,
-          totalEpisodes: summary.totalEpisodes,
-          durationMinutes: summary.durationMinutes,
-          sourceUpdatedAt: summary.sourceUpdatedAt,
-          updatedAt: new Date(),
-        },
+        set: merged(summary),
       })
       .returning({ id: anime.id });
 
@@ -132,18 +238,32 @@ export class AnimeRepository {
    *
    * Appending would let genre filters drift as upstream renames a tag, and
    * there is no history worth keeping for a set this small.
+   *
+   * `undefined` (the provider did not report genres) keeps whatever is stored;
+   * `[]` is a genuine "no genres" and clears them. Deleting on `undefined` would
+   * mean one partial response silently un-tags every title it touches.
    */
-  async #replaceGenres(animeId: string, genres: string[]): Promise<void> {
+  async #replaceGenres(animeId: string, genres: string[] | undefined): Promise<void> {
+    if (genres === undefined) return;
+
     await this.db.delete(animeGenres).where(eq(animeGenres.animeId, animeId));
     if (genres.length === 0) return;
 
+    // De-duplicated case-insensitively but stored in the provider's spelling, so
+    // "Action" and "action" from one payload cannot become two rows. Cross-title
+    // canonicalisation is a separate concern and is not applied here.
+    const unique = dedupePreservingSpelling(genres);
+
     await this.db
       .insert(animeGenres)
-      .values(genres.map((genre) => ({ animeId, genre })))
+      .values(unique.map((genre) => ({ animeId, genre })))
       .onConflictDoNothing();
   }
 
-  async #replaceStudios(animeId: string, studios: string[]): Promise<void> {
+  /** Studios follow the same omitted-versus-empty rule as genres. */
+  async #replaceStudios(animeId: string, studios: string[] | undefined): Promise<void> {
+    if (studios === undefined) return;
+
     await this.db.delete(animeStudios).where(eq(animeStudios.animeId, animeId));
     if (studios.length === 0) return;
 
