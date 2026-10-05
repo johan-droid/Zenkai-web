@@ -125,6 +125,10 @@ export function buildProvidersWithDemos(): StreamingProvider[] {
  * Filters on declared capability and skips quarantined providers. Skipping here
  * rather than after the call is what keeps a dead provider off the critical path
  * of every play request.
+ *
+ * Sorting is by health score first, then base priority. A provider that is
+ * degraded but not yet quarantined is deprioritized below a healthy one with
+ * the same base priority, so the resolver tries the most reliable provider first.
  */
 export function eligibleProviders(
   providers: StreamingProvider[],
@@ -132,11 +136,17 @@ export function eligibleProviders(
 ): StreamingProvider[] {
   return providers
     .filter((provider) => {
+      if (!provider.enabled) return false;
       if (healthRegistry.isQuarantined(provider.slug, provider.slug)) return false;
       if (requirements.needsMalId && !provider.capabilities.requiresMalId) return false;
       return provider.capabilities.languages.includes(requirements.language);
     })
-    .sort((a, b) => a.basePriority - b.basePriority);
+    .sort((a, b) => {
+      const healthA = healthRegistry.get(a.slug, a.slug).score;
+      const healthB = healthRegistry.get(b.slug, b.slug).score;
+      if (healthA !== healthB) return healthB - healthA;
+      return a.basePriority - b.basePriority;
+    });
 }
 
 /** Providers that expose subtitles, used by the P10 enrichment path. */
