@@ -144,7 +144,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     deps.providers ??
     (config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders());
 
-  const resolver = new PlaybackResolver(providers);
+  const resolver = new PlaybackResolver(providers, animeRepo);
   const metadata = new PlaybackMetadataService(deps.db, providers);
 
   /**

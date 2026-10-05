@@ -56,32 +56,22 @@ export function registerPlaybackRoutes(
       request.query,
     );
 
-    const episode = (await animeRepo.getEpisode(episodeId)) as Record<string, any> | null;
-    if (!episode) throw AppError.notFound(`episode ${episodeId} not found`);
+    // The route does not know how an episode maps onto a provider id. That is
+    // the service's job: this layer validates the episode, asks for sources and
+    // shapes the response. The moment a route starts assembling provider
+    // vocabulary, the fallback and skip logic becomes untestable and any new
+    // provider needs a route change.
+    const resolved = await resolver.resolveEpisode(episodeId, { language: query.language });
+    if (!resolved) throw AppError.notFound(`episode ${episodeId} not found`);
 
-    // `animeId` on the episode is a local uuid, and `getByAnilistId` expects a
-    // provider id, so the parent is fetched by its own primary key.
-    const [title] = (await animeRepo.listParentTitles([episode.animeId])) as Array<
-      Record<string, any>
-    >;
-
-    if (!title?.anilistId) {
-      throw AppError.notFound(`episode ${episodeId} has no resolvable title`);
-    }
-
-    const result = await resolver.resolve({
-      animeId: String(title.id),
-      anilistId: String(title.anilistId),
-      malId: title.externalIds?.mal,
-      episodeNumber: Number(episode.episodeNumber),
-      language: query.language,
-    });
+    const { result, episode } = resolved;
 
     if (result.sources.length === 0) {
       // Every provider errored: 503, because this may well be playable.
       if (result.emptyReason === "all_failed") {
         throw AppError.noSources("every playback provider failed", {
           attempts: result.attempts,
+          skipped: result.skipped ?? [],
         });
       }
 
@@ -91,6 +81,11 @@ export function registerPlaybackRoutes(
         sources: [],
         sourceCount: 0,
         emptyReason: result.emptyReason,
+        attempts: result.attempts,
+        // Which providers were never asked, and why. Without this a client sees
+        // an empty list and cannot tell "nothing is hosted" from "we hold no id
+        // that lets us ask anybody".
+        skipped: result.skipped ?? [],
       };
     }
 
@@ -99,6 +94,9 @@ export function registerPlaybackRoutes(
       sources: result.sources,
       sourceCount: result.sources.length,
       attempts: result.attempts,
+      // Providers excluded before any call, with the reason. Exposed so a client
+      // can explain an empty shelf rather than guessing at it.
+      skipped: result.skipped ?? [],
       resolutionTimeMs: result.resolutionTimeMs,
     };
   });

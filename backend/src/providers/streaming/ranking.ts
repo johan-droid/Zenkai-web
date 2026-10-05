@@ -120,16 +120,8 @@ export function filterByLanguage(
   );
 }
 
-/** De-duplicate by playback URL, keeping the better-ranked copy. */
-export function dedupeSources(sources: RankedSource[]): RankedSource[] {
-  const seen = new Set<string>();
-  const output: RankedSource[] = [];
-
-  for (const source of sources) {
-    if (seen.has(source.playbackUrl)) continue;
-    seen.add(source.playbackUrl);
-    output.push(source);
-  }
-
-  return output;
-}
+// Re-exported so existing importers of the ranking module keep working. The
+// implementation moved to `dedupe.ts` because de-duplication is a distinct
+// concern from scoring, and grouping it with ranking made it look like a
+// scoring concern.
+export { dedupeSources, sourceIdentity } from "./dedupe.js";

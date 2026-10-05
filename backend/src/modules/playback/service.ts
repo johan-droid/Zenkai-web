@@ -19,12 +19,14 @@ import { probeUrl } from "../../http/client.js";
 import { AppError, errorMessage } from "../../http/errors.js";
 import { healthRegistry } from "../../providers/streaming/health.js";
 import { playbackGateway } from "../../providers/streaming/gateway.js";
+import { dedupeSources } from "../../providers/streaming/dedupe.js";
+import { filterByLanguage, rankSources } from "../../providers/streaming/ranking.js";
 import {
-  dedupeSources,
-  filterByLanguage,
-  rankSources,
-} from "../../providers/streaming/ranking.js";
-import { eligibleProviders } from "../../providers/streaming/registry.js";
+  partitionProviders,
+  resolveEpisodeIdentity,
+  type EpisodeIdentity,
+} from "./identity.js";
+import type { AnimeRepository } from "../anime/repository.js";
 import type {
   AudioTrack,
   PlaybackSource,
@@ -44,6 +46,15 @@ export interface ResolveResult {
    * episode may well be playable but nobody reachable could say so.
    */
   emptyReason?: "no_streams" | "all_failed" | "quarantined";
+  /**
+   * Providers that were never asked, and why (P5).
+   *
+   * Separate from `attempts`, which records providers that *were* asked. A
+   * provider we hold no id for, or one that is quarantined, has not had a chance
+   * to tell us anything, and reporting it as an attempt with a zero count would
+   * read as "that provider had nothing".
+   */
+  skipped?: Array<{ providerSlug: string; reason: string; detail?: string }>;
 }
 
 /** Stream URLs are signed and short-lived, bounding how long one is reused. */
@@ -91,11 +102,55 @@ function withDeadline<T>(work: Promise<T>, deadlineMs: number, label: string): P
 }
 
 export class PlaybackResolver {
-  constructor(private readonly providers: StreamingProvider[]) {}
+  constructor(
+    private readonly providers: StreamingProvider[],
+    private readonly animeRepo: AnimeRepository,
+  ) {}
 
-/** Resolve sources for one episode, served from cache when warm. */
+  /**
+   * Resolve sources for a canonical episode (P5).
+   *
+   * The whole flow in one place: load the episode, work out which providers we
+   * hold the identity to ask, ask them, and report what happened. The HTTP layer
+   * passes a canonical episode id and a language and receives canonical results.
+   *
+   * Returns null only when the episode does not exist. "No sources" is a
+   * successful answer about a real episode, not a missing one.
+   */
+  async resolveEpisode(
+    episodeId: string,
+    options: { language?: AudioTrack } = {},
+  ): Promise<{ result: ResolveResult; episode: Record<string, any> } | null> {
+    const resolved = await resolveEpisodeIdentity(this.animeRepo, episodeId);
+    if (!resolved) return null;
+
+    const language = options.language ?? "sub";
+    const episode = await this.animeRepo.getEpisode(episodeId);
+
+    // Every external id the title has, so a provider keyed on a space the
+    // resolver does not special-case can still be asked.
+    const [title] = await this.animeRepo.listParentTitles([resolved.animeId]);
+    const externalIds: Record<string, string | undefined> = { ...(title?.externalIds ?? {}) };
+    if (resolved.anilistId) externalIds.anilist = resolved.anilistId;
+
+    const result = await this.resolve(
+      {
+        animeId: resolved.animeId,
+        anilistId: resolved.anilistId ?? "",
+        malId: externalIds.mal,
+        episodeNumber: resolved.episodeNumber,
+        language,
+      },
+      resolved.identity.episode,
+    );
+
+    return { result, episode: episode ?? {} };
+  }
+
+  /** Resolve sources for one episode, served from cache when warm. */
   async resolve(
     request: Omit<ResolveRequest, "language"> & { language?: AudioTrack },
+    episodeIdentity: EpisodeIdentity = {},
   ): Promise<ResolveResult> {
     const language = request.language ?? "sub";
     const full: ResolveRequest = { ...request, language };
@@ -105,7 +160,7 @@ export class PlaybackResolver {
     const cached = await cache.get<ResolveResult>(key);
     if (cached) return cached;
 
-    const outcome = await this.#resolveUncached(full);
+    const outcome = await this.#resolveUncached(full, episodeIdentity);
     const result: ResolveResult = { ...outcome, resolutionTimeMs: Date.now() - started };
 
     // A failed resolution is deliberately not cached: a provider may recover in
@@ -124,18 +179,42 @@ export class PlaybackResolver {
    * Concurrency is bounded because some providers rate limit aggressively, and
    * probing twenty at once gets every one of them throttled.
    */
-  async #resolveUncached(request: ResolveRequest): Promise<ResolveResult> {
-    const candidates = eligibleProviders(this.providers, {
-      language: request.language,
-      needsMalId: false,
-    });
+  async #resolveUncached(
+    request: ResolveRequest,
+    identity: EpisodeIdentity = {},
+  ): Promise<ResolveResult> {
+    // Eligibility is decided from the ids we actually hold (P5). The previous
+    // hardcoded `needsMalId: false` meant a provider that requires a MAL id was
+    // still called with none, its adapter returned an empty list, and the
+    // resolution reported "no streams" -- a claim about a provider that was
+    // never in a position to answer.
+    const { eligible: candidates, skipped } = partitionProviders(
+      this.providers,
+      {
+        // The request already carries the external ids the route resolved.
+        anime: {
+          anilist: request.anilistId,
+          mal: request.malId,
+        },
+        episode: identity,
+      },
+      {
+        language: request.language,
+        quarantined: (slug) => healthRegistry.isQuarantined(slug),
+      },
+    );
 
     if (candidates.length === 0) {
+      // Every provider was skipped. Whether that is an outage or simply "none of
+      // them apply" changes what a client should do, so say which.
+      const anyQuarantined = skipped.some((entry) => entry.reason === "quarantined");
+
       return {
         sources: [],
         attempts: [],
         resolutionTimeMs: 0,
-        emptyReason: "quarantined",
+        skipped,
+        emptyReason: skipped.length === 0 ? "no_streams" : anyQuarantined ? "quarantined" : "no_streams",
       };
     }
 
@@ -204,6 +283,7 @@ export class PlaybackResolver {
       return {
         sources: [],
         attempts,
+        skipped,
         resolutionTimeMs: 0,
         emptyReason: everyoneFailed ? "all_failed" : "no_streams",
       };
@@ -212,6 +292,7 @@ export class PlaybackResolver {
     return {
       sources: dedupeSources(await this.#validate(ranked.slice(0, MAX_VALIDATED_SOURCES))),
       attempts,
+      skipped,
       resolutionTimeMs: 0,
     };
   }
