@@ -1,6 +1,6 @@
-import { MediaDetailView } from "@/components/detail/media-detail-view";
+import { AnimeDetailView } from "@/components/detail/anime-detail-view";
 
 export default async function AnimeDetailPage({ params }: PageProps<"/anime/[id]">) {
   const { id } = await params;
-  return <MediaDetailView id={id} kind="anime" />;
+  return <AnimeDetailView id={id} />;
 }

@@ -345,7 +345,27 @@ export class AnilistProvider implements AnimeMetadataProvider {
       }
     `;
 
-    const data = await this.#query<{ Media: Record<string, any> | null }>(gql, { id: numericId });
+    const data = await this.#query<{ Media: Record<string, any> | null }>(gql, {
+      id: numericId,
+    }).catch((error: unknown) => {
+      // AniList answers an unknown Media id with an HTTP 404 whose body still
+      // carries `data: { Media: null }`. That is a definitive absence, not an
+      // upstream fault: without this the route reports a 502 "provider down"
+      // for an unknown `/anime/:id`, hiding the 404 it should return.
+      if (error instanceof AppError && (error.details as { status?: number })?.status === 404) {
+        const body = (error.details as { body?: string })?.body;
+        if (typeof body === "string") {
+          try {
+            const parsed = JSON.parse(body) as { data?: { Media?: unknown } };
+            if (parsed.data?.Media === null) return null;
+          } catch {
+            // Non-JSON 404 bodies are treated as a genuine upstream fault.
+          }
+        }
+      }
+      throw error;
+    });
+    if (!data) return null; // caught the definitive not-found above
     const node = data.Media;
     if (!node) return null;
 

@@ -73,6 +73,30 @@ export interface MediaSummary {
   genres: string[];
 }
 
+/** Canonical next-airing information as the backend reports it (P13). */
+export interface DetailAiring {
+  episode: number;
+  /** Epoch seconds, exactly as the backend returns it. */
+  airingAt: number;
+  timeUntilAiring: number;
+}
+
+/**
+ * The detail view-model every detail surface renders.
+ *
+ * Anime fills this from the canonical backend (P13); manga still fills it from
+ * the legacy client until P17. `airing` is optional because only the canonical
+ * payload carries it, and the character/recommendation lists are empty rather
+ * than fabricated when the backend contract has no such field.
+ */
+export interface DetailData {
+  summary: MediaSummary;
+  relations: { relationType: string; media: MediaSummary }[];
+  recommendations: MediaSummary[];
+  characters: { id: number; name: string; image: string | null; role: string }[];
+  airing?: DetailAiring | null;
+}
+
 const HTML_ENTITIES: Record<string, string> = {
   "&amp;": "&",
   "&lt;": "<",

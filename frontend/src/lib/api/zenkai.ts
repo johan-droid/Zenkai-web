@@ -16,8 +16,8 @@
 
 import { z } from "zod";
 
-import { fetchJson } from "./http";
-import type { MediaFormat, MediaKind, MediaSeason, MediaStatus, MediaSummary } from "@/lib/media";
+import { fetchJson, HttpError } from "./http";
+import type { DetailData, MediaFormat, MediaKind, MediaSeason, MediaStatus, MediaSummary } from "@/lib/media";
 
 /** Backend origin. Overridable at build time; defaults to local development. */
 export const ZENKAI_API_URL =
@@ -144,6 +144,116 @@ export type MangaCatalogueItem = z.infer<
 export type MangaCatalogueResult = z.infer<typeof mangaCatalogueSchema>;
 
 /* ------------------------------------------------------------------ */
+/* P13 anime detail contract (mirrors GET /api/v1/anime/:id)           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A relation as the backend's `getFull` returns it: a cross-reference id plus
+ * display data. `anilistId` arrives as a number from the provider normaliser,
+ * but the routing contract treats ids as strings, so both are accepted rather
+ * than rejecting a valid payload over a JSON numeric/string difference.
+ */
+const animeRelationSchema = z.object({
+  type: z.string(),
+  anilistId: z.union([z.string(), z.number()]),
+  title: z.string().nullish(),
+  coverUrl: z.string().nullish(),
+});
+
+/**
+ * The canonical anime detail payload.
+ *
+ * Only fields the detail surface consumes are declared; every backend key not
+ * listed here is stripped by Zod rather than passed through, so the UI can
+ * never grow an undeclared dependency on an incidental field. Fields the
+ * provider may legitimately omit are `nullish()`, because a missing key and an
+ * explicit null both mean "the provider did not say" — rejecting the former
+ * would fail every partial payload the backend considers valid.
+ */
+export const animeDetailSchema = z.object({
+  /** Cross-reference id: the routing id detail/watch URLs address by. */
+  anilistId: z.string(),
+  titles: z.object({
+    romaji: z.string().nullish(),
+    english: z.string().nullish(),
+    native: z.string().nullish(),
+    synonyms: z.array(z.string()),
+  }),
+  canonicalTitle: z.string(),
+  description: z.string().nullish(),
+  coverUrl: z.string().nullish(),
+  coverImageLarge: z.string().nullish(),
+  bannerUrl: z.string().nullish(),
+  format: z.string().nullish(),
+  status: z.string().nullish(),
+  year: z.number().nullish(),
+  season: z.string().nullish(),
+  seasonYear: z.number().nullish(),
+  averageScore: z.number().nullish(),
+  popularity: z.number().nullish(),
+  totalEpisodes: z.number().nullish(),
+  durationMinutes: z.number().nullish(),
+  genres: z.array(z.string()).nullish(),
+  relations: z.array(animeRelationSchema),
+  nextAiringEpisode: z
+    .object({
+      episode: z.number(),
+      airingAt: z.number(),
+      timeUntilAiring: z.number(),
+    })
+    .nullish(),
+});
+
+export type AnimeDetail = z.infer<typeof animeDetailSchema>;
+
+/**
+ * One episode row of the canonical catalogue (P4). `airingState` is an
+ * enum rather than a free string: `aired`, `upcoming` and `unknown` are the
+ * only states the backend can assert, and `unknown` must stay distinct from
+ * `upcoming` because "no schedule" is not "scheduled for later".
+ */
+export const episodeCardSchema = z.object({
+  id: z.string(),
+  episodeNumber: z.number(),
+  absoluteNumber: z.number().nullish(),
+  title: z.string().nullish(),
+  description: z.string().nullish(),
+  durationSeconds: z.number().nullish(),
+  thumbnailUrl: z.string().nullish(),
+  isFiller: z.boolean(),
+  airingAt: z.string().nullish(),
+  airingState: z.enum(["aired", "upcoming", "unknown"]),
+  airingSource: z.string().nullish(),
+  providerStatus: z.string().nullish(),
+});
+
+/**
+ * The canonical episode catalogue (GET /api/v1/anime/:id/episodes).
+ *
+ * Three counts stay separate on purpose, exactly as the backend defines them:
+ * `catalogueCount` (rows we hold), `airedCount` (rows past their slot) and
+ * `knownTotal` (the provider's stated total, null when not established).
+ */
+export const episodeCatalogueSchema = z.object({
+  anilistId: z.string(),
+  episodes: z.array(episodeCardSchema),
+  catalogueCount: z.number(),
+  airedCount: z.number(),
+  knownTotal: z.number().nullish(),
+});
+
+export type EpisodeCatalogue = z.infer<typeof episodeCatalogueSchema>;
+export type EpisodeCard = z.infer<typeof episodeCardSchema>;
+
+/** Deterministic previous/next navigation; null means no such neighbour. */
+export const episodeNavigationSchema = z.object({
+  previous: z.number().nullable(),
+  next: z.number().nullable(),
+});
+
+export type EpisodeNavigation = z.infer<typeof episodeNavigationSchema>;
+
+/* ------------------------------------------------------------------ */
 /* Fetchers                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -210,6 +320,45 @@ export function fetchDiscovery(
     page: options.page,
     perPage: options.perPage,
   });
+}
+
+/**
+ * Full canonical anime detail (P13).
+ *
+ * Failures are never collapsed: a 404 throws `HttpError(404)`, a malformed
+ * payload throws `ZenkaiContractError`, and a network failure throws the
+ * transport error — `classifyDetailError` turns those into distinct UI states
+ * instead of one shared "not found".
+ */
+export function fetchAnimeDetail(id: string): Promise<AnimeDetail> {
+  return getValidated(
+    `/api/v1/anime/${encodeURIComponent(id)}`,
+    animeDetailSchema,
+  );
+}
+
+/** The canonical episode catalogue for a title (P4 contract, P13 client). */
+export function fetchAnimeEpisodes(id: string): Promise<EpisodeCatalogue> {
+  return getValidated(
+    `/api/v1/anime/${encodeURIComponent(id)}/episodes`,
+    episodeCatalogueSchema,
+  );
+}
+
+/**
+ * Canonical previous/next episode numbers (P4 contract, P13 client).
+ *
+ * The backend honours gaps and catalogue boundaries; the frontend must never
+ * recompute `episode ± 1` itself (P14 step 12).
+ */
+export function fetchEpisodeNavigation(
+  id: string,
+  episodeNumber: number,
+): Promise<EpisodeNavigation> {
+  return getValidated(
+    `/api/v1/anime/${encodeURIComponent(id)}/episodes/${episodeNumber}/navigation`,
+    episodeNavigationSchema,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -330,6 +479,115 @@ export function mangaCatalogueItemToMedia(item: MangaCatalogueItem): MediaSummar
     popularity: null,
     genres: [],
   };
+}
+
+/**
+ * Map canonical anime detail onto the shared media model (P13).
+ *
+ * The routing id is the cross-reference id (`anilistId`), matching how the
+ * discovery cards address titles — the backend's local UUID never appears in a
+ * URL. Null metadata stays null (never zero), an unknown enum renders as
+ * `UNKNOWN`, and the episode count is the canonical `totalEpisodes` — the UI
+ * does not compute its own.
+ */
+export function animeDetailToMedia(detail: AnimeDetail): MediaSummary {
+  return {
+    id: detail.anilistId,
+    malId: null,
+    kind: "anime",
+    provider: "zenkai",
+    title: {
+      romaji: detail.titles.romaji ?? null,
+      english: detail.titles.english ?? null,
+      native: detail.titles.native ?? null,
+      preferred: detail.canonicalTitle,
+    },
+    // Largest artwork for the detail hero; the small cover only as fallback.
+    cover: { url: detail.coverImageLarge ?? detail.coverUrl ?? null, color: null },
+    banner: detail.bannerUrl ?? null,
+    description: detail.description ?? null,
+    format: enumOr<MediaFormat>(detail.format, FORMAT_VALUES, "UNKNOWN"),
+    status: enumOr<MediaStatus>(detail.status, STATUS_VALUES, "UNKNOWN"),
+    season:
+      detail.season && SEASON_VALUES.has(detail.season)
+        ? (detail.season as MediaSeason)
+        : null,
+    seasonYear: detail.seasonYear ?? detail.year ?? null,
+    episodes: detail.totalEpisodes ?? null,
+    chapters: null,
+    volumes: null,
+    durationMinutes: detail.durationMinutes ?? null,
+    averageScore: detail.averageScore ?? null,
+    popularity: detail.popularity ?? null,
+    genres: detail.genres ?? [],
+  };
+}
+
+/**
+ * Map one canonical relation onto a card the grid can render.
+ *
+ * The backend contract carries id/title/cover only, so score, format and
+ * season stay null — absent data, never invented defaults.
+ */
+export function animeRelationToMedia(relation: AnimeDetail["relations"][number]): MediaSummary {
+  return {
+    id: String(relation.anilistId),
+    malId: null,
+    kind: "anime",
+    provider: "zenkai",
+    title: { preferred: relation.title ?? null },
+    cover: { url: relation.coverUrl ?? null, color: null },
+    banner: null,
+    description: null,
+    format: "UNKNOWN",
+    status: "UNKNOWN",
+    season: null,
+    seasonYear: null,
+    episodes: null,
+    chapters: null,
+    volumes: null,
+    durationMinutes: null,
+    averageScore: null,
+    popularity: null,
+    genres: [],
+  };
+}
+
+/**
+ * Assemble the detail view-model from the canonical payload (P13).
+ *
+ * `recommendations` and `characters` are empty because the backend contract
+ * has no such fields: an empty list hides the section, whereas a fabricated
+ * list would render content nobody can verify. `airing` carries the canonical
+ * next-episode slot verbatim — the UI never derives airing state itself.
+ */
+export function animeDetailToDetailData(detail: AnimeDetail): DetailData {
+  return {
+    summary: animeDetailToMedia(detail),
+    relations: detail.relations.map((relation) => ({
+      relationType: relation.type,
+      media: animeRelationToMedia(relation),
+    })),
+    recommendations: [],
+    characters: [],
+    airing: detail.nextAiringEpisode ?? null,
+  };
+}
+
+/**
+ * Why a detail request failed, for UI that must not lie.
+ *
+ * "Not found" is a fact about the title; "invalid response" means the backend
+ * answered with something outside the contract (never rendered as data); every
+ * other failure is a loading problem. Collapsing these into one message is how
+ * a backend outage gets presented to the user as a missing anime.
+ */
+export type DetailFailure = "not_found" | "invalid_response" | "unavailable";
+
+export function classifyDetailError(error: unknown): DetailFailure {
+  if (error instanceof ZenkaiContractError) return "invalid_response";
+  if (error instanceof HttpError && error.status === 404) return "not_found";
+  return "unavailable";
 }
 
 /* ------------------------------------------------------------------ */
