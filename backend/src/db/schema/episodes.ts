@@ -70,8 +70,12 @@ export const episodeExternalIds = pgTable(
 /**
  * Per-episode playback metadata (P10).
  *
- * Intro/outro markers and subtitles are discovered per episode and are stable
- * across providers, so they are cached here rather than refetched on every play.
+ * Only stable, non-secret playback metadata lives here: intro/outro marker
+ * offsets, source-refresh time, and subtitle *descriptors*. Sidecar URLs are
+ * ephemeral (they rotate with the stream) and are never persisted: a stored
+ * subtitle URL can be dead within days, and a signed one would be a credential
+ * leak into PostgreSQL. P8 executions and P9 relays write nothing to this
+ * table.
  */
 export const episodePlaybackMeta = pgTable("episode_playback_meta", {
   episodeId: uuid("episode_id")
@@ -81,8 +85,13 @@ export const episodePlaybackMeta = pgTable("episode_playback_meta", {
   introEndSeconds: integer("intro_end_seconds"),
   outroStartSeconds: integer("outro_start_seconds"),
   outroEndSeconds: integer("outro_end_seconds"),
+  /**
+   * Non-secret subtitle descriptors only: which languages and kinds a title
+   * has. URLs belong to the ephemeral, per-request playback plan (P6) and
+   * stay out of the row. The $type annotation is the enforcement boundary.
+   */
   subtitles: jsonb("subtitles")
-    .$type<Array<{ language: string; url: string; kind?: string }>>()
+    .$type<Array<{ language: string; kind?: string }>>()
     .notNull()
     .default([]),
   /** When this row was last refreshed, so stale markers can be re-derived. */

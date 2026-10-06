@@ -6,26 +6,17 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getAiringSchedule, type ScheduleEntry } from "@/lib/api/anilist";
-import { displayTitle, mediaHref } from "@/lib/media";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import {
+  fetchScheduleWeek,
+  classifyScheduleError,
+  type ScheduleEntry,
+} from "@/lib/api/zenkai";
+import { mediaHref } from "@/lib/media";
 
 export function ScheduleView() {
-  // Cover the current week, aligned to local midnight.
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const weekStart = startOfToday.getTime() - startOfToday.getDay() * DAY_MS;
-  const weekEnd = weekStart + 7 * DAY_MS;
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["schedule", "week", new Date(weekStart).toDateString()],
-    queryFn: () =>
-      getAiringSchedule({
-        perPage: 100,
-        airingAtGreater: Math.floor(weekStart / 1000),
-        airingAtLesser: Math.floor(weekEnd / 1000),
-      }),
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["schedule", "week"],
+    queryFn: () => fetchScheduleWeek(),
     staleTime: 10 * 60_000,
   });
 
@@ -39,10 +30,21 @@ export function ScheduleView() {
     );
   }
 
-  const entries = data ?? [];
-  const days = groupByDay(entries, weekStart);
+  if (error) {
+    return (
+      <EmptyState
+        icon={CalendarDays}
+        title="Schedule unavailable"
+        description={classifyScheduleError(error) === "invalid_response"
+          ? "The schedule returned data this page could not understand."
+          : "The schedule service could not answer just now. Check back in a moment."}
+      />
+    );
+  }
 
-  if (!entries.length) {
+  const days = data?.days ?? [];
+
+  if (days.length === 0) {
     return (
       <EmptyState
         icon={CalendarDays}
@@ -52,86 +54,68 @@ export function ScheduleView() {
     );
   }
 
+  const todayKey = new Date().setHours(0, 0, 0, 0);
+
   return (
     <div className="flex flex-col gap-6">
-      {days.map((day) => (
-        <section key={day.timestamp} className="flex flex-col gap-3">
-          <div className="flex items-baseline gap-3">
-            <h2 className="text-base font-bold tracking-tight">
-              {day.isToday ? "Today" : day.label}
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              {new Date(day.timestamp).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-              })}
-            </span>
-          </div>
+      {days.map((day) => {
+        const dayTimestamp = new Date(day.date + "T00:00:00Z").getTime();
+        return (
+          <section key={day.date} className="flex flex-col gap-3">
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-base font-bold tracking-tight">
+                {dayTimestamp === todayKey ? "Today" : day.dayOfWeek}
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                {new Date(day.date + "T00:00:00Z").toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </span>
+            </div>
 
-          <div className="flex flex-col gap-2">
-            {day.entries.map((entry) => (
-              <ScheduleRow key={entry.id} entry={entry} />
-            ))}
-          </div>
-        </section>
-      ))}
+            <div className="flex flex-col gap-2">
+              {day.entries.map((entry) => (
+                <ScheduleRow key={entry.scheduleId} entry={entry} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
 
 function ScheduleRow({ entry }: { entry: ScheduleEntry }) {
-  const time = new Date(entry.airingAt * 1000).toLocaleTimeString(undefined, {
+  const time = entry.airingAt.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
 
   return (
     <Link
-      href={mediaHref(entry.media)}
+      href={mediaHref({ kind: "anime" as const, id: entry.anilistId })}
       className="glass glass-hover flex items-center gap-3 rounded-2xl p-3 hover:border-brand-400/40"
     >
       <span className="w-16 shrink-0 text-sm font-semibold tabular-nums text-brand-400">
         {time}
       </span>
-      {entry.media.cover.url ? (
+      {entry.coverUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={entry.media.cover.url}
+          src={entry.coverUrl}
           alt=""
           loading="lazy"
           className="h-14 w-10 shrink-0 rounded-lg object-cover"
         />
       ) : null}
       <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-medium">{displayTitle(entry.media.title)}</span>
+        <span className="truncate text-sm font-medium">{entry.title}</span>
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="size-3" />
-          Episode {entry.episode}
+          Episode {entry.episodeNumber}
         </span>
       </span>
     </Link>
   );
-}
-
-function groupByDay(entries: ScheduleEntry[], weekStart: number) {
-  const buckets = new Map<number, ScheduleEntry[]>();
-
-  for (const entry of entries) {
-    const day = new Date(entry.airingAt * 1000);
-    day.setHours(0, 0, 0, 0);
-    const key = day.getTime();
-    buckets.set(key, [...(buckets.get(key) ?? []), entry]);
-  }
-
-  const todayKey = new Date().setHours(0, 0, 0, 0);
-
-  return Array.from({ length: 7 }, (_, offset) => {
-    const timestamp = weekStart + offset * DAY_MS;
-    return {
-      timestamp,
-      label: new Date(timestamp).toLocaleDateString(undefined, { weekday: "long" }),
-      isToday: timestamp === todayKey,
-      entries: (buckets.get(timestamp) ?? []).sort((a, b) => a.airingAt - b.airingAt),
-    };
-  }).filter((day) => day.entries.length > 0);
 }

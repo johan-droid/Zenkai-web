@@ -14,11 +14,10 @@ import {
 } from "lucide-react";
 
 import {
-  getChapterFeed,
-  getChapterPages,
-  reportAtHomeResult,
-  type ChapterEntry,
-} from "@/lib/api/mangadex";
+  fetchMangaChapters,
+  fetchMangaChapterPages,
+  type MangaChapter,
+} from "@/lib/api/zenkai";
 import { useThrottledProgressSaver, useUnitProgress } from "@/hooks/use-progress";
 import { cn } from "@/lib/utils";
 
@@ -56,13 +55,13 @@ export function MangaReader({
   const [direction, setDirection] = useState<"forward" | "backward">("forward");
 
   const feed = useQuery({
-    queryKey: ["mangadex-feed", mangaId],
-    queryFn: () => getChapterFeed(mangaId, { limit: 200, order: { chapter: "asc" } }),
+    queryKey: ["manga-chapters", mangaId],
+    queryFn: () => fetchMangaChapters(mangaId, "en"),
     staleTime: 5 * 60_000,
   });
 
-  // The URL carries a chapter number but MangaDex keys chapters by UUID, so we
-  // resolve number -> id through the feed.
+  // The URL carries a chapter number; resolve it to the closest feed entry so
+  // `/read/12/12.5` can open chapter 12.5 instead of failing outright.
   const chapter = useMemo(
     () => resolveChapter(chapterNumber, feed.data?.items),
     [chapterNumber, feed.data?.items],
@@ -70,15 +69,17 @@ export function MangaReader({
   const chapterId = chapter?.id ?? null;
 
   const pages = useQuery({
-    queryKey: ["mangadex-pages", chapterId],
-    queryFn: () => getChapterPages(chapterId as string),
+    queryKey: ["manga-pages", chapterId],
+    queryFn: () => fetchMangaChapterPages(chapterId as string),
     enabled: Boolean(chapterId),
-    // at-home URLs expire, so outlive the server but not the session.
+    // Chapter page URLs are signed and short-lived upstream, so the client must
+    // treat them as ephemeral: render them now and let them age out of the cache
+    // rather than persisting them.
     staleTime: 10 * 60_000,
     gcTime: 12 * 60_000,
   });
 
-  const pageUrls = useMemo(() => pages.data ?? [], [pages.data]);
+  const pageUrls = useMemo(() => (pages.data?.pages ?? []).map((page) => page.url), [pages.data]);
   const total = pageUrls.length;
 
   const progress = useUnitProgress("manga", mangaId, chapterNumber);
@@ -97,10 +98,10 @@ export function MangaReader({
         positionSeconds: 0,
         durationSeconds: total,
         page: index + 1,
-        totalUnits: feed.data?.total ?? null,
+        totalUnits: feed.data?.items.length ?? null,
       });
     },
-    [saveProgress, total, mangaId, title, coverUrl, chapterNumber, feed.data?.total],
+    [saveProgress, total, mangaId, title, coverUrl, chapterNumber, feed.data?.items.length],
   );
 
   // Restore the saved page once we know how many pages there are.
@@ -345,8 +346,11 @@ function spreadFor(
  *
  * `loading="lazy"` keeps long chapters from pulling every full-resolution page
  * at once. Only the first page that scrolls into view reports progress, so the
- * saved position does not jitter while scrolling. Each load result is reported
- * back to MangaDex@Home so its node health stays accurate.
+ * saved position does not jitter while scrolling.
+ *
+ * Page URLs are signed and short-lived upstream and are consumed ephemeraly by
+ * the reader: they are rendered now and allowed to age out of the query cache,
+ * never persisted to IndexedDB or localStorage.
  */
 function ReaderImage({
   src,
@@ -362,7 +366,11 @@ function ReaderImage({
   const reported = useRef(false);
   const startedAt = useRef(0);
 
-  if (startedAt.current === 0) startedAt.current = performance.now();
+  // Avoid calling performance.now during render; initialise in an effect so
+  // the linter's purity rule is satisfied.
+  useEffect(() => {
+    startedAt.current = performance.now();
+  }, []);
 
   useEffect(() => {
     const node = ref.current;
@@ -401,22 +409,11 @@ function ReaderImage({
         alt={`Page ${index + 1}`}
         loading="lazy"
         decoding="async"
-        onLoad={(event) => {
+        onLoad={() => {
           setState("loaded");
-          void reportAtHomeResult({
-            url: src,
-            success: true,
-            durationMs: performance.now() - startedAt.current,
-            bytes: (event.target as HTMLImageElement).naturalWidth,
-          });
         }}
         onError={() => {
           setState("error");
-          void reportAtHomeResult({
-            url: src,
-            success: false,
-            durationMs: performance.now() - startedAt.current,
-          });
         }}
         className={cn("w-full select-none", state === "loaded" ? "block" : "hidden")}
       />
@@ -452,15 +449,15 @@ function ReaderShell({
  */
 function resolveChapter(
   chapterNumber: number,
-  items: ChapterEntry[] | undefined,
-): ChapterEntry | null {
+  items: MangaChapter[] | undefined,
+): MangaChapter | null {
   if (!items?.length) return null;
 
-  const exact = items.find((item) => Number(item.chapter) === chapterNumber);
+  const exact = items.find((item) => Number(item.chapterNumber) === chapterNumber);
   if (exact) return exact;
 
   const numeric = items
-    .map((item) => ({ item, value: Number(item.chapter) }))
+    .map((item) => ({ item, value: Number(item.chapterNumber) }))
     .filter((entry) => Number.isFinite(entry.value))
     .sort((a, b) => a.value - b.value);
 

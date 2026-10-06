@@ -46,8 +46,79 @@ const ALLOWED_CONTENT_TYPES = [
   "application/vnd.apple.mpegurl",
 ];
 
-/** A manifest must be small; anything larger is a media file, not a playlist. */
+/** Manifests are small; anything larger is a media file, not a playlist. */
 const MANIFEST_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Redirect hops are followed one at a time, and each hop is re-validated. */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Fetch a URL, following redirects only after each hop passes the SSRF guard.
+ *
+ * A plain `redirect: "follow"` validates hop zero and nothing else: an
+ * allowlisted host can 302 to 169.254.169.254 and have the private address
+ * fetched. Here every redirect target is resolved and blocked exactly like the
+ * entry URL. Tests inject `fetchImpl`/`assertImpl` so the guarantee is
+ * verifiable without a network.
+ */
+export async function fetchWithRedirectValidation(
+  rawUrl: string,
+  options: {
+    allowlist: string[];
+    fetchImpl?: typeof fetch;
+    assertImpl?: typeof assertSafeUrl;
+    timeoutMs?: number;
+  },
+): Promise<Response> {
+  const doAssert = options.assertImpl ?? assertSafeUrl;
+  const doFetch = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  let current = rawUrl;
+
+  for (let hop = 0; ; hop++) {
+    let safe: { url: URL };
+    try {
+      safe = await doAssert(current, { allowlist: options.allowlist });
+    } catch (error) {
+      if (error instanceof BlockedUrlError) {
+        throw AppError.badRequest(`blocked url: ${error.message}`);
+      }
+      throw error;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await doFetch(safe.url as URL | string, {
+        signal: controller.signal,
+        // Media CDNs commonly require the origin Referer; forwarding it is what
+        // makes the relay work where a bare request returns 403. This fixed
+        // pair is the entire header policy: no client-supplied header ever
+        // reaches the upstream.
+        headers: {
+          "user-agent": "Zenkai/1.0 (+https://github.com/johan-droid/Zenkai-web)",
+          accept: "*/*",
+        },
+        redirect: "manual",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const isRedirect = response.status >= 300 && response.status < 400;
+    if (!isRedirect) return response;
+
+    const location = response.headers.get("location");
+    if (!location) {
+      throw new AppError("upstream_error", "redirect without a location header", 502);
+    }
+    if (hop >= MAX_REDIRECTS) {
+      throw new AppError("upstream_error", "too many redirects", 502);
+    }
+    current = new URL(location, safe.url).toString();
+  }
+}
 
 /** Query parameters whose values are signed material and must never be logged. */
 const SENSITIVE_QUERY_KEYS = [
@@ -91,6 +162,31 @@ export function redactPlaybackUrl(raw: string): string {
   }
 
   return url.toString();
+}
+
+/**
+ * Redact a request URL for access logs.
+ *
+ * Request logs record the URL verbatim, and the relay takes the upstream URL
+ * in a query parameter -- so a signed manifest URL would land in the log
+ * stream. Same rule as above: keep the path, replace every parameter value.
+ * Accepts relative request paths, which `redactPlaybackUrl` does not.
+ */
+export function redactRequestUrl(raw: string): string {
+  try {
+    const url = new URL(raw, "http://zenkai.local");
+    for (const key of url.searchParams.keys()) {
+      const value = url.searchParams.get(key) ?? "";
+      const isRelayTarget = /^https?:\/\//i.test(value);
+      const isSensitiveName = SENSITIVE_QUERY_KEYS.includes(key.toLowerCase());
+      if (isRelayTarget || isSensitiveName) {
+        url.searchParams.set(key, isSensitiveName ? "***" : "redacted");
+      }
+    }
+    return url.pathname + url.search;
+  } catch {
+    return "[unparseable url]";
+  }
 }
 
 /**
@@ -346,57 +442,41 @@ export class PlaybackGateway {
    * this process into a bandwidth sink and let one viewer cost thousands of
    * upstream requests.
    */
-  async fetchManifest(url: string): Promise<{ body: string; contentType: string }> {
-    if (!config.ENABLE_PLAYBACK_PROXY) {
+  async fetchManifest(
+    url: string,
+    options: {
+      enabled?: boolean;
+      allowlist?: string[];
+      fetchImpl?: typeof fetch;
+      assertImpl?: typeof assertSafeUrl;
+    } = {},
+  ): Promise<{ body: string; contentType: string }> {
+    const enabled = options.enabled ?? config.ENABLE_PLAYBACK_PROXY;
+    if (!enabled) {
       throw AppError.badRequest("playback proxy is disabled");
     }
 
-    let safe: URL;
-    try {
-      const checked = await assertSafeUrl(url, {
-        allowlist: config.playbackProxyAllowlist,
-      });
-      safe = checked.url;
-    } catch (error) {
-      if (error instanceof BlockedUrlError) {
-        throw AppError.badRequest(`blocked url: ${error.message}`);
-      }
-      throw error;
+    const response = await fetchWithRedirectValidation(url, {
+      allowlist: options.allowlist ?? config.playbackProxyAllowlist,
+      fetchImpl: options.fetchImpl,
+      assertImpl: options.assertImpl,
+    });
+
+    if (!response.ok) {
+      throw new AppError("upstream_error", `upstream returned ${response.status}`, 502);
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-
-    try {
-      const response = await fetch(safe, {
-        signal: controller.signal,
-        // Media CDNs commonly require the origin Referer; forwarding it is what
-        // makes the relay work where a bare request returns 403.
-        headers: {
-          "user-agent": "Zenkai/1.0 (+https://github.com/johan-droid/Zenkai-web)",
-          accept: "*/*",
-        },
-        redirect: "follow",
-      });
-
-      if (!response.ok) {
-        throw new AppError("upstream_error", `upstream returned ${response.status}`, 502);
-      }
-
-      const contentType = response.headers.get("content-type") ?? "";
-      if (!ALLOWED_CONTENT_TYPES.some((allowed) => contentType.includes(allowed))) {
-        throw AppError.badRequest(`unsupported content type: ${contentType || "unknown"}`);
-      }
-
-      const body = await response.text();
-      if (body.length > MANIFEST_MAX_BYTES) {
-        throw AppError.badRequest("manifest exceeds the size limit");
-      }
-
-      return { body, contentType };
-    } finally {
-      clearTimeout(timer);
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!ALLOWED_CONTENT_TYPES.some((allowed) => contentType.includes(allowed))) {
+      throw AppError.badRequest(`unsupported content type: ${contentType || "unknown"}`);
     }
+
+    const body = await response.text();
+    if (body.length > MANIFEST_MAX_BYTES) {
+      throw AppError.badRequest("manifest exceeds the size limit");
+    }
+
+    return { body, contentType };
   }
 
   /**
@@ -406,55 +486,45 @@ export class PlaybackGateway {
    * which prevents the player from fetching them directly. This relays them
    * with the same SSRF protections as the manifest relay.
    */
-  async fetchSubtitle(url: string): Promise<{ body: string; contentType: string }> {
-    if (!config.ENABLE_PLAYBACK_PROXY) {
+  async fetchSubtitle(
+    url: string,
+    options: {
+      enabled?: boolean;
+      allowlist?: string[];
+      fetchImpl?: typeof fetch;
+      assertImpl?: typeof assertSafeUrl;
+    } = {},
+  ): Promise<{ body: string; contentType: string }> {
+    const enabled = options.enabled ?? config.ENABLE_PLAYBACK_PROXY;
+    if (!enabled) {
       throw AppError.badRequest("playback proxy is disabled");
     }
 
-    let safe: URL;
-    try {
-      const checked = await assertSafeUrl(url, {
-        allowlist: config.playbackProxyAllowlist,
-      });
-      safe = checked.url;
-    } catch (error) {
-      if (error instanceof BlockedUrlError) {
-        throw AppError.badRequest(`blocked url: ${error.message}`);
-      }
-      throw error;
+    const response = await fetchWithRedirectValidation(url, {
+      allowlist: options.allowlist ?? config.playbackProxyAllowlist,
+      fetchImpl: options.fetchImpl,
+      assertImpl: options.assertImpl,
+    });
+
+    if (!response.ok) {
+      throw new AppError("upstream_error", `upstream returned ${response.status}`, 502);
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-
-    try {
-      const response = await fetch(safe, {
-        signal: controller.signal,
-        headers: {
-          "user-agent": "Zenkai/1.0 (+https://github.com/johan-droid/Zenkai-web)",
-          accept: "*/*",
-        },
-        redirect: "follow",
-      });
-
-      if (!response.ok) {
-        throw new AppError("upstream_error", `upstream returned ${response.status}`, 502);
-      }
-
-      const contentType = response.headers.get("content-type") ?? "";
-      const body = await response.text();
-
-      // Subtitles are small text files; anything larger is not a subtitle.
-      if (body.length > 512 * 1024) {
-        throw AppError.badRequest("subtitle exceeds the size limit");
-      }
-
-      return { body, contentType };
-    } finally {
-      clearTimeout(timer);
+    const contentType = response.headers.get("content-type") ?? "";
+    // A subtitle is text; an HTML error page or an MP4 is not.
+    if (!/text\/|application\/(x-)?(subrip|vtt|x-subviewer)|webvtt|ttml|ssa|ass/i.test(contentType)) {
+      throw AppError.badRequest(`unsupported subtitle content type: ${contentType || "unknown"}`);
     }
-  }
 
+    const body = await response.text();
+
+    // Subtitles are small text files; anything larger is not a subtitle.
+    if (body.length > 512 * 1024) {
+      throw AppError.badRequest("subtitle exceeds the size limit");
+    }
+
+    return { body, contentType };
   }
+}
 
 export const playbackGateway = new PlaybackGateway();

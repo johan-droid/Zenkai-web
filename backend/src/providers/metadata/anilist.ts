@@ -326,15 +326,15 @@ export class AnilistProvider implements AnimeMetadataProvider {
     };
   }
 
-  async getByAnilistId(id: string): Promise<AnimeDetail | null> {
+  async getByAnilistId(id: string, type: "ANIME" | "MANGA" = "ANIME"): Promise<AnimeDetail | null> {
     const numericId = Number(id);
     if (!Number.isFinite(numericId)) return null;
 
     const gql = `
       query($id: Int) {
-        Media(id: $id, type: ANIME) {
+        Media(id: $id, type: ${type}) {
           ${MEDIA_FIELDS}
-          nextAiringEpisode { episode airingAt timeUntilAiring }
+          ${type === "ANIME" ? "nextAiringEpisode { episode airingAt timeUntilAiring }" : ""}
           relations {
             edges {
               relationType(version: 2)
@@ -376,11 +376,11 @@ export class AnilistProvider implements AnimeMetadataProvider {
       relations: (node.relations?.edges ?? [])
         .map((edge: Record<string, any>) => toRelation(edge))
         .filter((relation: AnimeRelation | null): relation is AnimeRelation => relation !== null),
-      nextAiringEpisode: node.nextAiringEpisode ?? null,
+      nextAiringEpisode: type === "ANIME" ? (node.nextAiringEpisode ?? null) : null,
       // AniList exposes no per-episode connection for anime (only a count), so
       // the catalog is seeded from that count and enriched by the streaming
-      // provider in P4.
-      episodes: this.#placeholderEpisodes(summary),
+      // provider in P4. Manga has no episode list at all.
+      episodes: type === "ANIME" ? this.#placeholderEpisodes(summary) : undefined,
     };
   }
 

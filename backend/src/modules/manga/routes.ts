@@ -149,6 +149,24 @@ export function registerMangaRoutes(app: FastifyInstance, service: MangaService)
     return result;
   });
 
+  /**
+   * Resolve a manga by its AniList id.
+   *
+   * The manga catalogue is keyed by MangaDex id; this endpoint bridges the
+   * AniList id space that the reader and manga detail routes already use, so
+   * those routes can stop calling AniList and MangaDex directly. On a cache hit
+   * it returns the stored row; on a miss it fetches the title from AniList,
+   * extracts the MangaDex id from the provider links and upserts the canonical
+   * row before returning full detail.
+   */
+  app.get("/api/v1/manga/by-anilist/:anilistId", async (request) => {
+    const { anilistId } = parseOrThrow(
+      z.object({ anilistId: z.string().trim().min(1) }),
+      request.params,
+    );
+    return service.getByAnilistId(anilistId);
+  });
+
   /** Genres present in the catalogue. */
   app.get("/api/v1/manga/genres", async () => ({ items: await service.genres() }));
 }

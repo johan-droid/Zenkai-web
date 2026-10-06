@@ -1,30 +1,59 @@
 /**
  * Playback metadata (P10).
  *
- * Subtitles and skip markers are discovered per episode from whichever provider
- * declares the capability, then stored so the player does not pay for discovery
- * on every play.
+ * Stable markers are discovered per episode from whichever provider
+ * declares the capability, then stored so the player does not pay for
+ * discovery on every play. Subtitle sidecar URLs are ephemeral: they are
+ * derived fresh on every call and are never written to the database.
  *
- * The cache is short-lived on purpose: subtitle sidecars and marker offsets are
- * both tied to a specific stream, so a value that was right for last week's
- * source can easily be wrong for this one.
+ * Two-speed contract:
+ *
+ *   persisted (PostgreSQL):  episodeId, intro/outro offsets, subtitle
+ *                            descriptors (language/kind only), sourceUpdatedAt
+ *   ephemeral (per-request): subtitle sidecar URLs, stream URLs, relay URLs
  */
 
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import type { Db } from "../../db/client.js";
-import { episodePlaybackMeta, episodeExternalIds } from "../../db/schema/index.js";
+import { episodePlaybackMeta } from "../../db/schema/index.js";
 import { skipCapableProviders, subtitleCapableProviders } from "../../providers/streaming/registry.js";
 import type { ResolveRequest, StreamingProvider } from "../../providers/streaming/types.js";
 
 /** Markers older than this are re-derived; providers change them rarely. */
 const META_TTL_S = 7 * 86_400;
 
+/**
+ * The shape of a persisted playback-metadata row.
+ *
+ * This is the boundary: persistence accepts exactly these fields and
+ * nothing else. URLs, tokens, cookies, headers and unknown keys
+ * (`.strict()`) are rejected here before a row can be written.
+ */
+export const persistedEpisodeMetadataSchema = z
+  .object({
+    episodeId: z.string(),
+    intro: z.object({ start: z.number(), end: z.number() }).strict().optional(),
+    outro: z.object({ start: z.number(), end: z.number() }).strict().optional(),
+    subtitles: z.array(
+      z
+        .object({ language: z.string(), kind: z.string().optional() })
+        .strict(),
+    ),
+    sourceUpdatedAt: z.number().int().nullable(),
+  })
+  .strict();
+
+export type PersistedEpisodeMetadata = z.infer<typeof persistedEpisodeMetadataSchema>;
+
+/** What the service returns to the route: markers plus ephemeral subtitles. */
 export interface EpisodeMetadata {
   episodeId: string;
+  /** Ephemeral: derived fresh on every call, never persisted. */
   subtitles: Array<{ language: string; url: string; kind?: string }>;
   intro?: { start: number; end: number };
   outro?: { start: number; end: number };
-  /** When this was derived, so a stale value can be detected. */
+  /** When the stored metadata was derived, so staleness is detectable. */
   sourceUpdatedAt: number | null;
 }
 
@@ -35,23 +64,34 @@ export class PlaybackMetadataService {
   ) {}
 
   /**
-   * Return stored metadata for an episode, deriving it on a miss.
+   * Return stored metadata for an episode, deriving it when missing/stale.
    *
-   * Derivation is best-effort: a provider that cannot supply markers must not
-   * prevent the episode from playing, so failures here yield an empty-but-valid
-   * result rather than an error.
+   * Subtitle URLs are always derived fresh; only stable descriptors are
+   * stored or read back. Failures yield an empty-but-valid result rather
+   * than an error: a missing marker must not block playback.
    */
   async get(
     episodeId: string,
     request: ResolveRequest,
   ): Promise<EpisodeMetadata> {
-    const cached = await this.#read(episodeId);
-    if (cached && this.#isFresh(cached.sourceUpdatedAt)) return cached;
+    const stored = await this.#read(episodeId);
+    let persisted = stored;
 
-    const derived = await this.#derive(request);
-    await this.#write(episodeId, derived);
+    if (!stored || !this.#isFresh(stored.sourceUpdatedAt)) {
+      const derived = await this.#deriveMarkers(request);
+      persisted = this.#merge(episodeId, stored, derived);
+      await this.#write(persisted);
+    }
 
-    return { episodeId, ...derived, sourceUpdatedAt: Math.floor(Date.now() / 1000) };
+    const subtitles = await this.#collectSubtitles(request);
+
+    return {
+      episodeId,
+      subtitles,
+      intro: persisted?.intro,
+      outro: persisted?.outro,
+      sourceUpdatedAt: persisted?.sourceUpdatedAt ?? null,
+    };
   }
 
   #isFresh(sourceUpdatedAt: number | null): boolean {
@@ -59,7 +99,7 @@ export class PlaybackMetadataService {
     return Date.now() / 1000 - sourceUpdatedAt < META_TTL_S;
   }
 
-  async #read(episodeId: string): Promise<EpisodeMetadata | null> {
+  async #read(episodeId: string): Promise<PersistedEpisodeMetadata | null> {
     const [row] = await this.db
       .select()
       .from(episodePlaybackMeta)
@@ -70,7 +110,6 @@ export class PlaybackMetadataService {
 
     return {
       episodeId,
-      subtitles: row.subtitles ?? [],
       intro:
         row.introStartSeconds != null && row.introEndSeconds != null
           ? { start: row.introStartSeconds, end: row.introEndSeconds }
@@ -79,20 +118,44 @@ export class PlaybackMetadataService {
         row.outroStartSeconds != null && row.outroEndSeconds != null
           ? { start: row.outroStartSeconds, end: row.outroEndSeconds }
           : undefined,
+      subtitles: row.subtitles ?? [],
       sourceUpdatedAt: row.sourceUpdatedAt,
     };
   }
 
   /**
-   * Ask every capable provider for markers.
+   * Merge a fresh derivation into stored metadata.
    *
-   * Runs concurrently and takes the first usable answer. Only providers that
-   * declare `supportsSkipMarkers` are consulted, so a scraper that has no such
-   * data is never asked for it.
+   * A provider answering "no markers" does not erase known markers, and a
+   * provider that no longer lists a language does not erase the descriptor:
+   * unknown stays unknown, stored stays. Known values are replaced only by
+   * concrete new values.
    */
-  async #derive(
+  #merge(
+    episodeId: string,
+    stored: PersistedEpisodeMetadata | null,
+    derived: Omit<PersistedEpisodeMetadata, "episodeId" | "sourceUpdatedAt">,
+  ): PersistedEpisodeMetadata {
+    const subtitles = new Map(
+      (stored?.subtitles ?? []).map((subtitle) => [subtitle.language, subtitle]),
+    );
+    for (const subtitle of derived.subtitles) {
+      subtitles.set(subtitle.language, subtitle);
+    }
+
+    return {
+      episodeId,
+      intro: derived.intro ?? stored?.intro,
+      outro: derived.outro ?? stored?.outro,
+      subtitles: [...subtitles.values()],
+      sourceUpdatedAt: Math.floor(Date.now() / 1000),
+    };
+  }
+
+  /** Ask every capable provider for markers; the first usable answer wins. */
+  async #deriveMarkers(
     request: ResolveRequest,
-  ): Promise<Omit<EpisodeMetadata, "episodeId" | "sourceUpdatedAt">> {
+  ): Promise<Omit<PersistedEpisodeMetadata, "episodeId" | "sourceUpdatedAt">> {
     const markers = await Promise.all(
       skipCapableProviders(this.providers).map(async (provider) => {
         try {
@@ -105,23 +168,26 @@ export class PlaybackMetadataService {
 
     const first = markers.find(Boolean) ?? undefined;
 
-    // Subtitles come from the sources already produced for this episode, which
-    // is where a provider attaches its sidecar URLs.
-    const sources = await this.#collectSubtitles(request);
+    // Subtitle descriptors from the same sources: which languages/kinds a
+    // title has, without storing any URL.
+    const subtitles = await this.#collectSubtitles(request);
+    const descriptors = subtitles
+      .map(({ language, kind }) => ({ language, ...(kind !== undefined ? { kind } : {}) }))
+      .filter((descriptor, index, list) => list.findIndex((d) => d.language === descriptor.language) === index);
 
     return {
-      subtitles: sources,
+      subtitles: descriptors,
       intro: first?.intro,
       outro: first?.outro,
     };
   }
 
   /**
-   * Gather subtitle sidecars from capable providers.
+   * Gather subtitle sidecars fresh for every request.
    *
-   * Resolving sources just for their subtitle field would be wasteful, so this
-   * reuses the resolver's cache and only asks providers that declare the
-   * capability.
+   * Resolving sources just for their subtitle field is wasteful, so this
+   * reuses the same ephemeral flow; URLs are returned to the caller but
+   * stripped before persistence.
    */
   async #collectSubtitles(
     request: ResolveRequest,
@@ -150,30 +216,37 @@ export class PlaybackMetadataService {
     });
   }
 
-  async #write(
-    episodeId: string,
-    metadata: Omit<EpisodeMetadata, "episodeId" | "sourceUpdatedAt">,
-  ): Promise<void> {
+  /**
+   * Write stable metadata only.
+   *
+   * Values are type-erased to PersistedEpisodeMetadata -- the persisted
+   * schema's strict shape -- and parsed before the insert, so an unknown
+   * key or an ephemeral URL field cannot reach PostgreSQL even when the
+   * caller is lax with types.
+   */
+  async #write(values: PersistedEpisodeMetadata): Promise<void> {
+    const parsed = persistedEpisodeMetadataSchema.parse(values);
+
     await this.db
       .insert(episodePlaybackMeta)
       .values({
-        episodeId,
-        introStartSeconds: metadata.intro?.start ?? null,
-        introEndSeconds: metadata.intro?.end ?? null,
-        outroStartSeconds: metadata.outro?.start ?? null,
-        outroEndSeconds: metadata.outro?.end ?? null,
-        subtitles: metadata.subtitles,
-        sourceUpdatedAt: Math.floor(Date.now() / 1000),
+        episodeId: parsed.episodeId,
+        introStartSeconds: parsed.intro?.start ?? null,
+        introEndSeconds: parsed.intro?.end ?? null,
+        outroStartSeconds: parsed.outro?.start ?? null,
+        outroEndSeconds: parsed.outro?.end ?? null,
+        subtitles: parsed.subtitles,
+        sourceUpdatedAt: parsed.sourceUpdatedAt,
       })
       .onConflictDoUpdate({
         target: episodePlaybackMeta.episodeId,
         set: {
-          introStartSeconds: metadata.intro?.start ?? null,
-          introEndSeconds: metadata.intro?.end ?? null,
-          outroStartSeconds: metadata.outro?.start ?? null,
-          outroEndSeconds: metadata.outro?.end ?? null,
-          subtitles: metadata.subtitles,
-          sourceUpdatedAt: Math.floor(Date.now() / 1000),
+          introStartSeconds: parsed.intro?.start ?? null,
+          introEndSeconds: parsed.intro?.end ?? null,
+          outroStartSeconds: parsed.outro?.start ?? null,
+          outroEndSeconds: parsed.outro?.end ?? null,
+          subtitles: parsed.subtitles,
+          sourceUpdatedAt: parsed.sourceUpdatedAt,
         },
       });
   }

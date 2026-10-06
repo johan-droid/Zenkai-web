@@ -18,6 +18,8 @@ export interface CacheRedisClient {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, mode: "EX", ttl: number): Promise<unknown>;
   del(key: string): Promise<unknown>;
+  /** Seconds until the key expires; -1 when the key has no expiry, -2 when absent. */
+  ttl(key: string): Promise<number>;
   on(event: string, listener: () => void): unknown;
 }
 
@@ -145,8 +147,13 @@ export class Cache {
     if (this.#redis && this.#redisHealthy) {
       const remote = await this.#redis.get(key).catch(() => undefined);
       if (typeof remote === "string") {
-        // Promote into memory so the next hit skips the network entirely.
-        this.#memory.set(key, remote, config.CACHE_TTL_DISCOVERY_S);
+        // Promote into memory, but never past Redis's own expiry: an entry
+        // whose shared-tier deadline has passed must not be resurrected into
+        // the memory tier (P10: an expired signed URL must stay expired).
+        const ttl = await this.#redis.ttl(key).catch(() => -1);
+        const promoteTtlS =
+          ttl > 0 ? Math.min(ttl, config.CACHE_TTL_DISCOVERY_S) : config.CACHE_TTL_DISCOVERY_S;
+        this.#memory.set(key, remote, promoteTtlS);
         return remote;
       }
     }

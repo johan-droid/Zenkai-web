@@ -220,6 +220,28 @@ export class MangaRepository {
     return record?.id ?? null;
   }
 
+  /**
+   * Look up a manga row by an external provider id.
+   *
+   * The `manga_external_ids` table stores cross-references (anilist, mal, kitsu,
+   * ...) for titles that have already been synced, so a bridge lookup from one
+   * provider's id space to ours does not require a second provider call.
+   */
+  async getByExternalId(idType: string, externalId: string): Promise<Record<string, any> | null> {
+    if (!externalId) return null;
+
+    const [record] = await this.db
+      .select({ id: manga.id, mangadexId: manga.mangadexId })
+      .from(mangaExternalIds)
+      .innerJoin(manga, eq(manga.id, mangaExternalIds.mangaId))
+      .where(and(eq(mangaExternalIds.idType, idType), eq(mangaExternalIds.externalId, externalId)))
+      .limit(1);
+
+    if (!record || !record.mangadexId) return null;
+
+    return this.getByProviderId(record.mangadexId);
+  }
+
   /** Genres, credits, relations and external ids for one title. */
   async #fanOut(mangaId: string): Promise<Record<string, unknown>> {
     const [genres, credits, relations, externalIds] = await Promise.all([
@@ -337,6 +359,19 @@ export class MangaRepository {
         })),
       )
       .onConflictDoNothing();
+  }
+
+  /**
+   * Replace a title's external provider ids.
+   *
+   * Public so the manga service can seed the anilist cross-reference after a
+   * bridge lookup without re-syncing the whole title.
+   */
+  async replaceExternalIds(
+    mangaId: string,
+    externalIds: Record<string, string | undefined> | undefined,
+  ): Promise<void> {
+    await this.#replaceExternalIds(mangaId, externalIds);
   }
 
   /**

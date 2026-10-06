@@ -13,6 +13,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { AppError } from "../../http/errors.js";
 import { playbackGateway, redactPlaybackUrl } from "../../providers/streaming/gateway.js";
+import { playbackExecutionRequestSchema, toExecution } from "./execution.js";
 import type { AnimeRepository } from "../anime/repository.js";
 import type { PlaybackMetadataService } from "./metadata.js";
 import type { PlaybackResolver } from "./service.js";
@@ -93,6 +94,8 @@ export function registerPlaybackRoutes(
         // an empty list and cannot tell "nothing is hosted" from "we hold no id
         // that lets us ask anybody".
         skipped: result.skipped ?? [],
+        // Always present so the response shape does not change with the shelf.
+        resolutionTimeMs: result.resolutionTimeMs,
       };
     }
 
@@ -149,6 +152,63 @@ export function registerPlaybackRoutes(
     };
   });
 
+  /**
+   * Execute a canonical selection (P8).
+   *
+   * The client names a plan it saw in the sources response -- episodeId,
+   * sourceId, language -- and the server re-resolves it through P5 and P6 and
+   * returns the fresh, server-owned execution target for that exact source.
+   *
+   * The request is strict: `url`, `sourceUrl`, `streamUrl`, `provider`,
+   * `access`, `mechanism` or a headers object are all rejected with 400. The
+   * upstream URL always comes from the canonical source, never from the body.
+   * No server-side media fetch happens here; `embed` executions are iframe
+   * descriptions, never media.
+   */
+  app.post("/api/v1/playback/execute", async (request: FastifyRequest) => {
+    const selection = parseOrThrow(playbackExecutionRequestSchema, request.body);
+
+    const resolved = await resolver.resolveEpisode(selection.episodeId, {
+      language: selection.language,
+    });
+    if (!resolved) throw AppError.notFound(`episode ${selection.episodeId} not found`);
+
+    const { result } = resolved;
+
+    // The same distinction P7 makes public: an outage is retryable (503), an
+    // empty shelf with a requested sourceId is a stale selection (409).
+    if (result.sources.length === 0 && result.emptyReason === "all_failed") {
+      throw AppError.noSources("every playback provider failed", {
+        attempts: result.attempts,
+        skipped: result.skipped ?? [],
+      });
+    }
+
+    const plans = playbackGateway.planAll(result.sources);
+    const plan = plans.plans.find((candidate) => candidate.sourceId === selection.sourceId);
+
+    if (!plan) {
+      throw AppError.selectionStale(
+        `source ${selection.sourceId} no longer resolves for this episode`,
+        { sourceId: selection.sourceId },
+      );
+    }
+
+    request.log.info(
+      {
+        episodeId: selection.episodeId,
+        sourceId: plan.sourceId,
+        provider: plan.providerSlug,
+        mechanism: plan.mechanism,
+        delivery: plan.delivery,
+        url: redactPlaybackUrl(plan.url),
+      },
+      "playback execution selected",
+    );
+
+    return { execution: toExecution(plan) };
+  });
+
   /** Subtitles and skip markers (P10). */
   app.get("/api/v1/episodes/:episodeId/metadata", async (request) => {
     const { episodeId } = parseOrThrow(
@@ -197,13 +257,37 @@ export function registerPlaybackRoutes(
    * playback URL is chosen: a plan's URL always comes from a canonical source, and
    * this endpoint only ever serves the manifest that plan already named.
    */
-  app.get("/api/v1/playback/manifest", async (request) => {
+  app.get("/api/v1/playback/manifest", async (request, reply) => {
     const { url } = parseOrThrow(
       z.object({ url: z.string().trim().min(1) }),
       request.query,
     );
 
-    return playbackGateway.fetchManifest(url);
+    const manifest = await playbackGateway.fetchManifest(url);
+    reply.header("content-type", manifest.contentType);
+    // Signed upstream URLs must never outlive this response in a shared cache.
+    reply.header("cache-control", "no-store");
+    return reply.send(manifest.body);
+  });
+
+  /**
+   * Subtitle relay.
+   *
+   * Subtitle sidecars often carry no CORS headers, so the player cannot fetch
+   * them cross-origin. This relays them with the same guard as the manifest
+   * relay: same ENABLE_PLAYBACK_PROXY gate, allowlist, per-hop redirect
+   * validation, fixed UA/Accept, size cap. It is never an arbitrary file proxy.
+   */
+  app.get("/api/v1/playback/subtitle", async (request, reply) => {
+    const { url } = parseOrThrow(
+      z.object({ url: z.string().trim().min(1) }),
+      request.query,
+    );
+
+    const subtitle = await playbackGateway.fetchSubtitle(url);
+    reply.header("content-type", subtitle.contentType);
+    reply.header("cache-control", "no-store");
+    return reply.send(subtitle.body);
   });
 }
 

@@ -12,6 +12,7 @@ export type ErrorReason =
   | "bad_request"
   | "not_found"
   | "no_sources"
+  | "selection_stale"
   | "provider_unavailable"
   | "provider_timeout"
   | "upstream_error"
@@ -52,6 +53,11 @@ export class AppError extends Error {
 
   static internal(message: string, details?: unknown): AppError {
     return new AppError("internal", message, 500, details);
+  }
+
+  /** The client referenced a source that no longer resolves for this episode. */
+  static selectionStale(message: string, details?: unknown): AppError {
+    return new AppError("selection_stale", message, 409, details);
   }
 }
 

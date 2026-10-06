@@ -4,15 +4,16 @@ node_modules/
 # Build output
 dist/
 build/
-.next/
-turbopack/
 *.tsbuildinfo
 *.tsbuildinfo.old
 
-# Environment — never commit real secrets.
-# `.env.example` is tracked; the real `.env` is not.
+# Environment
 .env
 .env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
 
 # Logs
@@ -21,12 +22,28 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
+# Databases and Local Data
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/
+
+# Test output
+coverage/
+.nyc_output/
+
 # Editors / IDEs
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+.cursor/
 
 # OS files
 .DS_Store
@@ -35,7 +52,3 @@ pnpm-debug.log*
 .Spotlight-V100
 .Trashes
 Thumbs.db
-
-# Test output
-coverage/
-.nyc_output/

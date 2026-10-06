@@ -77,12 +77,7 @@ export async function getTitleProgress(
 
 /**
  * The continue rail: the latest unfinished unit per title, most recent first.
- *
- * Titles at 95%+ are treated as done and rolled forward to the next unit — but
- * only while a next unit can actually exist. A show whose final episode was
- * finished has nothing to continue to, so when the catalogue count is known and
- * the finished unit is the last one, the title leaves the rail instead of
- * pointing at an episode that isn't there (P16).
+ * Titles at 95%+ are treated as done and rolled forward to the next unit.
  */
 export async function getContinueWatching(
   kind: ProgressKind = "anime",
@@ -96,34 +91,29 @@ export async function getContinueWatching(
     if (!current || row.updatedAt > current.updatedAt) latestByMedia.set(row.mediaId, row);
   }
 
-  const entries: ContinueEntry[] = [];
+  return Array.from(latestByMedia.values())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, limit)
+    .map((row) => {
+      const unit = row.completed ? row.unit + 1 : row.unit;
+      const fraction =
+        row.completed || !row.durationSeconds
+          ? 0
+          : Math.min(1, row.positionSeconds / row.durationSeconds);
 
-  for (const row of latestByMedia.values()) {
-    const atEndOfCatalogue =
-      row.completed && row.totalUnits !== null && row.unit >= row.totalUnits;
-    if (atEndOfCatalogue) continue;
-
-    const unit = row.completed ? row.unit + 1 : row.unit;
-    const fraction =
-      row.completed || !row.durationSeconds
-        ? 0
-        : Math.min(1, row.positionSeconds / row.durationSeconds);
-
-    entries.push({
-      mediaId: row.mediaId,
-      kind: row.kind,
-      title: row.title,
-      coverUrl: row.coverUrl,
-      unit,
-      positionSeconds: row.completed ? 0 : row.positionSeconds,
-      durationSeconds: row.durationSeconds,
-      totalUnits: row.totalUnits,
-      fraction,
-      updatedAt: row.updatedAt,
+      return {
+        mediaId: row.mediaId,
+        kind: row.kind,
+        title: row.title,
+        coverUrl: row.coverUrl,
+        unit,
+        positionSeconds: row.completed ? 0 : row.positionSeconds,
+        durationSeconds: row.durationSeconds,
+        totalUnits: row.totalUnits,
+        fraction,
+        updatedAt: row.updatedAt,
+      };
     });
-  }
-
-  return entries.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit);
 }
 
 export async function clearHistory(): Promise<void> {
@@ -165,11 +155,19 @@ export interface ZenkaiExport {
   library: LibraryRecord[];
 }
 
-/*
- * Import/export moved to `@/lib/library` (P16).
- *
- * The old `importData` merged an arbitrary parsed JSON file straight into
- * IndexedDB with no validation, so a hand-edited or foreign export could persist
- * any field it liked — including a `streamUrl` or a provider. The boundary now
- * owns export/import and validates with a `.strict()` schema before writing.
- */
+export async function exportData(): Promise<ZenkaiExport> {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    progress: await db.progress.toArray(),
+    library: await db.library.toArray(),
+  };
+}
+
+/** Merge an export back in. Existing rows are overwritten by id. */
+export async function importData(data: Partial<ZenkaiExport>): Promise<void> {
+  await db.transaction("rw", db.progress, db.library, async () => {
+    if (data.progress?.length) await db.progress.bulkPut(data.progress);
+    if (data.library?.length) await db.library.bulkPut(data.library);
+  });
+}

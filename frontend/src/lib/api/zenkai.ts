@@ -454,7 +454,7 @@ export interface ServerOption {
 async function getValidated<T extends z.ZodTypeAny>(
   path: string,
   schema: T,
-  params?: Record<string, string | number | boolean | undefined>,
+  params?: Record<string, string | number | undefined>,
 ): Promise<z.infer<T>> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params ?? {})) {
@@ -499,167 +499,6 @@ export function fetchMangaCatalogue(limit = 14): Promise<MangaCatalogueResult> {
   return getValidated("/api/v1/manga", mangaCatalogueSchema, { limit });
 }
 
-/**
- * `GET /api/v1/anime` response body (P17 browse).
- *
- * The catalogue list is database-backed, so unlike the discovery result it
- * carries no `source` and no provider-side `hasNextPage`: the next page exists
- * when `page * perPage < total`.
- */
-export const animeBrowseResultSchema = z.object({
-  items: z.array(discoveryCardSchema),
-  page: z.number(),
-  perPage: z.number(),
-  total: z.number(),
-});
-
-export type AnimeBrowseResult = z.infer<typeof animeBrowseResultSchema>;
-
-/**
- * Canonical anime browse.
- *
- * Reads the database-backed catalogue with explicit filters, sorting and
- * pagination, and returns the same discovery-card shape home/search render so
- * the browse grid has one media model. A 400 is a bad filter/sort; a 503 is a
- * backend outage; an empty page is a 200 with `items: []`.
- *
- * Failure semantics deliberately match the contract: empty is not outage, and
- * a malformed filter is a bad request, not a silently ignored one.
- */
-export function fetchAnimeBrowse(params: {
-  page?: number;
-  perPage?: number;
-  genre?: string;
-  format?: string;
-  status?: string;
-  sort?: string;
-}): Promise<AnimeBrowseResult> {
-  return getValidated("/api/v1/anime", animeBrowseResultSchema, params);
-}
-
-/**
- * Trending anime browse.
- *
- * Trending is an upstream discovery signal with no catalogue column behind it
- * (P17), so it is served by the discovery route rather than being quietly
- * downgraded to a popularity sort. The route accepts the same genre/format/
- * status filters the catalogue does, so switching sort never silently drops
- * the user's other filters.
- */
-export function fetchAnimeTrendingBrowse(params: {
-  page?: number;
-  perPage?: number;
-  genre?: string;
-  format?: string;
-  status?: string;
-}): Promise<DiscoveryResult> {
-  return getValidated(
-    "/api/v1/anime/discovery/trending",
-    discoveryResultSchema,
-    params,
-  );
-}
-
-/**
- * Canonical manga browse.
- *
- * Same idea as anime browse: database-backed pagination with explicit genre,
- * status, sort and adult-toggle. An empty catalogue is a successful 200 with
- * no items, not an outage. The backend paginates by `limit`/`offset`; the
- * caller thinks in pages and the translation happens here, once.
- *
- * This is the frontend contract that backs both the manga shelf and the manga
- * browse page. The frontend must not invent catalogue rows when the backend
- * has none. The next page exists when `offset + items.length < total`.
- */
-export function fetchMangaBrowse(params: {
-  page?: number;
-  perPage?: number;
-  genre?: string;
-  status?: string;
-  sort?: string;
-  includeAdult?: boolean;
-}): Promise<MangaCatalogueResult> {
-  const perPage = params.perPage ?? 20;
-  const page = params.page ?? 1;
-  return getValidated("/api/v1/manga", mangaCatalogueSchema, {
-    limit: perPage,
-    offset: (page - 1) * perPage,
-    genre: params.genre,
-    status: params.status,
-    sort: params.sort,
-    includeAdult: params.includeAdult,
-  });
-}
-
-/** Filters a browse page may combine. */
-export interface BrowseFilters {
-  genre?: string;
-  format?: string;
-  status?: string;
-  sort: string;
-}
-
-/** One normalized browse page, whichever kind and route served it. */
-export interface BrowsePage {
-  items: MediaSummary[];
-  hasNextPage: boolean;
-  total: number | null;
-}
-
-/**
- * Fetch one page of the canonical browse, normalized onto one shape.
- *
- * Anime trending goes to the discovery route (the only place the signal
- * legitimately exists — it is never sent to the catalogue route, which would
- * reject it as an unknown sort); every other anime sort and all manga sorts go
- * to the database-backed catalogue lists. Empty is a 200 with no items; a 400
- * is a rejected filter; a 503 is an outage. None of them is fake data.
- */
-export async function fetchBrowsePage(
-  kind: MediaKind,
-  filters: BrowseFilters,
-  page: number,
-  perPage: number,
-): Promise<BrowsePage> {
-  if (kind === "anime") {
-    const params = {
-      page,
-      perPage,
-      genre: filters.genre,
-      format: filters.format,
-      status: filters.status,
-    };
-    if (filters.sort === "trending") {
-      const result = await fetchAnimeTrendingBrowse(params);
-      return {
-        items: result.items.map((card) => discoveryCardToMedia(card, "anime")),
-        hasNextPage: result.hasNextPage,
-        total: result.total,
-      };
-    }
-    const result = await fetchAnimeBrowse({ ...params, sort: filters.sort });
-    return {
-      items: result.items.map((card) => discoveryCardToMedia(card, "anime")),
-      hasNextPage: result.page * result.perPage < result.total,
-      total: result.total,
-    };
-  }
-
-  const result = await fetchMangaBrowse({
-    page,
-    perPage,
-    genre: filters.genre,
-    status: filters.status,
-    sort: filters.sort,
-  });
-  return {
-    items: result.items.map(mangaCatalogueItemToMedia),
-    hasNextPage: result.offset + result.items.length < result.total,
-    total: result.total,
-  };
-}
-
 /** A single discovery bucket (trending / popular / seasonal / topRated). */
 export function fetchDiscovery(
   bucket: "trending" | "popular" | "seasonal" | "topRated",
@@ -699,6 +538,247 @@ export function fetchAnimeSearch(
     }),
     { q: query, limit },
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* P17 manga detail contract (mirrors GET /api/v1/manga/by-anilist/:id) */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The canonical manga detail payload.
+ *
+ * Addresses manga by the same AniList id the reader and detail URLs already
+ * use; the backend bridges that id to the MangaDex catalogue internally.
+ * Fields the provider may legitimately omit are `nullish()` for the same
+ * reason the anime detail schema uses it: a missing key and an explicit null
+ * both mean "the provider did not say".
+ */
+export const mangaDetailSchema = z.object({
+  /** Local canonical id; the reader holds chapter ids derived from this. */
+  id: z.string(),
+  /** The MangaDex uuid, when the title has one; null until then. */
+  mangadexId: z.string().nullable(),
+  /** Cross-reference ids from the provider that owned the title. */
+  externalIds: z.record(z.string(), z.string().nullable()).optional(),
+  titles: z.object({
+    primary: z.string(),
+    alternates: z.array(z.string()),
+  }),
+  canonicalTitle: z.string(),
+  description: z.string().nullish(),
+  coverUrl: z.string().nullish(),
+  coverImageLarge: z.string().nullish(),
+  bannerUrl: z.string().nullish(),
+  status: z.string().nullish(),
+  contentRating: z.string().nullish(),
+  year: z.number().nullish(),
+  genres: z.array(
+    z.object({
+      name: z.string(),
+      group: z.string().nullable(),
+    }),
+  ).nullish(),
+  authors: z.array(z.string()).nullish(),
+  artists: z.array(z.string()).nullish(),
+  totalChapters: z.number().nullish(),
+  totalVolumes: z.number().nullish(),
+  relations: z.array(
+    z.object({
+      type: z.string(),
+      providerId: z.string(),
+      title: z.string().nullish(),
+      coverUrl: z.string().nullish(),
+    }),
+  ).nullish(),
+});
+
+export type MangaDetail = z.infer<typeof mangaDetailSchema>;
+
+/**
+ * Full canonical manga detail (P17).
+ *
+ * Addressed by AniList id so the reader and detail routes can keep using the
+ * same cross-reference id the anime side uses. A 404 is a missing title; a 400
+ * is a malformed id; everything else is a transport/contract problem.
+ */
+export function fetchMangaDetail(anilistId: string): Promise<MangaDetail> {
+  return getValidated(
+    `/api/v1/manga/by-anilist/${encodeURIComponent(anilistId)}`,
+    mangaDetailSchema,
+  );
+}
+
+/**
+ * One chapter in the canonical feed.
+ *
+ * `chapterNumber` is a string because upstream can publish "12.5" or "extra".
+ * The reader resolves a requested number to the closest feed entry.
+ */
+export const mangaChapterSchema = z.object({
+  id: z.string(),
+  chapterNumber: z.string(),
+  volume: z.string().nullish(),
+  title: z.string().nullish(),
+  language: z.string().nullish(),
+  pages: z.number().nullish(),
+  publishedAt: z.string().nullish(),
+  scanlationGroup: z.string().nullish(),
+});
+
+export type MangaChapter = z.infer<typeof mangaChapterSchema>;
+
+/**
+ * The canonical chapter feed for one manga (GET /api/v1/manga/:id/chapters).
+ *
+ * Addressed by the MangaDex id from the detail payload; oldest first so the
+ * reader can walk the series in order.
+ */
+export const mangaChapterFeedSchema = z.object({
+  mangaId: z.string(),
+  language: z.string(),
+  items: z.array(mangaChapterSchema),
+});
+
+export type MangaChapterFeed = z.infer<typeof mangaChapterFeedSchema>;
+
+/**
+ * The canonical page list for one chapter (GET /api/v1/manga/chapters/:id/pages).
+ *
+ * Page URLs are signed and short-lived upstream, so the backend returns them
+ * with no-store and the client must treat them as ephemeral: render them now,
+ * do not persist them. A 404 is a missing chapter; a 502 is an upstream image
+ * provider being unavailable.
+ */
+export const mangaChapterPagesSchema = z.object({
+  pageCount: z.number(),
+  pages: z.array(
+    z.object({
+      pageNumber: z.number(),
+      url: z.string(),
+    }),
+  ),
+});
+
+export type MangaChapterPages = z.infer<typeof mangaChapterPagesSchema>;
+
+/** Canonical chapter feed for one manga (P17). */
+export function fetchMangaChapters(
+  mangadexId: string,
+  language = "en",
+): Promise<MangaChapterFeed> {
+  return getValidated(
+    `/api/v1/manga/${encodeURIComponent(mangadexId)}/chapters`,
+    mangaChapterFeedSchema,
+    { language },
+  );
+}
+
+/** Canonical page list for one chapter (P17). */
+export function fetchMangaChapterPages(chapterId: string): Promise<MangaChapterPages> {
+  return getValidated(
+    `/api/v1/manga/chapters/${encodeURIComponent(chapterId)}/pages`,
+    mangaChapterPagesSchema,
+  );
+}
+
+/**
+ * Why a manga request failed, for UI that must not lie.
+ *
+ * "Not found" is a fact about the title; every other failure is a loading
+ * problem. Collapsing these is how a provider outage becomes a missing manga.
+ */
+export type MangaFailure = "not_found" | "invalid_response" | "unavailable";
+
+export function classifyMangaError(error: unknown): MangaFailure {
+  if (error instanceof ZenkaiContractError) return "invalid_response";
+  if (error instanceof HttpError && error.status === 404) return "not_found";
+  return "unavailable";
+}
+
+/* ------------------------------------------------------------------ */
+/* Schedule contract (GET /api/v1/schedule/week, /api/v1/anime/:id/schedule) */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One airing slot, as the canonical schedule endpoints return it.
+ *
+ * The backend derives `airingState` from the stored timestamp on every read,
+ * never from the provider's stored label, so a slot written as "not yet aired"
+ * still reads correctly weeks after it aired. `secondsUntil` is computed per
+ * read so a cached day view still shows a live countdown.
+ */
+export const scheduleEntrySchema = z.object({
+  scheduleId: z.string(),
+  episodeNumber: z.number(),
+  airingAt: z.coerce.date(),
+  airingState: z.enum(["aired", "upcoming", "unknown"]),
+  providerStatus: z.string(),
+  source: z.string(),
+  secondsUntil: z.number(),
+  /** The joined title metadata the schedule query attaches. */
+  animeId: z.string(),
+  anilistId: z.string(),
+  title: z.string(),
+  coverUrl: z.string().nullable(),
+  totalEpisodes: z.number().nullable(),
+  slug: z.string(),
+  /** Present on week/day views; absent on single-title schedule. */
+  dayOfWeek: z.string().optional(),
+});
+
+export type ScheduleEntry = z.infer<typeof scheduleEntrySchema>;
+
+/**
+ * The week view payload.
+ *
+ * Groups slots by local calendar day in `SCHEDULE_TIMEZONE` so a client can
+ * label each day without recomputing the zone. `from`/`to` are UTC isot so the
+ * client can compute a range; `timeZone` tells the client which civil zone the
+ * days were grouped in.
+ */
+export const scheduleWeekSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  timeZone: z.string(),
+  days: z.array(
+    z.object({
+      date: z.string(),
+      dayOfWeek: z.string(),
+      entries: z.array(scheduleEntrySchema),
+    }),
+  ),
+});
+
+export type ScheduleWeek = z.infer<typeof scheduleWeekSchema>;
+
+/** Canonical week schedule (P3). */
+export function fetchScheduleWeek(): Promise<ScheduleWeek> {
+  return getValidated("/api/v1/schedule/week", scheduleWeekSchema);
+}
+
+/**
+ * Schedule for one title.
+ *
+ * Addressed by AniList id so the detail page can show airing history without
+ * the client reconstructing it from AniList.
+ */
+export const scheduleForAnimeSchema = z.array(scheduleEntrySchema);
+
+export function fetchAnimeSchedule(anilistId: string): Promise<ScheduleEntry[]> {
+  return getValidated(
+    `/api/v1/anime/${encodeURIComponent(anilistId)}/schedule`,
+    scheduleForAnimeSchema,
+  );
+}
+
+/**
+ * Why a schedule request failed, for UI that must not lie.
+ */
+export type ScheduleFailure = "invalid_response" | "unavailable";
+
+export function classifyScheduleError(error: unknown): ScheduleFailure {
+  if (error instanceof ZenkaiContractError) return "invalid_response";
+  return "unavailable";
 }
 
 /** Full canonical anime detail (P13).

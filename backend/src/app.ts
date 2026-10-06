@@ -24,6 +24,7 @@ import {
   buildProviders,
   buildProvidersWithDemos,
 } from "./providers/streaming/registry.js";
+import { redactRequestUrl } from "./providers/streaming/gateway.js";
 import { healthRegistry } from "./providers/streaming/health.js";
 import { AnimeRepository } from "./modules/anime/repository.js";
 import { AnimeService } from "./modules/anime/service.js";
@@ -50,6 +51,16 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     logger: {
       level: config.NODE_ENV === "production" ? "info" : "debug",
       transport: config.NODE_ENV === "development" ? undefined : undefined,
+      serializers: {
+        // Request logs would otherwise persist signed relay URLs
+        // (/api/v1/playback/manifest?url=https://cdn.../token=...).
+        req: (request) => ({
+          method: request.method,
+          url: redactRequestUrl(request.url),
+          hostname: request.hostname,
+          remoteAddress: request.ip,
+        }),
+      },
     },
     // Trust the proxy's X-Forwarded-* so rate limiting keys on the real client.
     trustProxy: true,

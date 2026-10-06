@@ -14,6 +14,7 @@
 import { cache } from "../../cache/index.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
+import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { MangaDexProvider } from "../../providers/manga/mangadex.js";
 import type { MangaProvider } from "../../providers/manga/types.js";
 import { MangaRepository, type MangaListOptions } from "./repository.js";
@@ -68,9 +69,82 @@ export class MangaService {
     return { ...detail, id: localId };
   }
 
-  /** Catalogue listing straight from the database. */
+  /**
+   * Resolve a manga by its AniList id.
+   *
+   * The manga catalogue is keyed by MangaDex id; AniList ids are stored as
+   * cross-references on titles that have already been synced. On a cache miss
+   * this fetches the title from AniList, extracts the MangaDex id from the
+   * provider links, upserts the canonical row and returns the full detail.
+   *
+   * This is the seam that lets the reader and manga detail routes address
+   * titles by the same AniList id the anime side uses, without the frontend
+   * ever calling AniList or MangaDex directly.
+   */
+  async getByAnilistId(anilistId: string): Promise<Record<string, any>> {
+    const numericId = Number(anilistId);
+    if (!Number.isFinite(numericId)) {
+      throw Object.assign(new Error("invalid anilist id"), { statusCode: 400, reason: "bad_request" });
+    }
+
+    // DB first: titles already synced carry the anilist id as a cross-reference.
+    const cached = await this.repo.getByExternalId("anilist", anilistId);
+    if (cached) return cached;
+
+    // Cache miss: one AniList call to bridge the id space, then the normal
+    // MangaDex path so the frontend never sees a provider-split response.
+    const anilist = new AnilistProvider();
+    const manga = await anilist.getByAnilistId(anilistId, "MANGA");
+    if (!manga) throw AppError.notFound(`manga ${anilistId} not found upstream`);
+
+    const mangadexId = manga.externalIds?.mangadex;
+    if (!mangadexId) {
+      throw Object.assign(
+        new Error(`manga ${anilistId} has no MangaDex cross-reference`),
+        { statusCode: 404, reason: "not_found" },
+      );
+    }
+
+    // Reuse the normal path so relations, credits and external ids land in the
+    // database for every request after the first.
+    const full = await this.getFull(mangadexId);
+
+    // Ensure the anilist cross-reference is stored for the next lookup.
+    await this.repo.replaceExternalIds(full.id, manga.externalIds).catch(() => undefined);
+
+    return full;
+  }
+
+  /** Catalogue listing straight from the database, with provider fallback when empty. */
   async list(options: MangaListOptions): Promise<{ items: Record<string, any>[]; total: number }> {
-    return this.repo.list(options);
+    const dbCount = await this.count();
+    if (dbCount > 0) {
+      return this.repo.list(options);
+    }
+
+    // Database catalogue is empty: run provider-backed discovery fallback to seed.
+    let page;
+    try {
+      page = await this.provider.browse({
+        limit: Math.max(options.limit, 20),
+        offset: options.offset,
+        status: options.status ? [options.status.toLowerCase()] : undefined,
+      });
+    } catch (err: any) {
+      throw Object.assign(
+        new Error(`manga provider unavailable: ${err?.message ?? String(err)}`),
+        { statusCode: 503, reason: "provider_unavailable" },
+      );
+    }
+
+    if (page?.items && page.items.length > 0) {
+      await Promise.all(
+        page.items.map((summary) => this.repo.upsert(summary).catch(() => undefined)),
+      );
+      return this.repo.list(options);
+    }
+
+    return { items: [], total: 0 };
   }
 
   /**
@@ -172,6 +246,16 @@ export class MangaService {
   /** Distinct genres across the catalogue. */
   async genres(): Promise<string[]> {
     return this.repo.listGenres();
+  }
+
+  /**
+   * Look up a manga row by an external provider id.
+   *
+   * Used by `getByAnilistId` to find already-cached titles without going
+   * through MangaDex first.
+   */
+  async getByExternalId(idType: string, externalId: string): Promise<Record<string, any> | null> {
+    return this.repo.getByExternalId(idType, externalId);
   }
 
   /** Row count, for the health check. */

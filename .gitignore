@@ -1,35 +1,70 @@
-# Zenkai — dependencies and build output are ignored in each sub-project too.
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.bundle/
+
+# Build and Compilation Output
 dist/
 build/
+out/
 .next/
 turbopack/
+.turbo/
 *.tsbuildinfo
 *.tsbuildinfo.old
 
-# Environment — never commit real secrets.
+# Environment Variables & Secrets
 .env
 .env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
 
-# Logs
+# Logs & Diagnostics
 *.log
+logs/
 npm-debug.log*
 yarn-debug.log*
+yarn-error.log*
 pnpm-debug.log*
 
-# Test output
+# Test and Coverage
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
+blob-report/
 
-# Editors / IDEs
+# Databases and Local Data
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/
+
+# IDE & Editor Settings
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
+.cursor/
 
-# OS files
+# OS Specific
 .DS_Store
 .DS_Store?
 ._*
@@ -37,6 +72,18 @@ coverage/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Tool / Assistant / Scratch Directories
+.freebuff/
+.mimocode/
+.gemini/
+.agents/
+tmp/
+tmp-*/
+/tmp
+/tmp-*
+.temp/
+.cache/
 
 # Deployment
 .vercel
