@@ -6,7 +6,7 @@
  * the only identifier stable across re-syncs.
  */
 
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   manga,
@@ -21,6 +21,22 @@ import {
 import { normalizeTitle } from "../../domain/media.js";
 import type { ChapterPages, MangaDetail, MangaSummary, ProviderChapter } from "../../providers/manga/types.js";
 
+/**
+ * Catalogue orderings a client may ask for (P17 browse).
+ *
+ * Mirrors the anime vocabulary minus the formats that only make sense for
+ * anime. "trending" is absent for the same reason: it is an upstream signal.
+ */
+export const MANGA_SORTS = [
+  "followed",
+  "rating",
+  "newest",
+  "recently-updated",
+  "title",
+] as const;
+
+export type MangaSort = (typeof MANGA_SORTS)[number];
+
 export interface MangaListOptions {
   limit: number;
   offset: number;
@@ -28,6 +44,7 @@ export interface MangaListOptions {
   status?: string;
   /** Hide explicit titles unless the caller asks for them. */
   includeAdult?: boolean;
+  sort?: MangaSort;
 }
 
 /** Stable, URL-safe identifier derived from the canonical title. */
@@ -236,20 +253,35 @@ export class MangaRepository {
 
     // A genre filter has to run inside the query, not on the returned page,
     // or most pages come back empty.
+    // Matched case-insensitively, like the anime repository: the stored genre is
+    // the provider's spelling ("Action"), so an exact match makes "action" look
+    // like a filter that returns nothing rather than one that is forgiving.
+    const order: Record<MangaSort, ReturnType<typeof desc>[]> = {
+      followed: [desc(manga.followedCount)],
+      // `rating` is a short string grade, so it is ordered as text. That is the
+      // provider's own ordering of the column and is what the manga detail
+      // shows; mixing it with a numeric sort would be meaningless.
+      rating: [desc(manga.rating), desc(manga.followedCount)],
+      newest: [desc(manga.year), desc(manga.followedCount)],
+      "recently-updated": [desc(manga.updatedAt), desc(manga.followedCount)],
+      title: [asc(manga.canonicalTitle)],
+    };
+    const orderBy = order[options.sort ?? "followed"];
+
     const rows = options.genre
       ? await this.db
           .select({ record: manga })
           .from(manga)
           .innerJoin(mangaGenres, eq(mangaGenres.mangaId, manga.id))
-          .where(and(base, eq(mangaGenres.genre, options.genre)))
-          .orderBy(desc(manga.followedCount))
+          .where(and(base, sql`lower(${mangaGenres.genre}) = lower(${options.genre})`))
+          .orderBy(...orderBy)
           .limit(options.limit)
           .offset(options.offset)
       : await this.db
           .select()
           .from(manga)
           .where(base)
-          .orderBy(desc(manga.followedCount))
+          .orderBy(...orderBy)
           .limit(options.limit)
           .offset(options.offset);
 
@@ -258,7 +290,7 @@ export class MangaRepository {
           .select({ count: sql<number>`count(*)::int` })
           .from(manga)
           .innerJoin(mangaGenres, eq(mangaGenres.mangaId, manga.id))
-          .where(and(base, eq(mangaGenres.genre, options.genre)))
+          .where(and(base, sql`lower(${mangaGenres.genre}) = lower(${options.genre})`))
       : await this.db.select({ count: sql<number>`count(*)::int` }).from(manga).where(base);
 
     return {

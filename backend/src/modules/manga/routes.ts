@@ -13,6 +13,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { MangaService } from "./service.js";
+import { MANGA_SORTS } from "./repository.js";
 
 function parseOrThrow<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
@@ -34,6 +35,7 @@ const listQuery = z.object({
   ...pagination,
   genre: z.string().trim().min(1).max(128).optional(),
   status: z.enum(["ONGOING", "COMPLETED", "HIATUS", "CANCELLED"]).optional(),
+  sort: z.enum(MANGA_SORTS).optional(),
   includeAdult: z
     .enum(["true", "false"])
     .optional()
@@ -62,6 +64,7 @@ export function registerMangaRoutes(app: FastifyInstance, service: MangaService)
       genre: query.genre,
       status: query.status,
       includeAdult: query.includeAdult,
+      sort: query.sort,
     });
 
     return { items, total, limit: query.limit, offset: query.offset };

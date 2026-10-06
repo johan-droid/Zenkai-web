@@ -10,7 +10,7 @@
  * provider id is the only identifier guaranteed stable across re-syncs.
  */
 
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   anime,
@@ -82,6 +82,25 @@ async function genresFor(db: Db, ids: string[]): Promise<Map<string, string[]>> 
   return byAnime;
 }
 
+/**
+ * Catalogue orderings a client may ask for (P17 browse).
+ *
+ * Named for what the catalogue can actually sort by, not for a provider's sort
+ * vocabulary. "trending" is deliberately absent: trending is an upstream
+ * signal with no column behind it, so it stays on the discovery route rather
+ * than being quietly downgraded to popularity.
+ */
+export const ANIME_SORTS = [
+  "popularity",
+  "score",
+  "recently-updated",
+  "recently-added",
+  "title",
+  "newest",
+] as const;
+
+export type AnimeSort = (typeof ANIME_SORTS)[number];
+
 export interface AnimeListOptions {
   limit: number;
   offset: number;
@@ -89,6 +108,8 @@ export interface AnimeListOptions {
   seasonYear?: number;
   status?: string;
   genre?: string;
+  format?: string;
+  sort?: AnimeSort;
 }
 
 /** Stable, URL-safe identifier derived from the canonical title. */
@@ -499,7 +520,7 @@ export class AnimeRepository {
    * to be hit by every home-page row at once, and proxying it would spend the
    * upstream rate limit on data we already hold.
    */
-  async list(options: AnimeListOptions): Promise<{ items: Record<string, any>[]; total: number }> {
+  async list(options: AnimeListOptions): Promise<{ items: DiscoveryCard[]; total: number }> {
     const conditions = [];
 
     if (options.season && options.seasonYear) {
@@ -508,8 +529,23 @@ export class AnimeRepository {
       );
     }
     if (options.status) conditions.push(eq(anime.status, options.status));
+    if (options.format) conditions.push(eq(anime.format, options.format));
 
     const base = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Popularity correlates most reliably with "what people are actually
+    // watching", so it drives the default order; score breaks ties.
+    const order: Record<AnimeSort, ReturnType<typeof desc>[]> = {
+      popularity: [desc(anime.popularity), desc(anime.averageScore)],
+      score: [desc(anime.averageScore), desc(anime.popularity)],
+      // `source_updated_at` is the provider's own updatedAt, so this is "what
+      // changed upstream", not "what a background job last touched".
+      "recently-updated": [desc(anime.sourceUpdatedAt), desc(anime.popularity)],
+      "recently-added": [desc(anime.createdAt), desc(anime.popularity)],
+      title: [asc(anime.canonicalTitle)],
+      newest: [desc(anime.year), desc(anime.seasonYear), desc(anime.popularity)],
+    };
+    const orderBy = order[options.sort ?? "popularity"];
 
     // A genre filter has to be applied inside the query, not on the returned
     // page: filtering 20 of 50 rows down to 3 would leave most pages empty.
@@ -523,16 +559,14 @@ export class AnimeRepository {
           .from(anime)
           .innerJoin(animeGenres, eq(animeGenres.animeId, anime.id))
           .where(and(base, sql`lower(${animeGenres.genre}) = lower(${options.genre})`))
-          // Popularity correlates most reliably with "what people are actually
-          // watching", so it drives the default order; score breaks ties.
-          .orderBy(desc(anime.popularity), desc(anime.averageScore))
+          .orderBy(...orderBy)
           .limit(options.limit)
           .offset(options.offset)
       : await this.db
           .select()
           .from(anime)
           .where(base)
-          .orderBy(desc(anime.popularity), desc(anime.averageScore))
+          .orderBy(...orderBy)
           .limit(options.limit)
           .offset(options.offset);
 
@@ -541,11 +575,21 @@ export class AnimeRepository {
           .select({ count: sql<number>`count(*)::int` })
           .from(anime)
           .innerJoin(animeGenres, eq(animeGenres.animeId, anime.id))
-          .where(and(base, eq(animeGenres.genre, options.genre)))
+          .where(and(base, sql`lower(${animeGenres.genre}) = lower(${options.genre})`))
       : await this.db.select({ count: sql<number>`count(*)::int` }).from(anime).where(base);
 
+    // Cards, not rows (P17): the catalogue list, home shelves and search all
+    // answer with the same shape, so a client has one model rather than three.
+    const genresByAnime = await genresFor(
+      this.db,
+      rows.map((row: any) => (row.record ? row.record.id : row.id)),
+    );
+
     return {
-      items: rows.map((row: any) => (row.record ? row.record : row)),
+      items: rows.map((row: any) => {
+        const record = row.record ?? row;
+        return rowToCard(record, genresByAnime.get(record.id) ?? []);
+      }),
       total: Number(count ?? 0),
     };
   }

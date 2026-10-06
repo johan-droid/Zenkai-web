@@ -16,6 +16,7 @@ import { AppError } from "../../http/errors.js";
 import type { DiscoveryService } from "./discovery.js";
 import type { EpisodeService } from "./episodes.js";
 import type { AnimeService } from "./service.js";
+import { ANIME_SORTS } from "./repository.js";
 
 const positiveInt = z.coerce.number().int().positive();
 const season = z.enum(["WINTER", "SPRING", "SUMMER", "FALL"]);
@@ -39,6 +40,11 @@ const listQuery = z.object({
   seasonYear: z.coerce.number().int().min(1900).max(2200).optional(),
   status: z.enum(["FINISHED", "RELEASING", "NOT_YET_RELEASED", "CANCELLED", "HIATUS"]).optional(),
   genre: z.string().trim().min(1).max(64).optional(),
+  format: z.enum(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL", "MUSIC"]).optional(),
+  // Catalogue orderings only (P17). "trending" is not here on purpose: it is an
+  // upstream signal with no column behind it, so it stays on the discovery route
+  // rather than being silently served as popularity.
+  sort: z.enum(ANIME_SORTS).optional(),
 });
 
 const searchQuery = z.object({
@@ -97,8 +103,11 @@ export function registerAnimeRoutes(
       seasonYear: query.seasonYear,
       status: query.status,
       genre: query.genre,
+      format: query.format,
+      sort: query.sort,
     });
 
+    // Discovery cards, the same shape home and search return (P17).
     return { items, page: query.page, perPage: query.perPage, total };
   });
 

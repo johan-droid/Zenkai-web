@@ -168,7 +168,7 @@ export class AnimeService {
   }
 
   /** Catalogue listing straight from the database. */
-  async list(options: AnimeListOptions): Promise<{ items: Record<string, any>[]; total: number }> {
+  async list(options: AnimeListOptions): Promise<{ items: DiscoveryCard[]; total: number }> {
     return this.repo.list(options);
   }
 
