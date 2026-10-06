@@ -254,6 +254,187 @@ export const episodeNavigationSchema = z.object({
 export type EpisodeNavigation = z.infer<typeof episodeNavigationSchema>;
 
 /* ------------------------------------------------------------------ */
+/* P14 playback contract (mirrors backend/src/modules/playback)        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The canonical audio shelves. These are the only language values the client
+ * may send; provider-specific labels (ENG, SUBTITLE, ...) are backend
+ * vocabulary and never reach the wire from here.
+ */
+export const playbackLanguageSchema = z.enum(["sub", "dub", "multi"]);
+export type PlaybackLanguage = z.infer<typeof playbackLanguageSchema>;
+
+const playbackAccessSchema = z.enum(["hls", "mp4", "direct", "embed"]);
+const playbackMechanismSchema = z.enum(["hls", "progressive", "iframe"]);
+const playbackDeliverySchema = z.enum(["client", "proxied"]);
+
+const subtitleTrackSchema = z.object({
+  language: z.string(),
+  url: z.string(),
+  kind: z.string().optional(),
+});
+
+/** A validated, ranked canonical source (P7), as the client may see it. */
+const playbackSourceSchema = z.object({
+  id: z.string(),
+  providerSlug: z.string(),
+  providerName: z.string(),
+  endpointSlug: z.string(),
+  accessType: playbackAccessSchema,
+  playbackUrl: z.string(),
+  quality: z.string().optional(),
+  resolution: z.number().optional(),
+  language: playbackLanguageSchema,
+  subtitles: z.array(subtitleTrackSchema).optional(),
+  referer: z.string().optional(),
+  priority: z.number(),
+  validated: z.boolean().optional(),
+  rank: z.number(),
+});
+
+/**
+ * The canonical "how to play it" for one source (P8 plan).
+ *
+ * `plans[i]` describes `sources[i]` in the backend's ranked order, so list order
+ * *is* the ranking: the client plays `plans[0]` and falls back down the list.
+ * It never re-ranks, and it never reads a source's `playbackUrl` — only an
+ * execution returned by `POST /playback/execute` is a playback authority.
+ */
+const playbackPlanSchema = z.object({
+  sourceId: z.string(),
+  providerSlug: z.string(),
+  providerName: z.string(),
+  endpointSlug: z.string(),
+  access: playbackAccessSchema,
+  mechanism: playbackMechanismSchema,
+  mediaType: z.string().nullable(),
+  url: z.string(),
+  delivery: playbackDeliverySchema,
+  proxyUrl: z.string().optional(),
+  language: playbackLanguageSchema,
+  quality: z.string().optional(),
+  resolution: z.number().optional(),
+  validated: z.boolean(),
+  playable: z.boolean(),
+  capabilities: z.object({
+    seekable: z.boolean().nullable(),
+    ranged: z.boolean().nullable(),
+  }),
+  subtitles: z.array(subtitleTrackSchema).optional(),
+});
+
+const providerAttemptSchema = z.object({
+  providerSlug: z.string(),
+  outcome: z.enum(["ok", "empty", "error", "timeout", "quarantined"]),
+  count: z.number().int(),
+  latencyMs: z.number().nonnegative(),
+  error: z.string().optional(),
+});
+
+const skippedProviderSchema = z.object({
+  providerSlug: z.string(),
+  reason: z.string(),
+  detail: z.string().optional(),
+});
+
+/**
+ * `GET /api/v1/episodes/:episodeId/sources` response body (P7).
+ *
+ * An empty shelf is a 200 with `emptyReason` when providers genuinely have
+ * nothing; a 503 `no_sources` (all providers failed) is thrown by the fetcher as
+ * an `HttpError(503)` so the UI can tell "no streams" from "try again shortly".
+ */
+export const playbackSourcesResponseSchema = z.object({
+  episode: z.object({
+    id: z.string(),
+    episodeNumber: z.number().int(),
+    title: z.string().nullish(),
+    durationSeconds: z.number().nullish(),
+    thumbnailUrl: z.string().nullish(),
+    isFiller: z.boolean().nullish(),
+  }),
+  sources: z.array(playbackSourceSchema),
+  sourceCount: z.number().int().nonnegative(),
+  plans: z.array(playbackPlanSchema),
+  planCount: z.number().int().nonnegative(),
+  attempts: z.array(providerAttemptSchema),
+  skipped: z.array(skippedProviderSchema),
+  emptyReason: z.enum(["no_streams", "all_failed", "quarantined"]).optional(),
+  resolutionTimeMs: z.number().nonnegative(),
+});
+
+export type PlaybackSource = z.infer<typeof playbackSourceSchema>;
+export type PlaybackPlan = z.infer<typeof playbackPlanSchema>;
+export type PlaybackSourcesResponse = z.infer<typeof playbackSourcesResponseSchema>;
+
+/**
+ * What a client is allowed to play (P8 execution).
+ *
+ * Two deliberately disjoint kinds: `media` opens a `<video>` element (hls or
+ * progressive), `embed` frames an `<iframe>`. The kind comes from the plan's
+ * mechanism — never from the URL — so an embed can never widen into media.
+ */
+export const playbackExecutionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("media"),
+    mechanism: z.enum(["hls", "progressive"]),
+    url: z.string(),
+    mediaType: z.string().nullable(),
+    delivery: playbackDeliverySchema,
+    proxyUrl: z.string().optional(),
+    sourceId: z.string(),
+    providerSlug: z.string(),
+    providerName: z.string(),
+    language: playbackLanguageSchema,
+    quality: z.string().optional(),
+    resolution: z.number().optional(),
+    validated: z.boolean(),
+    playable: z.boolean(),
+    capabilities: z.object({
+      seekable: z.boolean().nullable(),
+      ranged: z.boolean().nullable(),
+    }),
+    subtitles: z.array(subtitleTrackSchema).optional(),
+  }),
+  z.object({
+    kind: z.literal("embed"),
+    mechanism: z.literal("iframe"),
+    url: z.string(),
+    mediaType: z.string().nullable(),
+    sourceId: z.string(),
+    providerSlug: z.string(),
+    providerName: z.string(),
+    language: playbackLanguageSchema,
+    validated: z.boolean(),
+    playable: z.boolean(),
+    subtitles: z.array(subtitleTrackSchema).optional(),
+  }),
+]);
+
+export type PlaybackExecution = z.infer<typeof playbackExecutionSchema>;
+
+/** Skip markers and subtitles from the canonical metadata service (P10). */
+export const episodeMetadataSchema = z.object({
+  episodeId: z.string(),
+  subtitles: z.array(subtitleTrackSchema),
+  intro: z.object({ start: z.number(), end: z.number() }).optional(),
+  outro: z.object({ start: z.number(), end: z.number() }).optional(),
+  sourceUpdatedAt: z.number().int().nullable(),
+});
+
+export type EpisodeMetadata = z.infer<typeof episodeMetadataSchema>;
+
+/** One server option in the switcher: canonical identity plus display facts. */
+export interface ServerOption {
+  sourceId: string;
+  label: string;
+  quality: string | null;
+  resolution: number | null;
+  language: PlaybackLanguage;
+}
+
+/* ------------------------------------------------------------------ */
 /* Fetchers                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -359,6 +540,164 @@ export function fetchEpisodeNavigation(
     `/api/v1/anime/${encodeURIComponent(id)}/episodes/${episodeNumber}/navigation`,
     episodeNavigationSchema,
   );
+}
+
+/**
+ * POST a JSON body and validate the response. The playback execution boundary
+ * is the only canonical endpoint the browser writes to.
+ */
+async function postValidated<T extends z.ZodTypeAny>(
+  path: string,
+  schema: T,
+  body: unknown,
+): Promise<z.infer<T>> {
+  const url = `${ZENKAI_API_URL}${path}`;
+  const raw = await fetchJson<unknown>(url, { method: "POST", body, retries: 0 });
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ZenkaiContractError(
+      url,
+      parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`),
+    );
+  }
+  return parsed.data;
+}
+
+/**
+ * Ranked sources and plans for one canonical episode (P7).
+ *
+ * The episode is addressed by its canonical catalogue id — never by a number
+ * the client invented. Failures stay distinguishable: 404 is a missing episode,
+ * 503 is a provider outage (retryable), a malformed payload is a contract
+ * violation, and a network failure is a transport error.
+ */
+export function fetchEpisodeSources(
+  episodeId: string,
+  language: PlaybackLanguage,
+): Promise<PlaybackSourcesResponse> {
+  return getValidated(
+    `/api/v1/episodes/${encodeURIComponent(episodeId)}/sources`,
+    playbackSourcesResponseSchema,
+    { language },
+  );
+}
+
+/**
+ * Execute a canonical selection (P8).
+ *
+ * The request body carries only `episodeId`, `sourceId` and `language` — the
+ * strict server schema rejects any URL, provider or header field with a 400, so
+ * a buggy client cannot steer execution toward a caller-chosen upstream. The
+ * backend re-resolves the plan and returns the only playback URL the client
+ * ever sees.
+ */
+export function executePlayback(selection: {
+  episodeId: string;
+  sourceId: string;
+  language: PlaybackLanguage;
+}): Promise<PlaybackExecution> {
+  return postValidated(
+    "/api/v1/playback/execute",
+    z.object({ execution: playbackExecutionSchema }),
+    selection,
+  ).then((payload) => payload.execution);
+}
+
+/**
+ * Skip markers and subtitles for one canonical episode (P10).
+ *
+ * This replaces the legacy AniSkip call: the markers come from the canonical
+ * metadata service, keyed by the same canonical episode id as sources.
+ */
+export function fetchEpisodeMetadata(episodeId: string): Promise<EpisodeMetadata> {
+  return getValidated(
+    `/api/v1/episodes/${encodeURIComponent(episodeId)}/metadata`,
+    episodeMetadataSchema,
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Watch playback flow (P14)                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Why a playback request failed, for UI that must not lie.
+ *
+ * `no_sources` (503) is a retryable outage and must never be rendered as
+ * "this episode has no streams"; `selection_stale` (409) means the ranked list
+ * moved and the selection can be retried; `not_found` is a fact about the
+ * episode; `invalid_response` means the backend answered outside the contract.
+ */
+export type PlaybackFailure =
+  | "not_found"
+  | "no_sources"
+  | "selection_stale"
+  | "invalid_response"
+  | "unavailable";
+
+export function classifyPlaybackError(error: unknown): PlaybackFailure {
+  if (error instanceof ZenkaiContractError) return "invalid_response";
+  if (error instanceof HttpError) {
+    if (error.status === 404) return "not_found";
+    if (error.status === 409) return "selection_stale";
+    if (error.status === 503) return "no_sources";
+  }
+  return "unavailable";
+}
+
+/**
+ * The airing gate: an episode the backend schedules for the future is not
+ * playable, and "not released yet" must never be reported as "no streams".
+ *
+ * `unknown` is deliberately *not* unreleased: an episode with no schedule is
+ * not claimed to be in the future, and if the canonical backend can resolve
+ * sources for it, it plays. The client invents no release date either way.
+ */
+export function isUnreleased(
+  episode: Pick<EpisodeCard, "airingState"> | null | undefined,
+): boolean {
+  return episode?.airingState === "upcoming";
+}
+
+/**
+ * The backend's top-ranked plan is the default selection. List order is the
+ * ranking (P7); the client applies no ranking of its own.
+ */
+export function initialPlanSelection(plans: PlaybackPlan[]): string | null {
+  return plans[0]?.sourceId ?? null;
+}
+
+/**
+ * The next canonical plan after one that failed at the playback layer.
+ *
+ * Bounded by the plan list: when the last plan fails there is nothing left to
+ * try, and the caller reports the failure instead of looping.
+ */
+export function fallbackPlanSelection(
+  plans: PlaybackPlan[],
+  failedSourceId: string | null,
+): string | null {
+  const index = plans.findIndex((plan) => plan.sourceId === failedSourceId);
+  // An unknown source has no successor: -1 would silently wrap to plans[0].
+  if (index < 0) return null;
+  return plans[index + 1]?.sourceId ?? null;
+}
+
+/**
+ * Map a canonical plan onto a switcher option.
+ *
+ * Only canonical display facts are exposed — server position, quality,
+ * resolution, language. Provider slugs, endpoints and health details stay
+ * server-side: the user picks "Server 2", never a provider implementation.
+ */
+export function planToServerOption(plan: PlaybackPlan, index: number): ServerOption {
+  return {
+    sourceId: plan.sourceId,
+    label: `Server ${index + 1}`,
+    quality: plan.quality ?? null,
+    resolution: plan.resolution ?? null,
+    language: plan.language,
+  };
 }
 
 /* ------------------------------------------------------------------ */

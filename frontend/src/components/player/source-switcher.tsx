@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Server, TriangleAlert } from "lucide-react";
+import { Check, Loader2, Server } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,81 +11,80 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { SourceCandidate } from "@/lib/sources/types";
-import type { AudioPreference } from "@/stores/player";
+import type { PlaybackLanguage, ServerOption } from "@/lib/api/zenkai";
 import { cn } from "@/lib/utils";
 
+/** The canonical audio shelves — the only language values the watch path sends. */
+const LANGUAGES: { value: PlaybackLanguage; label: string }[] = [
+  { value: "sub", label: "Sub" },
+  { value: "dub", label: "Dub" },
+  { value: "multi", label: "Multi" },
+];
+
 export function SourceSwitcher({
-  candidates,
-  activeId,
+  options,
+  selectedSourceId,
   loading,
-  failures,
-  audio,
+  language,
   onSelect,
-  onAudioChange,
+  onLanguageChange,
 }: {
-  candidates: SourceCandidate[];
-  activeId: string | null;
+  options: ServerOption[];
+  selectedSourceId: string | null;
   loading: boolean;
-  failures: { sourceId: string; message: string }[];
-  audio: AudioPreference;
-  onSelect: (candidate: SourceCandidate) => void;
-  onAudioChange: (audio: AudioPreference) => void;
+  language: PlaybackLanguage;
+  onSelect: (sourceId: string) => void;
+  onLanguageChange: (language: PlaybackLanguage) => void;
 }) {
-  const active = candidates.find((candidate) => candidate.source.id === activeId);
+  const active = options.find((option) => option.sourceId === selectedSourceId);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" className="glass rounded-xl">
           {loading ? <Loader2 className="animate-spin" /> : <Server />}
-          <span className="max-w-40 truncate">{active?.source.name ?? "Sources"}</span>
+          <span className="max-w-40 truncate">{active?.label ?? "Sources"}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="glass-strong w-64">
-        <DropdownMenuLabel>Source</DropdownMenuLabel>
-        {candidates.length === 0 ? (
+        <DropdownMenuLabel>Server</DropdownMenuLabel>
+        {options.length === 0 ? (
           <DropdownMenuItem disabled>No sources available</DropdownMenuItem>
         ) : (
-          candidates.map((candidate) => {
-            const failed = failures.some((failure) => failure.sourceId === candidate.source.id);
-            return (
-              <DropdownMenuItem
-                key={candidate.source.id}
-                onSelect={() => onSelect(candidate)}
-                className="gap-2"
-              >
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm">{candidate.source.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {candidate.kind === "direct" ? "Direct stream" : "Embed"}
-                    {candidate.source.note ? ` · ${candidate.source.note}` : ""}
-                  </span>
+          options.map((option) => (
+            <DropdownMenuItem
+              key={option.sourceId}
+              onSelect={() => onSelect(option.sourceId)}
+              className="gap-2"
+            >
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm">{option.label}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {option.quality ?? (option.resolution ? `${option.resolution}p` : "Standard")}
                 </span>
-                {failed ? <TriangleAlert className="size-3.5 text-amber-400" /> : null}
-                {candidate.source.id === activeId ? <Check className="size-4 text-brand-400" /> : null}
-              </DropdownMenuItem>
-            );
-          })
+              </span>
+              {option.sourceId === selectedSourceId ? <Check className="size-4 text-brand-400" /> : null}
+            </DropdownMenuItem>
+          ))
         )}
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Audio</DropdownMenuLabel>
+        <DropdownMenuLabel>Language</DropdownMenuLabel>
         <div className="flex gap-1 p-1">
-          {(["sub", "dub"] as const).map((option) => (
+          {LANGUAGES.map((option) => (
             <button
-              key={option}
+              key={option.value}
               type="button"
-              onClick={() => onAudioChange(option)}
-              aria-pressed={audio === option}
+              onClick={() => onLanguageChange(option.value)}
+              aria-pressed={language === option.value}
               className={cn(
                 "flex-1 rounded-lg px-3 py-1.5 text-xs font-medium uppercase transition-colors",
-                audio === option
+                language === option.value
                   ? "bg-brand-500/25 text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {option}
+              {option.label}
             </button>
           ))}
         </div>

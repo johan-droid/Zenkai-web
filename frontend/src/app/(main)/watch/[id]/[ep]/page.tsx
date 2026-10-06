@@ -1,8 +1,7 @@
-import { Play } from "lucide-react";
-
 import { WatchView } from "@/components/player/watch-view";
 
-export default function WatchPage({ params }: PageProps<"/watch/[id]/[ep]">) {
+export default async function WatchPage({ params }: PageProps<"/watch/[id]/[ep]">) {
+  const { id, ep } = await params;
   // `params` is already resolved at this point in App Router.
-  return <WatchView />;
+  return <WatchView id={id} episode={ep} />;
 }
