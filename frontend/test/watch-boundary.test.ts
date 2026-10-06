@@ -154,8 +154,11 @@ describe("watch provider boundary", () => {
 
   it("renders embeds as iframes, never as media", () => {
     const view = read("src/components/player/watch-view.tsx");
+    // Matched as one sequence, not two independent substrings: an embed branch
+    // that returned <video> while leaving the import in place must still fail,
+    // so "embed-player" appearing anywhere in the file is not evidence.
     assert.ok(
-      view.includes("embed-player") && view.includes('execution.kind === "embed"'),
+      /execution\.kind === "embed"\) \{\s*return <EmbedPlayer/.test(view),
       "the watch view must branch on the execution kind and render the embed player",
     );
     const embed = read("src/components/player/embed-player.tsx");
