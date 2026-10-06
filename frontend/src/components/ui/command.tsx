@@ -59,7 +59,14 @@ function CommandDialog({
         )}
         showCloseButton={showCloseButton}
       >
-        {children}
+        {/*
+          The cmdk context has to be established here. `CommandInput`,
+          `CommandList` and `CommandEmpty` all read it, and without this
+          wrapper every one of them dereferences an undefined store — which
+          crashed the palette on open with "Cannot read properties of
+          undefined (reading 'subscribe')".
+        */}
+        <Command>{children}</Command>
       </DialogContent>
     </Dialog>
   )

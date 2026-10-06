@@ -90,6 +90,13 @@ export const discoveryResultSchema = z.object({
 export type DiscoveryCard = z.infer<typeof discoveryCardSchema>;
 export type DiscoveryResult = z.infer<typeof discoveryResultSchema>;
 
+/** `GET /api/v1/anime/search` response body (P15). */
+export interface AnimeSearchResult {
+  query: string;
+  limit: number;
+  items: DiscoveryCard[];
+}
+
 /**
  * One home section carries its own availability. The backend refuses to
  * disguise a provider outage as an empty shelf, and so does this client: an
@@ -504,7 +511,36 @@ export function fetchDiscovery(
 }
 
 /**
- * Full canonical anime detail (P13).
+ * Canonical title search (P15).
+ *
+ * One boundary for the whole app: the search page and the ⌘K palette both come
+ * through here, so there is exactly one frontend search implementation and one
+ * place where a provider call could be reintroduced.
+ *
+ * Results are the same discovery cards home renders, validated by the same
+ * schema. Search is not a second media model — a title that appears in a shelf
+ * and a title that appears in search results are the same record.
+ *
+ * Failures stay typed: a 400 is a bad request, a network failure is a transport
+ * error and a malformed payload is a contract violation. None of them is an
+ * empty result set, which is a 200 with `items: []`.
+ */
+export function fetchAnimeSearch(
+  query: string,
+  limit = 30,
+): Promise<AnimeSearchResult> {
+  return getValidated(
+    "/api/v1/anime/search",
+    z.object({
+      query: z.string(),
+      limit: z.number().int(),
+      items: z.array(discoveryCardSchema),
+    }),
+    { q: query, limit },
+  );
+}
+
+/** Full canonical anime detail (P13).
  *
  * Failures are never collapsed: a 404 throws `HttpError(404)`, a malformed
  * payload throws `ZenkaiContractError`, and a network failure throws the
@@ -698,6 +734,79 @@ export function planToServerOption(plan: PlaybackPlan, index: number): ServerOpt
     resolution: plan.resolution ?? null,
     language: plan.language,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Search states (P15)                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Why a search failed. Search has no 404: a query that matches nothing is a
+ * 200 with an empty list, so every failure here is the backend being unable to
+ * answer rather than the catalogue being empty.
+ */
+export type SearchFailure = "bad_request" | "invalid_response" | "unavailable";
+
+export function classifySearchError(error: unknown): SearchFailure {
+  if (error instanceof ZenkaiContractError) return "invalid_response";
+  if (error instanceof HttpError && error.status === 400) return "bad_request";
+  return "unavailable";
+}
+
+/**
+ * Every state search is allowed to be in (P15).
+ *
+ * The point of modelling them is that they stay separate. A provider outage and
+ * a genuinely empty catalogue are different problems with different remedies,
+ * and collapsing both into `results = []` tells a user searching for a typo that
+ * the title does not exist when in fact nothing was able to answer.
+ */
+export type SearchState =
+  /** Below the minimum query length. No request is made at all. */
+  | { kind: "idle" }
+  | { kind: "loading" }
+  /** A successful search that matched nothing. */
+  | { kind: "empty"; query: string }
+  | { kind: "items"; items: MediaSummary[] }
+  | { kind: "error"; reason: SearchFailure; message: string };
+
+/** Below this many characters a search is not worth sending. */
+export const SEARCH_MIN_LENGTH = 2;
+
+/**
+ * Failure copy. None of these may read as an empty result: the distinction
+ * between "nothing matched" and "nothing could answer" is carried by the state
+ * and the heading, so the sentence underneath must not restate it as a count.
+ */
+const SEARCH_ERROR_COPY: Record<SearchFailure, string> = {
+  bad_request: "That search could not be understood. Try a shorter query.",
+  invalid_response: "Search returned data this page could not understand.",
+  unavailable: "The search service could not answer just now. Please try again in a moment.",
+};
+
+/**
+ * Fold a query's lifecycle into one state.
+ *
+ * Error outranks data on purpose: a failed refetch must not leave the previous
+ * query's results on screen looking like the answer to the new one.
+ */
+export function searchState(input: {
+  term: string;
+  flags: { isLoading: boolean; isError: boolean; error?: unknown };
+  items?: MediaSummary[];
+  minLength?: number;
+}): SearchState {
+  const term = input.term.trim();
+  if (term.length < (input.minLength ?? SEARCH_MIN_LENGTH)) return { kind: "idle" };
+
+  if (input.flags.isError) {
+    const reason = classifySearchError(input.flags.error);
+    return { kind: "error", reason, message: SEARCH_ERROR_COPY[reason] };
+  }
+  if (input.flags.isLoading) return { kind: "loading" };
+  if (!input.items) return { kind: "loading" };
+  if (input.items.length === 0) return { kind: "empty", query: term };
+  return { kind: "items", items: input.items };
 }
 
 /* ------------------------------------------------------------------ */

@@ -277,7 +277,9 @@ describe("anime search", () => {
     ]) {
       const hits = await repo.search(query, 25);
       assert.ok(
-        hits.some((hit) => hit.anilistId === SEARCH_ID),
+        // Cards type the cross-reference id as a string (the routing contract
+        // treats ids as strings), so compare in that space.
+        hits.some((hit) => hit.anilistId === String(SEARCH_ID)),
         `"${query}" should match the record via the canonical index`,
       );
     }

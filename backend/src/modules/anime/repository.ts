@@ -25,11 +25,62 @@ import {
 } from "../../db/schema/index.js";
 import { normalizeTitle } from "../../domain/media.js";
 import type { DiscoveryCard } from "./discovery.js";
-import type {
-  AnimeDetail,
-  AnimeSummary,
-  ProviderEpisode,
-} from "../../providers/metadata/types.js";
+import type { AnimeDetail, AnimeSummary, ProviderEpisode } from "../../providers/metadata/types.js";
+
+type AnimeRow = typeof anime.$inferSelect;
+
+/**
+ * Project one catalogue row onto the public card contract (P15).
+ *
+ * Lives here rather than inline so every row-reading surface produces the same
+ * shape: `listCards` and `search` are both answerable from the catalogue, and a
+ * client that has to accept two different row shapes is a client with two
+ * schemas and one silent bug waiting to happen.
+ */
+function rowToCard(row: AnimeRow, genres: string[]): DiscoveryCard {
+  return {
+    id: row.id,
+    anilistId: row.anilistId != null ? String(row.anilistId) : "",
+    title: row.canonicalTitle,
+    titles: {
+      romaji: row.romajiTitle,
+      english: row.englishTitle,
+      native: row.nativeTitle,
+      synonyms: row.synonyms ?? [],
+    },
+    coverUrl: row.coverUrl,
+    coverImageLarge: row.coverImageLarge,
+    bannerUrl: row.bannerUrl,
+    format: row.format,
+    status: row.status,
+    season: row.season,
+    seasonYear: row.seasonYear,
+    year: row.year,
+    averageScore: row.averageScore != null ? Number(row.averageScore) : null,
+    totalEpisodes: row.totalEpisodes,
+    popularity: row.popularity,
+    genres,
+    isAdult: row.isAdult,
+  };
+}
+
+/** Genres for a set of titles, in one query. */
+async function genresFor(db: Db, ids: string[]): Promise<Map<string, string[]>> {
+  const byAnime = new Map<string, string[]>();
+  if (ids.length === 0) return byAnime;
+
+  const rows = await db
+    .select({ animeId: animeGenres.animeId, genre: animeGenres.genre })
+    .from(animeGenres)
+    .where(inArray(animeGenres.animeId, ids));
+
+  for (const row of rows) {
+    const list = byAnime.get(row.animeId) ?? [];
+    list.push(row.genre);
+    byAnime.set(row.animeId, list);
+  }
+  return byAnime;
+}
 
 export interface AnimeListOptions {
   limit: number;
@@ -500,7 +551,14 @@ export class AnimeRepository {
   }
 
   /** Title search across the normalised index. */
-  async search(query: string, limit: number): Promise<Record<string, any>[]> {
+  /**
+   * Title search over the catalogue, as canonical cards (P15).
+   *
+   * Cards rather than raw rows: the provider-fallback branch of
+   * `AnimeService.search` returns cards too, so the endpoint answers with one
+   * shape regardless of whether the answer came from Postgres or upstream.
+   */
+  async search(query: string, limit: number): Promise<DiscoveryCard[]> {
     const normalized = normalizeTitle(query);
     if (!normalized) return [];
 
@@ -519,7 +577,13 @@ export class AnimeRepository {
       .orderBy(desc(anime.popularity))
       .limit(limit);
 
-    return rows.map((row) => row.record);
+    const genresByAnime = await genresFor(
+      this.db,
+      rows.map((row) => row.record.id),
+    );
+    return rows.map((row) =>
+      rowToCard(row.record, genresByAnime.get(row.record.id) ?? []),
+    );
   }
 
 /** Persist relation edges, replacing whatever was there before. */
@@ -790,44 +854,13 @@ export class AnimeRepository {
 
     if (rows.length === 0) return { items: [], total: Number(total?.count ?? 0) };
 
-    const ids = rows.map((row) => row.id);
-    const genreRows = await this.db
-      .select({ animeId: animeGenres.animeId, genre: animeGenres.genre })
-      .from(animeGenres)
-      .where(inArray(animeGenres.animeId, ids));
-
-    const genresByAnime = new Map<string, string[]>();
-    for (const row of genreRows) {
-      const list = genresByAnime.get(row.animeId) ?? [];
-      list.push(row.genre);
-      genresByAnime.set(row.animeId, list);
-    }
+    const genresByAnime = await genresFor(
+      this.db,
+      rows.map((row) => row.id),
+    );
 
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        anilistId: row.anilistId != null ? String(row.anilistId) : "",
-        title: row.canonicalTitle,
-        titles: {
-          romaji: row.romajiTitle,
-          english: row.englishTitle,
-          native: row.nativeTitle,
-          synonyms: row.synonyms ?? [],
-        },
-        coverUrl: row.coverUrl,
-        coverImageLarge: row.coverImageLarge,
-        bannerUrl: row.bannerUrl,
-        format: row.format,
-        status: row.status,
-        season: row.season,
-        seasonYear: row.seasonYear,
-        year: row.year,
-        averageScore: row.averageScore != null ? Number(row.averageScore) : null,
-        totalEpisodes: row.totalEpisodes,
-        popularity: row.popularity,
-        genres: genresByAnime.get(row.id) ?? [],
-        isAdult: row.isAdult,
-      })),
+      items: rows.map((row) => rowToCard(row, genresByAnime.get(row.id) ?? [])),
       total: Number(total?.count ?? 0),
     };
   }

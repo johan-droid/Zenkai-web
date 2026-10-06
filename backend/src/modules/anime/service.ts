@@ -13,6 +13,7 @@ import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import type { BrowseQuery, ProviderEpisode } from "../../providers/metadata/types.js";
 import { AnimeRepository, type AnimeListOptions } from "./repository.js";
+import { toCard, type DiscoveryCard } from "./discovery.js";
 
 /** Discovery buckets and their TTLs, from P2. */
 const DISCOVERY_TTL: Record<string, number> = {
@@ -171,17 +172,28 @@ export class AnimeService {
     return this.repo.list(options);
   }
 
-  /** Title search, with an AniList fallback when the database has no match. */
-  async search(query: string, limit: number): Promise<Record<string, any>[]> {
+  /**
+   * Title search, with a provider fallback when the database has no match.
+   *
+   * Both branches answer with canonical cards (P15). The endpoint used to return
+   * raw catalogue rows from Postgres and raw provider objects from AniList, so
+   * its response type depended on cache state and no single client schema could
+   * describe it honestly. Cards make the contract the same either way.
+   */
+  async search(query: string, limit: number): Promise<DiscoveryCard[]> {
     const local = await this.repo.search(query, limit);
     if (local.length > 0) return local;
 
     const page = await this.#anilist.browse({ search: query, perPage: limit });
-    await Promise.all(
-      page.items.map((summary) => this.repo.upsert(summary).catch(() => undefined)),
+
+    // Persist before returning so the catalogue grows from search traffic. A
+    // write failure must not fail the response: the caller already holds usable
+    // data and the next request will retry.
+    const localIds = await Promise.all(
+      page.items.map((summary) => this.repo.upsert(summary).catch(() => null)),
     );
 
-    return page.items as unknown as Record<string, any>[];
+    return page.items.map((summary, index) => toCard(summary, localIds[index] ?? null));
   }
 
   /** Episode catalog for a title, seeding it from AniList's count if empty. */

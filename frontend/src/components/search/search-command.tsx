@@ -1,11 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Search, TrendingUp } from "lucide-react";
+import { Loader2, Search, TrendingUp, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { browseMedia } from "@/lib/api/anilist";
+import {
+  discoveryCardToMedia,
+  fetchAnimeSearch,
+  fetchDiscovery,
+  SEARCH_MIN_LENGTH,
+} from "@/lib/api/zenkai";
 import { displayTitle, mediaHref, type MediaSummary } from "@/lib/media";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
@@ -20,6 +25,12 @@ import {
 /**
  * Command-palette style search. Opens with ⌘K / Ctrl+K or by clicking the
  * trigger passed as `children`.
+ *
+ * Migrated with the search page (P15): both the query and the trending shelf
+ * that shows before a term is typed come from the canonical backend through
+ * `lib/api/zenkai`, so the palette has no provider client of its own. Two
+ * separate search implementations is exactly how this drift back to a direct
+ * provider call happens.
  */
 export function SearchCommand({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -38,17 +49,18 @@ export function SearchCommand({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // The pre-search shelf. Canonical trending, not a provider sort enum.
   const trending = useQuery({
     queryKey: ["search", "trending"],
-    queryFn: () => browseMedia({ type: "ANIME", perPage: 6, sort: ["TRENDING_DESC"] }),
+    queryFn: () => fetchDiscovery("trending", { perPage: 6 }),
     enabled: open,
     staleTime: 5 * 60_000,
   });
 
   const results = useQuery({
-    queryKey: ["search", "quick", debounced],
-    queryFn: () => browseMedia({ search: debounced, perPage: 8 }),
-    enabled: open && debounced.trim().length >= 2,
+    queryKey: ["anime-search-palette", debounced.trim()],
+    queryFn: () => fetchAnimeSearch(debounced.trim(), 8),
+    enabled: open && debounced.trim().length >= SEARCH_MIN_LENGTH,
     staleTime: 60_000,
   });
 
@@ -58,7 +70,13 @@ export function SearchCommand({ children }: { children: ReactNode }) {
     router.push(mediaHref(media));
   };
 
-  const showingResults = debounced.trim().length >= 2;
+  const showingResults = debounced.trim().length >= SEARCH_MIN_LENGTH;
+  const resultItems = results.data?.items.map((card) =>
+    discoveryCardToMedia(card, "anime"),
+  );
+  const trendingItems = trending.data?.items.map((card) =>
+    discoveryCardToMedia(card, "anime"),
+  );
 
   return (
     <>
@@ -69,11 +87,11 @@ export function SearchCommand({ children }: { children: ReactNode }) {
         open={open}
         onOpenChange={setOpen}
         title="Search Zenkai"
-        description="Search anime and manga"
+        description="Search anime titles"
         className="glass-strong"
       >
         <CommandInput
-          placeholder="Search anime and manga…"
+          placeholder="Search anime titles…"
           value={term}
           onValueChange={setTerm}
         />
@@ -85,20 +103,31 @@ export function SearchCommand({ children }: { children: ReactNode }) {
           ) : null}
 
           <CommandEmpty>
-            {showingResults && !results.isLoading ? "No results found." : "Type to search…"}
+            {showingResults
+              ? results.isError
+                ? "Search is temporarily unavailable."
+                : "No results found."
+              : "Type to search…"}
           </CommandEmpty>
 
-          {showingResults && results.data?.items.length ? (
+          {showingResults && resultItems?.length ? (
             <CommandGroup heading="Results">
-              {results.data.items.map((media) => (
+              {resultItems.map((media) => (
                 <MediaCommandItem key={`${media.kind}-${media.id}`} media={media} onSelect={go} />
               ))}
             </CommandGroup>
           ) : null}
 
-          {!showingResults && trending.data?.items.length ? (
+          {/* A failed shelf must not read as "there is nothing trending". */}
+          {!showingResults && trending.isError ? (
+            <div className="flex items-center justify-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+              <WifiOff className="size-4" /> Trending is temporarily unavailable.
+            </div>
+          ) : null}
+
+          {!showingResults && !trending.isError && trendingItems?.length ? (
             <CommandGroup heading="Trending now">
-              {trending.data.items.map((media) => (
+              {trendingItems.map((media) => (
                 <MediaCommandItem key={`${media.kind}-${media.id}`} media={media} onSelect={go} />
               ))}
             </CommandGroup>

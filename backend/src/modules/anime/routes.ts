@@ -103,9 +103,18 @@ export function registerAnimeRoutes(
   });
 
 
+  /**
+   * Title search (P15).
+   *
+   * Answers with canonical discovery cards whichever branch served it — the
+   * catalogue or the provider fallback — so the client validates one shape.
+   * Not paginated: search is a single ranked column of matches, and the
+   * frontend asks for the page size it renders rather than walking pages.
+   */
   app.get("/api/v1/anime/search", async (request) => {
     const { q, limit } = parseOrThrow(searchQuery, request.query);
-    return { query: q, items: await service.search(q, limit) };
+    const items = await service.search(q, limit);
+    return { query: q, limit, items };
   });
 
   /** Full detail including relations, from the provider. */
