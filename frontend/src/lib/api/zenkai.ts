@@ -454,7 +454,7 @@ export interface ServerOption {
 async function getValidated<T extends z.ZodTypeAny>(
   path: string,
   schema: T,
-  params?: Record<string, string | number | undefined>,
+  params?: Record<string, string | number | boolean | undefined>,
 ): Promise<z.infer<T>> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params ?? {})) {
@@ -497,6 +497,167 @@ export async function fetchGenres(): Promise<string[]> {
 /** Manga catalogue listing, ordered by popularity, from the backend. */
 export function fetchMangaCatalogue(limit = 14): Promise<MangaCatalogueResult> {
   return getValidated("/api/v1/manga", mangaCatalogueSchema, { limit });
+}
+
+/**
+ * `GET /api/v1/anime` response body (P17 browse).
+ *
+ * The catalogue list is database-backed, so unlike the discovery result it
+ * carries no `source` and no provider-side `hasNextPage`: the next page exists
+ * when `page * perPage < total`.
+ */
+export const animeBrowseResultSchema = z.object({
+  items: z.array(discoveryCardSchema),
+  page: z.number(),
+  perPage: z.number(),
+  total: z.number(),
+});
+
+export type AnimeBrowseResult = z.infer<typeof animeBrowseResultSchema>;
+
+/**
+ * Canonical anime browse.
+ *
+ * Reads the database-backed catalogue with explicit filters, sorting and
+ * pagination, and returns the same discovery-card shape home/search render so
+ * the browse grid has one media model. A 400 is a bad filter/sort; a 503 is a
+ * backend outage; an empty page is a 200 with `items: []`.
+ *
+ * Failure semantics deliberately match the contract: empty is not outage, and
+ * a malformed filter is a bad request, not a silently ignored one.
+ */
+export function fetchAnimeBrowse(params: {
+  page?: number;
+  perPage?: number;
+  genre?: string;
+  format?: string;
+  status?: string;
+  sort?: string;
+}): Promise<AnimeBrowseResult> {
+  return getValidated("/api/v1/anime", animeBrowseResultSchema, params);
+}
+
+/**
+ * Trending anime browse.
+ *
+ * Trending is an upstream discovery signal with no catalogue column behind it
+ * (P17), so it is served by the discovery route rather than being quietly
+ * downgraded to a popularity sort. The route accepts the same genre/format/
+ * status filters the catalogue does, so switching sort never silently drops
+ * the user's other filters.
+ */
+export function fetchAnimeTrendingBrowse(params: {
+  page?: number;
+  perPage?: number;
+  genre?: string;
+  format?: string;
+  status?: string;
+}): Promise<DiscoveryResult> {
+  return getValidated(
+    "/api/v1/anime/discovery/trending",
+    discoveryResultSchema,
+    params,
+  );
+}
+
+/**
+ * Canonical manga browse.
+ *
+ * Same idea as anime browse: database-backed pagination with explicit genre,
+ * status, sort and adult-toggle. An empty catalogue is a successful 200 with
+ * no items, not an outage. The backend paginates by `limit`/`offset`; the
+ * caller thinks in pages and the translation happens here, once.
+ *
+ * This is the frontend contract that backs both the manga shelf and the manga
+ * browse page. The frontend must not invent catalogue rows when the backend
+ * has none. The next page exists when `offset + items.length < total`.
+ */
+export function fetchMangaBrowse(params: {
+  page?: number;
+  perPage?: number;
+  genre?: string;
+  status?: string;
+  sort?: string;
+  includeAdult?: boolean;
+}): Promise<MangaCatalogueResult> {
+  const perPage = params.perPage ?? 20;
+  const page = params.page ?? 1;
+  return getValidated("/api/v1/manga", mangaCatalogueSchema, {
+    limit: perPage,
+    offset: (page - 1) * perPage,
+    genre: params.genre,
+    status: params.status,
+    sort: params.sort,
+    includeAdult: params.includeAdult,
+  });
+}
+
+/** Filters a browse page may combine. */
+export interface BrowseFilters {
+  genre?: string;
+  format?: string;
+  status?: string;
+  sort: string;
+}
+
+/** One normalized browse page, whichever kind and route served it. */
+export interface BrowsePage {
+  items: MediaSummary[];
+  hasNextPage: boolean;
+  total: number | null;
+}
+
+/**
+ * Fetch one page of the canonical browse, normalized onto one shape.
+ *
+ * Anime trending goes to the discovery route (the only place the signal
+ * legitimately exists — it is never sent to the catalogue route, which would
+ * reject it as an unknown sort); every other anime sort and all manga sorts go
+ * to the database-backed catalogue lists. Empty is a 200 with no items; a 400
+ * is a rejected filter; a 503 is an outage. None of them is fake data.
+ */
+export async function fetchBrowsePage(
+  kind: MediaKind,
+  filters: BrowseFilters,
+  page: number,
+  perPage: number,
+): Promise<BrowsePage> {
+  if (kind === "anime") {
+    const params = {
+      page,
+      perPage,
+      genre: filters.genre,
+      format: filters.format,
+      status: filters.status,
+    };
+    if (filters.sort === "trending") {
+      const result = await fetchAnimeTrendingBrowse(params);
+      return {
+        items: result.items.map((card) => discoveryCardToMedia(card, "anime")),
+        hasNextPage: result.hasNextPage,
+        total: result.total,
+      };
+    }
+    const result = await fetchAnimeBrowse({ ...params, sort: filters.sort });
+    return {
+      items: result.items.map((card) => discoveryCardToMedia(card, "anime")),
+      hasNextPage: result.page * result.perPage < result.total,
+      total: result.total,
+    };
+  }
+
+  const result = await fetchMangaBrowse({
+    page,
+    perPage,
+    genre: filters.genre,
+    status: filters.status,
+    sort: filters.sort,
+  });
+  return {
+    items: result.items.map(mangaCatalogueItemToMedia),
+    hasNextPage: result.offset + result.items.length < result.total,
+    total: result.total,
+  };
 }
 
 /** A single discovery bucket (trending / popular / seasonal / topRated). */

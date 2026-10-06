@@ -14,7 +14,7 @@ export default function MangaPage() {
         description="Browse and filter the catalogue, then jump straight into the reader."
       />
       <Suspense fallback={<MediaGridSkeleton />}>
-        <BrowseView type="MANGA" />
+        <BrowseView kind="manga" />
       </Suspense>
     </div>
   );

@@ -14,7 +14,7 @@ export default function AnimePage() {
         description="Filter by genre, format, status and sort to find your next watch."
       />
       <Suspense fallback={<MediaGridSkeleton />}>
-        <BrowseView type="ANIME" />
+        <BrowseView kind="anime" />
       </Suspense>
     </div>
   );

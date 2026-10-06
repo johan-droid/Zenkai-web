@@ -230,9 +230,23 @@ const discoveryPaging = {
   perPage: z.coerce.number().int().min(1).max(50).default(20),
 };
 
+/**
+ * Catalogue filters accepted alongside a ranking bucket (P17).
+ *
+ * Trending is a provider-side signal, so a browse page that offers Trending has
+ * to be able to apply its other filters there too — otherwise picking a genre
+ * and then Trending would silently discard the genre.
+ */
+const bucketFilters = {
+  genre: z.string().trim().min(1).max(64).optional(),
+  format: z.enum(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL", "MUSIC"]).optional(),
+  status: z.enum(["FINISHED", "RELEASING", "NOT_YET_RELEASED", "CANCELLED", "HIATUS"]).optional(),
+};
+
 /** Seasonal accepts an explicit window, and defaults to the current season. */
 const seasonalQuery = z.object({
   ...discoveryPaging,
+  ...bucketFilters,
   season: season.optional(),
   year: z.coerce.number().int().min(1900).max(2200).optional(),
 });
@@ -313,16 +327,24 @@ app.get("/api/v1/anime/discovery/:bucket", async (request) => {
     request.params,
   );
 
-  const query: { page: number; perPage: number; season?: string; year?: number } =
-    bucket === "seasonal"
-      ? parseOrThrow(seasonalQuery, request.query)
-      : parseOrThrow(z.object(discoveryPaging), request.query);
+  const query = parseOrThrow(
+    z.object({
+      ...discoveryPaging,
+      ...bucketFilters,
+      season: season.optional(),
+      year: z.coerce.number().int().min(1900).max(2200).optional(),
+    }),
+    request.query,
+  );
 
   return discovery.ranking(bucket, {
     page: query.page,
     perPage: query.perPage,
     season: query.season,
     year: query.year,
+    genre: query.genre,
+    format: query.format,
+    status: query.status,
   });
 });
 

@@ -221,7 +221,15 @@ export class DiscoveryService {
    */
   async ranking(
     bucket: DiscoveryBucket,
-    options: { page?: number; perPage?: number; season?: string; year?: number } = {},
+    options: {
+      page?: number;
+      perPage?: number;
+      season?: string;
+      year?: number;
+      genre?: string;
+      format?: string;
+      status?: string;
+    } = {},
   ): Promise<DiscoveryResult> {
     const { page, perPage } = normalisePaging(options.page, options.perPage);
     const window = this.#seasonWindow(bucket, options.season, options.year);
@@ -230,15 +238,20 @@ export class DiscoveryService {
     // only from values already validated and clamped above, so no raw user input
     // ever reaches a cache key.
     const key = [
-      "discovery:v2",
+      // v3: the filters below joined the key. Two browse pages differing only by
+      // genre used to collide on one cache entry and serve each other's shelf.
+      "discovery:v3",
       bucket,
       window ? `${window.year}-${window.season}` : "all",
+      options.genre ?? "-",
+      options.format ?? "-",
+      options.status ?? "-",
       `p${page}`,
       `n${perPage}`,
     ].join(":");
 
     const { value, hit } = await cache.remember<DiscoveryResult>(key, TTL[bucket], () =>
-      this.#fetchRanking(bucket, page, perPage, window),
+      this.#fetchRanking(bucket, page, perPage, window, options),
     );
 
     return { ...value, source: hit ? "cache" : value.source };
@@ -256,6 +269,7 @@ export class DiscoveryService {
     page: number,
     perPage: number,
     window: SeasonWindow | null,
+    options: { genre?: string; format?: string; status?: string } = {},
   ): Promise<DiscoveryResult> {
     const sortMap = {
       trending: "TRENDING",
@@ -270,6 +284,13 @@ export class DiscoveryService {
       perPage,
       season: window?.season,
       seasonYear: window?.year,
+      // Trending is an upstream signal, so browse has to keep it on this route
+      // rather than downgrading it to a popularity sort. That means the filters
+      // a browse page offers have to work here too, or selecting Trending would
+      // silently drop the user's genre/format/status choice (P17).
+      genre: options.genre,
+      format: options.format,
+      status: options.status,
     });
 
     // Persist before returning so the catalogue grows from discovery traffic. A
