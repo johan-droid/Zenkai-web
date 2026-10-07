@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { useMounted } from "@/hooks/use-debounce";
-import { exportData, importData } from "@/lib/db/progress";
+import { exportLibraryData, importLibraryData, parseImport } from "@/lib/library";
 import { cn } from "@/lib/utils";
 
 const THEMES = [
@@ -26,7 +26,7 @@ export function PreferencesPanel() {
   async function handleExport() {
     setExportStatus("busy");
     try {
-      const data = await exportData();
+      const data = await exportLibraryData();
       const blob = new Blob([JSON.stringify(data, null, 2)], {
         type: "application/json",
       });
@@ -54,8 +54,9 @@ export function PreferencesPanel() {
       setImportStatus("busy");
       try {
         const text = await file.text();
-        const data = JSON.parse(text);
-        await importData(data);
+        // Validated, never cast: an export file is untrusted input (P16).
+        const data = parseImport(JSON.parse(text));
+        await importLibraryData(data);
         setImportStatus("ok");
         setTimeout(() => setImportStatus("idle"), 3000);
       } catch {

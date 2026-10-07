@@ -10,7 +10,10 @@
  * default, so a fresh deployment only exposes licensed/self-hosted endpoints.
  */
 
+import { eq, and, asc } from "drizzle-orm";
 import { config } from "../../config/index.js";
+import { providers as providersTable, providerEndpoints } from "../../db/schema/providers.js";
+import type { Db } from "../../db/client.js";
 import { ConsumetProvider } from "./consumet.provider.js";
 import { healthRegistry } from "./health.js";
 import { InProcessProvider } from "./inprocess.provider.js";
@@ -117,6 +120,80 @@ export function buildProvidersWithDemos(): StreamingProvider[] {
     );
   }
   return providers;
+}
+
+/**
+ * Load provider and endpoint definitions from the database registry (P5/P19).
+ *
+ * If the database tables are populated, runtime authority is driven by PostgreSQL:
+ * priorities, active statuses, urlTemplates, and endpoint mappings.
+ * Degrades safely to static defaults if the database is unpopulated or unreachable.
+ */
+export async function loadProvidersFromDb(db?: Db): Promise<StreamingProvider[]> {
+  if (!db) {
+    return config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders();
+  }
+
+  try {
+    const dbProviders = await db
+      .select()
+      .from(providersTable)
+      .where(eq(providersTable.active, true))
+      .orderBy(asc(providersTable.priority));
+
+    if (!dbProviders || dbProviders.length === 0) {
+      return config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders();
+    }
+
+    const loaded: StreamingProvider[] = [];
+
+    for (const p of dbProviders) {
+      const endpoints = await db
+        .select()
+        .from(providerEndpoints)
+        .where(and(eq(providerEndpoints.providerId, p.id), eq(providerEndpoints.active, true)))
+        .orderBy(asc(providerEndpoints.priority));
+
+      for (const ep of endpoints) {
+        if (ep.urlTemplate) {
+          loaded.push(
+            new TemplateProvider(p.slug, p.name, ep.priority ?? p.priority, {
+              id: `${p.slug}-${ep.slug}`,
+              providerSlug: p.slug,
+              providerName: p.name,
+              endpointSlug: ep.slug,
+              displayName: ep.displayName,
+              language: (ep.language as AudioTrack) ?? "sub",
+              accessType: (ep.accessType as any) ?? "hls",
+              badge: ep.badge ?? p.name,
+              urlTemplate: ep.urlTemplate,
+              requiredIdType: (ep.requiredIdType as any) ?? "anilist",
+              priority: ep.priority ?? p.priority,
+              maxResolution: ep.maxResolution ?? undefined,
+            }),
+          );
+        }
+      }
+
+      if (p.isCustomAdapter && p.slug === "Hianime" && config.CONSUMET_INPROCESS) {
+        loaded.push(new InProcessProvider("Hianime", p.name, p.priority));
+      } else if (p.isCustomAdapter && p.slug === "AnimePahe" && config.CONSUMET_INPROCESS) {
+        loaded.push(new InProcessProvider("AnimePahe", p.name, p.priority));
+      }
+    }
+
+    if (config.ENABLE_DEMO_STREAMS) {
+      for (const endpoint of DEMO_ENDPOINTS) {
+        loaded.push(
+          new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
+        );
+      }
+    }
+
+    return loaded.length > 0 ? loaded : (config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders());
+  } catch {
+    return config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders();
+  }
 }
 
 /**

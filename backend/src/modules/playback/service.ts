@@ -57,7 +57,7 @@ export interface ResolveResult {
 }
 
 /** Stream URLs are signed and short-lived, bounding how long one is reused. */
-const SOURCE_CACHE_TTL_S = 600;
+const SOURCE_CACHE_TTL_S = 90;
 
 /** Only the best few candidates are probed; see `#validate`. */
 const MAX_VALIDATED_SOURCES = 6;
@@ -132,6 +132,11 @@ export class PlaybackResolver {
     const externalIds: Record<string, string | undefined> = { ...(title?.externalIds ?? {}) };
     if (resolved.anilistId) externalIds.anilist = resolved.anilistId;
 
+    const titleString =
+      title?.canonicalTitle ??
+      (title as any)?.titleEnglish ??
+      (title as any)?.titleRomaji;
+
     const result = await this.resolve(
       {
         animeId: resolved.animeId,
@@ -139,6 +144,9 @@ export class PlaybackResolver {
         malId: externalIds.mal,
         episodeNumber: resolved.episodeNumber,
         language,
+        animeTitle: titleString,
+        episodeExternalIds: resolved.identity.episode,
+        externalIds: externalIds as Record<string, string>,
       },
       resolved.identity.episode,
     );
@@ -230,8 +238,14 @@ export class PlaybackResolver {
           // The deadline is applied here rather than trusted to the adapter,
           // because an adapter using its own HTTP stack cannot be relied on to
           // time out on its own.
+          const providerEpisodeId =
+            identity[provider.slug] ?? request.episodeExternalIds?.[provider.slug];
+          const providerReq: ResolveRequest = {
+            ...request,
+            providerEpisodeId,
+          };
           const sources = await withDeadline(
-            provider.resolve(request),
+            provider.resolve(providerReq),
             PROVIDER_DEADLINE_MS,
             provider.slug,
           );
@@ -316,13 +330,23 @@ export class PlaybackResolver {
     const results = await Promise.all(
       candidates.map(async (source) => {
         try {
+          const probeHeaders: Record<string, string> = {
+            ...(source.headers ?? {}),
+            ...(source.referer ? { referer: source.referer } : {}),
+          };
           const probe = await probeUrl(source.playbackUrl, {
-            headers: source.referer ? { referer: source.referer } : {},
+            headers: probeHeaders,
           });
 
           // 206 is the expected answer for a media probe; a bare 200 on a large
           // file is accepted too, since several CDNs ignore Range.
           if (!probe.ok && probe.status !== 206) {
+            return { ...source, validated: false };
+          }
+
+          // HTML responses (Cloudflare challenges, captchas, error pages) are not playable media.
+          const isHtml = probe.contentType?.toLowerCase().includes("text/html");
+          if (isHtml && source.accessType !== "embed") {
             return { ...source, validated: false };
           }
 

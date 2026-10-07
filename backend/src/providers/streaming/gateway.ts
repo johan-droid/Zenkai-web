@@ -281,6 +281,8 @@ export class PlaybackGateway {
       quality: source.quality,
       resolution: source.resolution,
 
+      ...(source.referer ? { referer: source.referer } : {}),
+
       // Carried through untouched. The gateway holds no evidence of its own and
       // never upgrades a source nobody has actually probed.
       validated: source.validated === true,
@@ -476,7 +478,36 @@ export class PlaybackGateway {
       throw AppError.badRequest("manifest exceeds the size limit");
     }
 
-    return { body, contentType };
+    const rewrittenBody = body
+      .split("\n")
+      .map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+
+        if (trimmed.startsWith("#")) {
+          return line.replace(/URI="([^"]+)"/g, (match, uri) => {
+            if (/^https?:\/\//i.test(uri)) return match;
+            try {
+              const abs = new URL(uri, url).toString();
+              return `URI="${abs}"`;
+            } catch {
+              return match;
+            }
+          });
+        }
+
+        if (!/^https?:\/\//i.test(trimmed)) {
+          try {
+            return new URL(trimmed, url).toString();
+          } catch {
+            return line;
+          }
+        }
+        return line;
+      })
+      .join("\n");
+
+    return { body: rewrittenBody, contentType };
   }
 
   /**

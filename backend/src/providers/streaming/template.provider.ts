@@ -53,11 +53,24 @@ export function renderTemplate(
   // Without the id this endpoint needs, the honest answer is "cannot serve".
   if (!availableId) return null;
 
-  return template
+  const rendered = template
     .replace(/\{anilist\}/g, request.anilistId)
     .replace(/\{mal\}/g, request.malId ?? "")
     .replace(/\{tmdb\}/g, "")
     .replace(/\{episode\}/g, String(request.episodeNumber));
+
+  if (rendered.startsWith("http://") || rendered.startsWith("https://")) {
+    return rendered;
+  }
+
+  const base =
+    config.SELF_HOSTED_BASE_URL ??
+    `http://${config.HOST === "0.0.0.0" ? "localhost" : config.HOST}:${config.PORT}`;
+  try {
+    return new URL(rendered, base).toString();
+  } catch {
+    return rendered;
+  }
 }
 
 export class TemplateProvider implements StreamingProvider {

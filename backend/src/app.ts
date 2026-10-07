@@ -23,6 +23,7 @@ import { AnilistProvider } from "./providers/metadata/anilist.js";
 import {
   buildProviders,
   buildProvidersWithDemos,
+  loadProvidersFromDb,
 } from "./providers/streaming/registry.js";
 import { redactRequestUrl } from "./providers/streaming/gateway.js";
 import { healthRegistry } from "./providers/streaming/health.js";
@@ -62,8 +63,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
         }),
       },
     },
-    // Trust the proxy's X-Forwarded-* so rate limiting keys on the real client.
-    trustProxy: true,
+    // In production, only trust loopback proxy headers to prevent IP spoofing
+    trustProxy: config.NODE_ENV === "production" ? "127.0.0.1" : true,
   });
 
   await app.register(cors, {
@@ -153,7 +154,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   const mangaService = new MangaService(mangaRepo);
   const providers =
     deps.providers ??
-    (config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders());
+    (await loadProvidersFromDb(deps.db));
 
   const resolver = new PlaybackResolver(providers, animeRepo);
   const metadata = new PlaybackMetadataService(deps.db, providers);

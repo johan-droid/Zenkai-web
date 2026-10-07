@@ -15,13 +15,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  browseMedia,
-  type AniListMediaFormat,
-  type AniListMediaStatus,
-  type AniListMediaType,
-  type AniListSort,
-} from "@/lib/api/anilist";
+import { HttpError } from "@/lib/api/http";
+import { fetchBrowsePage } from "@/lib/api/zenkai";
+import type { MediaKind } from "@/lib/media";
 import { PAGE_SIZE } from "@/config/site";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +37,7 @@ const GENRES = [
   "Thriller",
 ];
 
-const FORMATS: { label: string; value: AniListMediaFormat }[] = [
+const ANIME_FORMATS: { label: string; value: string }[] = [
   { label: "TV", value: "TV" },
   { label: "Movie", value: "MOVIE" },
   { label: "OVA", value: "OVA" },
@@ -49,41 +45,71 @@ const FORMATS: { label: string; value: AniListMediaFormat }[] = [
   { label: "Special", value: "SPECIAL" },
 ];
 
-const STATUSES: { label: string; value: AniListMediaStatus }[] = [
+const ANIME_STATUSES: { label: string; value: string }[] = [
   { label: "Airing", value: "RELEASING" },
   { label: "Finished", value: "FINISHED" },
   { label: "Upcoming", value: "NOT_YET_RELEASED" },
 ];
 
-const SORTS: { label: string; value: AniListSort }[] = [
-  { label: "Trending", value: "TRENDING_DESC" },
-  { label: "Popularity", value: "POPULARITY_DESC" },
-  { label: "Score", value: "SCORE_DESC" },
-  { label: "Newest", value: "START_DATE_DESC" },
-  { label: "Recently updated", value: "UPDATED_AT_DESC" },
-  { label: "Title", value: "TITLE_ROMAJI" },
+const MANGA_STATUSES: { label: string; value: string }[] = [
+  { label: "Ongoing", value: "ONGOING" },
+  { label: "Completed", value: "COMPLETED" },
+  { label: "Hiatus", value: "HIATUS" },
+  { label: "Cancelled", value: "CANCELLED" },
 ];
 
-/** Reads a single filter value from the URL search params. */
+/**
+ * Sort vocabularies mirror the backend's `ANIME_SORTS`/`MANGA_SORTS` exactly.
+ * "trending" is not a catalogue sort — it has no column behind it — so it is
+ * routed to the discovery endpoint rather than sent to `/api/v1/anime`, which
+ * would reject it with a 400.
+ */
+const ANIME_SORTS: { label: string; value: string }[] = [
+  { label: "Trending", value: "trending" },
+  { label: "Popularity", value: "popularity" },
+  { label: "Score", value: "score" },
+  { label: "Newest", value: "newest" },
+  { label: "Recently updated", value: "recently-updated" },
+  { label: "Recently added", value: "recently-added" },
+  { label: "Title", value: "title" },
+];
+
+const MANGA_SORTS: { label: string; value: string }[] = [
+  { label: "Most followed", value: "followed" },
+  { label: "Rating", value: "rating" },
+  { label: "Newest", value: "newest" },
+  { label: "Recently updated", value: "recently-updated" },
+  { label: "Title", value: "title" },
+];
+
+const DEFAULT_SORT: Record<MediaKind, string> = {
+  anime: "trending",
+  manga: "followed",
+};
+
+/** Reads and writes filter values in the URL search params. */
 function useFilterState() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const value = useCallback((key: string) => params.get(key) ?? undefined, [params]);
+  const value = useCallback(
+    (key: string) => params.get(key) ?? undefined,
+    [params],
+  );
 
   const set = useCallback(
     (key: string, next?: string) => {
-      const query = new URLSearchParams(params.toString());
-      if (next) query.set(key, next);
-      else query.delete(key);
-      router.replace(`?${query.toString()}`, { scroll: false });
+      const sp = new URLSearchParams(params.toString());
+      if (next === undefined) sp.delete(key);
+      else sp.set(key, next);
+      router.replace(`?${sp.toString()}`, { scroll: false });
     },
     [params, router],
   );
 
   const toggle = useCallback(
-    (key: string, next: string) => {
-      set(key, params.get(key) === next ? undefined : next);
+    (key: string, option: string) => {
+      set(key, params.get(key) === option ? undefined : option);
     },
     [params, set],
   );
@@ -91,67 +117,82 @@ function useFilterState() {
   return { value, set, toggle };
 }
 
-export function BrowseView({ type }: { type: AniListMediaType }) {
+function sortLabel(kind: MediaKind, value: string): string {
+  const options = kind === "anime" ? ANIME_SORTS : MANGA_SORTS;
+  return (
+    options.find((option) => option.value === value)?.label ??
+    options[0]!.label
+  );
+}
+
+export function BrowseView({ kind }: { kind: MediaKind }) {
   const { value, set, toggle } = useFilterState();
 
   const genre = value("genre");
-  const format = value("format") as AniListMediaFormat | undefined;
-  const status = value("status") as AniListMediaStatus | undefined;
-  const sort = (value("sort") as AniListSort | undefined) ?? "TRENDING_DESC";
-  const search = value("q");
+  const format = kind === "anime" ? value("format") : undefined;
+  const status = value("status");
+
+  const sorts = kind === "anime" ? ANIME_SORTS : MANGA_SORTS;
+  const statuses = kind === "anime" ? ANIME_STATUSES : MANGA_STATUSES;
+  // A sort value left in the URL by the other kind (or by a hand-edited link)
+  // falls back to this kind's default rather than being sent to a backend that
+  // would reject it.
+  const rawSort = value("sort");
+  const sort =
+    rawSort && sorts.some((option) => option.value === rawSort)
+      ? rawSort
+      : DEFAULT_SORT[kind];
 
   const query = useInfiniteQuery({
-    queryKey: ["browse", type, { genre, format, status, sort, search }],
+    queryKey: ["browse", kind, { genre, format, status, sort }] as const,
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
-      browseMedia({
-        type,
-        page: pageParam,
-        perPage: PAGE_SIZE,
-        genre,
-        format,
-        status,
-        sort: [sort],
-        search,
-      }),
-    getNextPageParam: (lastPage) =>
-      lastPage.pageInfo.hasNextPage ? lastPage.pageInfo.currentPage + 1 : undefined,
+      fetchBrowsePage(kind, { genre, format, status, sort }, pageParam, PAGE_SIZE),
+    getNextPageParam: (lastPage, pages) =>
+      lastPage.hasNextPage ? pages.length + 1 : undefined,
     staleTime: 5 * 60_000,
   });
 
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
-  const total = query.data?.pages[0]?.pageInfo.total ?? 0;
-  const activeSort = SORTS.find((option) => option.value === sort) ?? SORTS[0]!;
+  const total = query.data?.pages[0]?.total ?? 0;
+  const badRequest =
+    query.error instanceof HttpError && query.error.status === 400;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="glass-panel flex flex-col gap-4 rounded-2xl p-4 sm:p-5">
+      <div className="glass flex flex-col gap-4 rounded-2xl p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="flex items-center gap-1.5 pr-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
             <SlidersHorizontal className="size-3.5" /> Genre
           </span>
           {GENRES.map((item) => (
-            <FilterChip key={item} active={genre === item} onClick={() => toggle("genre", item)}>
+            <FilterChip
+              key={item}
+              active={genre === item}
+              onClick={() => toggle("genre", item)}
+            >
               {item}
             </FilterChip>
           ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <FilterGroup label="Format">
-            {FORMATS.map((item) => (
-              <FilterChip
-                key={item.value}
-                active={format === item.value}
-                onClick={() => toggle("format", item.value)}
-              >
-                {item.label}
-              </FilterChip>
-            ))}
-          </FilterGroup>
+          {kind === "anime" && (
+            <FilterGroup label="Format">
+              {ANIME_FORMATS.map((item) => (
+                <FilterChip
+                  key={item.value}
+                  active={format === item.value}
+                  onClick={() => toggle("format", item.value)}
+                >
+                  {item.label}
+                </FilterChip>
+              ))}
+            </FilterGroup>
+          )}
 
           <FilterGroup label="Status">
-            {STATUSES.map((item) => (
+            {statuses.map((item) => (
               <FilterChip
                 key={item.value}
                 active={status === item.value}
@@ -169,13 +210,16 @@ export function BrowseView({ type }: { type: AniListMediaType }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="glass rounded-xl">
-                  Sort: {activeSort.label}
+                  Sort: {sortLabel(kind, sort)}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="glass-strong">
                 <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-                {SORTS.map((option) => (
-                  <DropdownMenuItem key={option.value} onSelect={() => set("sort", option.value)}>
+                {sorts.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onSelect={() => set("sort", option.value)}
+                  >
                     {option.label}
                   </DropdownMenuItem>
                 ))}
@@ -202,6 +246,29 @@ export function BrowseView({ type }: { type: AniListMediaType }) {
 
       {query.isLoading ? (
         <MediaGridSkeleton />
+      ) : query.isError ? (
+        <EmptyState
+          icon={SlidersHorizontal}
+          title={
+            badRequest
+              ? "Those filters are not supported"
+              : "Browse is temporarily unavailable"
+          }
+          description={
+            badRequest
+              ? "One of the selected filters was rejected. Clear the filters and try again."
+              : "The catalogue could not be reached. Try again in a moment."
+          }
+          action={
+            <Button
+              variant="outline"
+              className="glass rounded-xl"
+              onClick={() => query.refetch()}
+            >
+              Retry
+            </Button>
+          }
+        />
       ) : items.length ? (
         <>
           <MediaGrid items={items} priorityCount={6} />
@@ -212,7 +279,9 @@ export function BrowseView({ type }: { type: AniListMediaType }) {
               disabled={query.isFetchingNextPage}
               onClick={() => query.fetchNextPage()}
             >
-              {query.isFetchingNextPage ? <Loader2 className="animate-spin" /> : null}
+              {query.isFetchingNextPage ? (
+                <Loader2 className="animate-spin" />
+              ) : null}
               Load more
             </Button>
           ) : null}
@@ -228,7 +297,13 @@ export function BrowseView({ type }: { type: AniListMediaType }) {
   );
 }
 
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -245,19 +320,18 @@ function FilterChip({
   children,
 }: {
   active?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
       className={cn(
         "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
         active
-          ? "border-brand-400/60 bg-brand-500/20 text-foreground"
-          : "border-glass-border bg-white/5 text-muted-foreground hover:text-foreground",
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border/60 bg-background/60 text-muted-foreground hover:border-primary/50 hover:text-foreground",
       )}
     >
       {children}

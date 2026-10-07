@@ -59,6 +59,11 @@ export function HeroCarousel({
               <img
                 src={active.banner ?? active.cover.url!}
                 alt=""
+                onError={(e) => {
+                  if (active.cover.url && e.currentTarget.src !== active.cover.url) {
+                    e.currentTarget.src = active.cover.url;
+                  }
+                }}
                 className="size-full object-cover object-center"
               />
             ) : (

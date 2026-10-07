@@ -89,6 +89,11 @@ export function imageUrl(
   height?: number,
 ): string | null {
   if (!url) return null;
+  // AniList CDN static assets on Backblaze B2 / Cloudflare do not support dynamic
+  // dimension suffixes (e.g. -300x450.jpg); appending them produces HTTP 404.
+  if (/anilistcdn|anilist\.co/i.test(url)) {
+    return url;
+  }
   return url.replace(
     /\/([^/]+)$/,
     (_match, file: string) => {

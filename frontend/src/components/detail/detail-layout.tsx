@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { BookOpen, Check, ChevronDown, Clock, Eye, Play, Star, Tv, XCircle, Plus } from "lucide-react";
+import { BookOpen, Check, ChevronDown, Clock, Eye, Play, Star, Trash2, Tv, XCircle, Plus } from "lucide-react";
 import Link from "next/link";
 
 import { MediaCard } from "@/components/cards/media-card";
@@ -13,11 +13,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { db, type LibraryStatus, libraryId } from "@/lib/db/dexie";
-import { setLibraryStatus } from "@/lib/db/progress";
+import {
+  getLibraryEntry,
+  removeLibraryEntry,
+  saveLibraryEntry,
+  type LibraryStatus,
+} from "@/lib/library";
 import { displayTitle, formatScore, readHref, seasonLabel, watchHref, type DetailData, type MediaKind } from "@/lib/media";
 
 /**
@@ -54,7 +59,7 @@ function LibraryButton({
 }) {
   const dbKind = kind === "anime" ? "anime" : "manga";
   const record = useLiveQuery(
-    () => db.library.get(libraryId(dbKind, mediaId)),
+    () => getLibraryEntry(dbKind, mediaId),
     [dbKind, mediaId],
   );
 
@@ -62,7 +67,11 @@ function LibraryButton({
   const currentOption = LIBRARY_OPTIONS.find((o) => o.value === currentStatus);
 
   async function setStatus(status: LibraryStatus) {
-    await setLibraryStatus({ kind: dbKind, mediaId, title, coverUrl, status });
+    await saveLibraryEntry({ kind: dbKind, mediaId, title, coverUrl, status });
+  }
+
+  async function remove() {
+    await removeLibraryEntry({ kind: dbKind, mediaId });
   }
 
   return (
@@ -104,6 +113,17 @@ function LibraryButton({
             </DropdownMenuItem>
           );
         })}
+        {/* P16: removal semantics. Setting a status is not the same as being
+            able to leave the list, and P11 lists removal as a requirement. */}
+        {currentStatus ? (
+          <>
+            <DropdownMenuSeparator className="bg-glass-border" />
+            <DropdownMenuItem onClick={remove} className="gap-2 text-muted-foreground">
+              <Trash2 className="size-4" />
+              Remove from library
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

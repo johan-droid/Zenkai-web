@@ -30,6 +30,9 @@ export function MediaCard({
             src={media.cover.url}
             alt={title}
             loading={priority ? "eager" : "lazy"}
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
             className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover/card:scale-105"
           />
         ) : (

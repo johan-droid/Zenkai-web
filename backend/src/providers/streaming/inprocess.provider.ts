@@ -30,6 +30,8 @@ interface ConsumetSource {
   url?: string;
   quality?: string;
   isM3U8?: boolean;
+  headers?: Record<string, string>;
+  referer?: string;
 }
 
 interface ConsumetServer {
@@ -92,30 +94,41 @@ export class InProcessProvider implements StreamingProvider {
     return config.CONSUMET_INPROCESS;
   }
 
-/**
+  /**
    * Map an AniList title onto a Consumet slug.
    *
-   * This is the heuristic the roadmap warns about: the providers share no id
-   * space, so the join goes through the title. An exact match is preferred, and
-   * the result is treated as a candidate rather than a guarantee.
+   * Uses canonical animeTitle if available to avoid an extra AniList network hop.
+   * Validates title closeness so an unrelated top search result is rejected rather
+   * than serving the wrong anime.
    */
   async #findShowId(request: ResolveRequest): Promise<string | null> {
-    const record = await this.#anilist.getByAnilistId(request.anilistId);
-    if (!record) return null;
+    let title = request.animeTitle;
+    if (!title && request.anilistId) {
+      const record = await this.#anilist.getByAnilistId(request.anilistId);
+      title = record?.canonicalTitle;
+    }
+    if (!title) return null;
 
     const backend = await loadBackend(this.slug);
-    const results = await backend.search(record.canonicalTitle, 1);
+    const results = await backend.search(title, 1);
     const candidates = results?.results ?? [];
     if (candidates.length === 0) return null;
 
-    const wanted = record.canonicalTitle.toLowerCase();
-    const exact = candidates.find(
-      (candidate) => candidate.title?.toLowerCase() === wanted,
-    );
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const wanted = normalize(title);
 
-    // Falling back to the top result is a deliberate trade: a wrong show beats
-    // no source, and the gateway probe discards it if it turns out to be dead.
-    return (exact ?? candidates[0]).id;
+    const exact = candidates.find(
+      (c) => c.title && (c.title.toLowerCase() === title!.toLowerCase() || normalize(c.title) === wanted),
+    );
+    if (exact) return exact.id;
+
+    const close = candidates.find((c) => {
+      if (!c.title) return false;
+      const normalizedC = normalize(c.title);
+      return normalizedC.includes(wanted) || wanted.includes(normalizedC);
+    });
+
+    return close ? close.id : null;
   }
 
   async listEpisodes(request: ResolveRequest): Promise<ProviderEpisodeInfo[]> {
@@ -131,20 +144,15 @@ export class InProcessProvider implements StreamingProvider {
       return Object.keys(servers)
         .map((key, index) => ({
           providerEpisodeId: key,
-          // Keys are usually episode numbers but are not guaranteed sequential,
-          // so a non-numeric key falls back to its position.
           episodeNumber: Number.isFinite(Number(key)) ? Number(key) : index + 1,
         }))
         .filter((entry) => Number.isFinite(entry.episodeNumber));
     } catch {
-      // An unreachable scraper here means "no episodes"; health is still scored
-      // from the resolve path, which distinguishes error from empty.
       return [];
     }
   }
 
   async resolve(request: ResolveRequest): Promise<PlaybackSource[]> {
-    // Not being configured is not an error and must not be scored as one.
     if (!this.enabled) return [];
 
     const showId = await this.#findShowId(request);
@@ -153,10 +161,9 @@ export class InProcessProvider implements StreamingProvider {
     const backend = await loadBackend(this.slug);
     const servers = await backend.fetchEpisodeServers(showId);
 
-    // Servers are keyed by episode id, which is the episode number for most
-    // Consumet backends.
-    const key = String(request.episodeNumber);
-    const server = servers[key];
+    // Prefer provider-native episode id when known, otherwise use episode number.
+    const key = request.providerEpisodeId || String(request.episodeNumber);
+    const server = servers[key] || servers[String(request.episodeNumber)];
     if (!server) return [];
 
     const raw = await server.fetch();
@@ -166,6 +173,11 @@ export class InProcessProvider implements StreamingProvider {
 
     for (const entry of entries) {
       if (!entry?.url) continue;
+
+      const referer =
+        entry.referer ||
+        entry.headers?.Referer ||
+        entry.headers?.referer;
 
       sources.push({
         id: `inprocess:${this.slug}:${key}:${entry.quality ?? "auto"}`,
@@ -177,6 +189,8 @@ export class InProcessProvider implements StreamingProvider {
         quality: entry.quality,
         resolution: parseResolution(entry.quality),
         language: "sub",
+        referer,
+        headers: entry.headers,
         priority: this.basePriority,
       });
     }

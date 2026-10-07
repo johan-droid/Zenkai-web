@@ -151,15 +151,4 @@ function freePort(p, name, pidCmd, isCurrentServer = false) {
 // Free the current port (allow killing regardless of process type since we're starting this server)
 const currentKilled = freePort(port, currentServer?.name || "server", currentServer?.pidCmd || "", true);
 
-// Free the sibling server port if it exists (only kill Zenkai servers)
-if (sibling) {
-  log(`\n🔍 Checking sibling server (${sibling.name}) on port ${sibling.port}...`);
-  const siblingKilled = freePort(sibling.port, sibling.name, sibling.pidCmd, false);
-  
-  if (siblingKilled.length > 0) {
-    log(`\n⚠️  ${sibling.name} server was killed to prevent conflicts with ${currentServer?.name || "this"} server.`, "WARN");
-    log(`   Start the ${sibling.name} server separately when needed: cd ${sibling.port === "3000" ? "frontend" : "backend"} && npm run dev`, "WARN");
-  }
-}
-
 log(`\n✨ Ready to start ${currentServer?.name || "server"} on port ${port}`);

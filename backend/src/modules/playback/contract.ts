@@ -46,6 +46,7 @@ const playbackSourceSchema = z.object({
   language: audioTrackSchema,
   subtitles: z.array(subtitleTrackSchema).optional(),
   referer: z.string().optional(),
+  headers: z.record(z.string()).optional(),
   priority: z.number(),
   validated: z.boolean().optional(),
   rank: z.number(),
@@ -66,6 +67,7 @@ const playbackPlanSchema = z.object({
   language: audioTrackSchema,
   quality: z.string().optional(),
   resolution: z.number().optional(),
+  referer: z.string().optional(),
   validated: z.boolean(),
   playable: z.boolean(),
   capabilities: z.object({

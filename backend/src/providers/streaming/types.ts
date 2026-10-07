@@ -41,6 +41,8 @@ export interface PlaybackSource {
   subtitles?: Array<{ language: string; url: string; kind?: string }>;
   /** Some CDNs refuse requests without the origin Referer. */
   referer?: string;
+  /** Custom request headers required by upstream CDN (e.g. User-Agent). */
+  headers?: Record<string, string>;
   /** Lower wins when scores tie. */
   priority: number;
   /** Set when the source was probed successfully before being offered. */
@@ -128,6 +130,9 @@ export interface PlaybackPlan {
   quality?: string;
   resolution?: number;
 
+  /** Upstream referer when required by CDN. */
+  referer?: string;
+
   /**
    * P5's explicit validation state, carried through unchanged.
    *
@@ -160,6 +165,14 @@ export interface ResolveRequest {
   episodeNumber: number;
   language: AudioTrack;
   signal?: AbortSignal;
+  /** Canonical or romanized anime title, enabling upstream title lookup without extra AniList calls */
+  animeTitle?: string;
+  /** Provider-native episode external ID (from episode_external_ids table) */
+  providerEpisodeId?: string;
+  /** All known provider-native episode IDs for this episode */
+  episodeExternalIds?: Record<string, string>;
+  /** External IDs for the anime */
+  externalIds?: Record<string, string>;
 }
 
 export interface ProviderEpisodeInfo {

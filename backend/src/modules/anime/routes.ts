@@ -293,6 +293,11 @@ app.get("/api/v1/anime/top", async (request) => {
   return discovery.ranking("topRated", query);
 });
 
+app.get("/api/v1/anime/topRated", async (request) => {
+  const query = parseOrThrow(z.object(discoveryPaging), request.query);
+  return discovery.ranking("topRated", query);
+});
+
 /**
  * Recently added to the catalogue.
  *
