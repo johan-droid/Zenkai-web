@@ -398,7 +398,12 @@ export class AnilistProvider implements AnimeMetadataProvider {
    * immediately instead of an empty list for every title.
    */
   #placeholderEpisodes(summary: AnimeSummary): ProviderEpisode[] | undefined {
-    const total = summary.totalEpisodes;
+    const nextAiring = (summary as { nextAiringEpisode?: { episode: number } }).nextAiringEpisode;
+    const total =
+      summary.totalEpisodes ??
+      (nextAiring && nextAiring.episode > 1
+        ? nextAiring.episode - 1
+        : undefined);
     if (!total || total <= 0) return undefined;
 
     // `undefined`, not `null`, for everything AniList did not tell us. These rows

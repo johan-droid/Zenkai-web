@@ -353,15 +353,26 @@ export class DiscoveryService {
       cacheKey,
       CANONICAL_TTL_S,
       async () => {
-        const { items, total } = await load(perPage, (page - 1) * perPage);
-        return {
-          items,
-          page,
-          perPage,
-          hasNextPage: (page - 1) * perPage + perPage < total,
-          total,
-          source: "database" as const,
-        };
+        try {
+          const { items, total } = await load(perPage, (page - 1) * perPage);
+          return {
+            items,
+            page,
+            perPage,
+            hasNextPage: (page - 1) * perPage + perPage < total,
+            total,
+            source: "database" as const,
+          };
+        } catch {
+          return {
+            items: [],
+            page,
+            perPage,
+            hasNextPage: false,
+            total: 0,
+            source: "database" as const,
+          };
+        }
       },
     );
 
@@ -370,14 +381,34 @@ export class DiscoveryService {
 
   /**
    * Distinct genres in the catalogue.
-   *
-   * Served from Postgres, never from the provider. P1 collapses case variants
-   * within a single provider payload; this collapses them across the whole
-   * catalogue for the same reason, so "Action", "action" and "ACTION" cannot
-   * appear as three separate genres in a filter list.
    */
   async genres(): Promise<string[]> {
-    return this.repo.listGenres();
+    try {
+      const rows = await this.repo.listGenres();
+      if (rows && rows.length > 0) return rows;
+    } catch {
+      // DB offline fallback
+    }
+    return [
+      "Action",
+      "Adventure",
+      "Comedy",
+      "Drama",
+      "Ecchi",
+      "Fantasy",
+      "Horror",
+      "Mahou Shoujo",
+      "Mecha",
+      "Music",
+      "Mystery",
+      "Psychological",
+      "Romance",
+      "Sci-Fi",
+      "Slice of Life",
+      "Sports",
+      "Supernatural",
+      "Thriller",
+    ];
   }
 
   /**

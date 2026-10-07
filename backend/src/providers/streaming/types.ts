@@ -24,6 +24,8 @@ export interface ProviderCapabilities {
   maxResolution?: number;
   /** True when the provider needs a MAL id rather than an AniList id. */
   requiresMalId: boolean;
+  /** Explicit required external id space: anilist | mal | tmdb | slug | none. */
+  requiredIdType?: string;
 }
 
 export interface PlaybackSource {

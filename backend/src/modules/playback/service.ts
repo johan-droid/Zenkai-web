@@ -59,8 +59,8 @@ export interface ResolveResult {
 /** Stream URLs are signed and short-lived, bounding how long one is reused. */
 const SOURCE_CACHE_TTL_S = 90;
 
-/** Only the best few candidates are probed; see `#validate`. */
-const MAX_VALIDATED_SOURCES = 6;
+/** Only the best candidates are probed; see `#validate`. */
+const MAX_VALIDATED_SOURCES = 15;
 
 /**
  * Hard ceiling on a single provider's resolve, enforced by the resolver.
@@ -72,7 +72,7 @@ const MAX_VALIDATED_SOURCES = 6;
  * imposed from the outside, one such provider stalls the entire request, which
  * defeats the point of running providers concurrently.
  */
-const PROVIDER_DEADLINE_MS = 12_000;
+const PROVIDER_DEADLINE_MS = 5_000;
 
 /**
  * Race a promise against a deadline.
@@ -124,18 +124,22 @@ export class PlaybackResolver {
     if (!resolved) return null;
 
     const language = options.language ?? "sub";
-    const episode = await this.animeRepo.getEpisode(episodeId);
+    const episode = (await this.animeRepo.getEpisode(episodeId).catch(() => null)) ?? {
+      id: episodeId,
+      episodeNumber: resolved.episodeNumber,
+      title: `Episode ${resolved.episodeNumber}`,
+    };
 
-    // Every external id the title has, so a provider keyed on a space the
-    // resolver does not special-case can still be asked.
-    const [title] = await this.animeRepo.listParentTitles([resolved.animeId]);
+    const parentTitles = await this.animeRepo.listParentTitles([resolved.animeId]).catch(() => []);
+    const title = parentTitles[0];
     const externalIds: Record<string, string | undefined> = { ...(title?.externalIds ?? {}) };
     if (resolved.anilistId) externalIds.anilist = resolved.anilistId;
 
     const titleString =
       title?.canonicalTitle ??
       (title as any)?.titleEnglish ??
-      (title as any)?.titleRomaji;
+      (title as any)?.titleRomaji ??
+      `Anime ${resolved.anilistId}`;
 
     const result = await this.resolve(
       {
@@ -151,7 +155,7 @@ export class PlaybackResolver {
       resolved.identity.episode,
     );
 
-    return { result, episode: episode ?? {} };
+    return { result, episode };
   }
 
   /** Resolve sources for one episode, served from cache when warm. */
@@ -200,6 +204,7 @@ export class PlaybackResolver {
       {
         // The request already carries the external ids the route resolved.
         anime: {
+          ...(request.externalIds ?? {}),
           anilist: request.anilistId,
           mal: request.malId,
         },
@@ -329,6 +334,11 @@ export class PlaybackResolver {
   async #validate(candidates: RankedSource[]): Promise<RankedSource[]> {
     const results = await Promise.all(
       candidates.map(async (source) => {
+        // Embed targets are framed in the client browser iframe; skip media probing
+        if (source.accessType === "embed") {
+          return { ...source, validated: true };
+        }
+
         try {
           const probeHeaders: Record<string, string> = {
             ...(source.headers ?? {}),
@@ -346,7 +356,7 @@ export class PlaybackResolver {
 
           // HTML responses (Cloudflare challenges, captchas, error pages) are not playable media.
           const isHtml = probe.contentType?.toLowerCase().includes("text/html");
-          if (isHtml && source.accessType !== "embed") {
+          if (isHtml) {
             return { ...source, validated: false };
           }
 

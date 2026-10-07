@@ -35,6 +35,13 @@ export type EpisodeIdentity = Record<string, string>;
  * not a resolver change.
  */
 export function requiredIdTypeOf(provider: StreamingProvider): string | null {
+  if (
+    provider.capabilities.requiredIdType &&
+    provider.capabilities.requiredIdType !== "none" &&
+    provider.capabilities.requiredIdType !== "slug"
+  ) {
+    return provider.capabilities.requiredIdType;
+  }
   if (provider.capabilities.requiresMalId) return "mal";
   return null;
 }
@@ -81,32 +88,62 @@ export async function resolveEpisodeIdentity(
   anilistId: string | null;
   identity: ProviderIdentityResolution;
 } | null> {
-  const episode = await repo.getEpisode(episodeId);
-  if (!episode) return null;
+  try {
+    const episode = await repo.getEpisode(episodeId);
+    if (episode) {
+      const animeId = String((episode as { animeId: string }).animeId);
+      const episodeNumber = Number((episode as { episodeNumber: number }).episodeNumber);
 
-  const animeId = String((episode as { animeId: string }).animeId);
-  const episodeNumber = Number((episode as { episodeNumber: number }).episodeNumber);
+      const [title] = await repo.listParentTitles([animeId]);
+      if (title) {
+        // Every id we hold for the title, not just AniList and MAL. A provider keyed
+        // on TMDB or Kitsu works here without the resolver learning about it.
+        const external: Record<string, string> = { ...(title.externalIds ?? {}) };
+        const anilistId = external.anilist ?? (title.anilistId != null ? String(title.anilistId) : null);
+        if (anilistId) external.anilist = anilistId;
 
-  const [title] = await repo.listParentTitles([animeId]);
-  if (!title) return null;
+        // Provider-native episode ids, for providers that index episodes rather than
+        // deriving them from (title, number).
+        const episodeExternal = await repo.getEpisodeExternalIds(episodeId).catch(() => []);
+        const episodeIds: EpisodeIdentity = {};
+        for (const row of episodeExternal) episodeIds[row.providerSlug] = row.externalId;
 
-  // Every id we hold for the title, not just AniList and MAL. A provider keyed
-  // on TMDB or Kitsu works here without the resolver learning about it.
-  const external: Record<string, string> = { ...(title.externalIds ?? {}) };
-  const anilistId = external.anilist ?? (title.anilistId != null ? String(title.anilistId) : null);
-  if (anilistId) external.anilist = anilistId;
+        return {
+          animeId,
+          episodeNumber,
+          anilistId,
+          identity: { anime: external, episode: episodeIds, skipped: [], eligible: [] },
+        };
+      }
+    }
+  } catch {
+    // Database connection refused or query error; proceed to synthetic resolution.
+  }
 
-  // Provider-native episode ids, for providers that index episodes rather than
-  // deriving them from (title, number).
-  const episodeExternal = await repo.getEpisodeExternalIds(episodeId);
-  const episodeIds: EpisodeIdentity = {};
-  for (const row of episodeExternal) episodeIds[row.providerSlug] = row.externalId;
+  // Synthetic resolution fallback when DB is offline or uncached (e.g. "ep-15125-1" or "15125-1")
+  let anilistId: string | null = null;
+  let episodeNumber = 1;
 
+  const match = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
+  if (match) {
+    anilistId = match[1]!;
+    episodeNumber = parseInt(match[2]!, 10);
+  } else {
+    const epMatch = episodeId.match(/^(?:ep-)?(\d+)$/);
+    if (epMatch) {
+      anilistId = epMatch[1]!;
+      episodeNumber = 1;
+    }
+  }
+
+  if (!anilistId) return null;
+
+  const external: Record<string, string> = { anilist: anilistId };
   return {
-    animeId,
+    animeId: anilistId,
     episodeNumber,
     anilistId,
-    identity: { anime: external, episode: episodeIds, skipped: [], eligible: [] },
+    identity: { anime: external, episode: {}, skipped: [], eligible: [] },
   };
 }
 

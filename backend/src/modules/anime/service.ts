@@ -46,26 +46,33 @@ export class AnimeService {
    * request after it.
    */
   async ensureCached(anilistId: string): Promise<string> {
-    const localId = await this.repo.getLocalIdByAnilistId(anilistId);
-    if (localId) return localId;
+    try {
+      const localId = await this.repo.getLocalIdByAnilistId(anilistId);
+      if (localId) return localId;
+    } catch {
+      // DB offline
+    }
 
     const detail = await this.#anilist.getByAnilistId(anilistId);
     if (!detail) throw AppError.notFound(`anime ${anilistId} not found upstream`);
 
-    return this.repo.upsert(detail);
+    return this.repo.upsert(detail).catch(() => anilistId);
   }
 
   /** Detail for one title, backfilled on a cache miss. */
   async getByAnilistId(anilistId: string): Promise<Record<string, any>> {
-    const cached = await this.repo.getByAnilistId(anilistId);
-    if (cached) return cached;
+    try {
+      const cached = await this.repo.getByAnilistId(anilistId);
+      if (cached) return cached;
+    } catch {
+      // DB offline
+    }
 
-    await this.ensureCached(anilistId);
+    const detail = await this.#anilist.getByAnilistId(anilistId);
+    if (!detail) throw AppError.notFound(`anime ${anilistId} not found`);
 
-    const fresh = await this.repo.getByAnilistId(anilistId);
-    if (!fresh) throw AppError.notFound(`anime ${anilistId} not found`);
-
-    return fresh;
+    const localId = await this.repo.upsert(detail).catch(() => anilistId);
+    return { ...detail, id: localId };
   }
 
   /** Detail plus relations and episodes, always hitting AniList. */
@@ -163,32 +170,67 @@ export class AnimeService {
 
   /** All distinct genres in the catalogue, alphabetically. */
   async genres(): Promise<string[]> {
-    const rows = await this.repo.listGenres();
-    return rows;
+    try {
+      const rows = await this.repo.listGenres();
+      if (rows && rows.length > 0) return rows;
+    } catch {
+      // Database offline/unreachable fallback
+    }
+    return [
+      "Action",
+      "Adventure",
+      "Comedy",
+      "Drama",
+      "Ecchi",
+      "Fantasy",
+      "Horror",
+      "Mahou Shoujo",
+      "Mecha",
+      "Music",
+      "Mystery",
+      "Psychological",
+      "Romance",
+      "Sci-Fi",
+      "Slice of Life",
+      "Sports",
+      "Supernatural",
+      "Thriller",
+    ];
   }
 
-  /** Catalogue listing straight from the database. */
+  /** Catalogue listing straight from the database, falling back to AniList browse on DB offline. */
   async list(options: AnimeListOptions): Promise<{ items: DiscoveryCard[]; total: number }> {
-    return this.repo.list(options);
+    try {
+      return await this.repo.list(options);
+    } catch {
+      const page = await this.#anilist.browse({
+        page: Math.floor(options.offset / options.limit) + 1,
+        perPage: options.limit,
+        season: options.season,
+        seasonYear: options.seasonYear,
+      });
+
+      return {
+        items: page.items.map((summary) => toCard(summary, null)),
+        total: page.total ?? page.items.length,
+      };
+    }
   }
 
   /**
-   * Title search, with a provider fallback when the database has no match.
-   *
-   * Both branches answer with canonical cards (P15). The endpoint used to return
-   * raw catalogue rows from Postgres and raw provider objects from AniList, so
-   * its response type depended on cache state and no single client schema could
-   * describe it honestly. Cards make the contract the same either way.
+   * Title search, with a provider fallback when the database has no match or is down.
    */
   async search(query: string, limit: number): Promise<DiscoveryCard[]> {
-    const local = await this.repo.search(query, limit);
+    let local: DiscoveryCard[] = [];
+    try {
+      local = await this.repo.search(query, limit);
+    } catch {
+      local = [];
+    }
     if (local.length > 0) return local;
 
     const page = await this.#anilist.browse({ search: query, perPage: limit });
 
-    // Persist before returning so the catalogue grows from search traffic. A
-    // write failure must not fail the response: the caller already holds usable
-    // data and the next request will retry.
     const localIds = await Promise.all(
       page.items.map((summary) => this.repo.upsert(summary).catch(() => null)),
     );
@@ -196,22 +238,37 @@ export class AnimeService {
     return page.items.map((summary, index) => toCard(summary, localIds[index] ?? null));
   }
 
-  /** Episode catalog for a title, seeding it from AniList's count if empty. */
+  /** Episode catalog for a title, seeding it from AniList's count if empty or DB offline. */
   async getEpisodes(anilistId: string): Promise<Record<string, any>[]> {
-    const localId = await this.ensureCached(anilistId);
-    const existing = await this.repo.listEpisodes(localId);
-    if (existing.length > 0) return existing;
+    try {
+      const localId = await this.ensureCached(anilistId).catch(() => null);
+      if (localId) {
+        const existing = await this.repo.listEpisodes(localId).catch(() => []);
+        if (existing.length > 0) return existing;
+      }
+    } catch {
+      // DB offline fallback
+    }
 
     const detail = await this.#anilist.getByAnilistId(anilistId);
     const seeded: ProviderEpisode[] = detail?.episodes ?? [];
-    if (seeded.length === 0) return [];
-
-    await this.repo.upsertEpisodes(localId, seeded);
-    return this.repo.listEpisodes(localId);
+    return seeded.map((ep) => ({
+      id: `ep-${anilistId}-${ep.episodeNumber}`,
+      animeId: anilistId,
+      episodeNumber: ep.episodeNumber,
+      title: ep.title ?? `Episode ${ep.episodeNumber}`,
+      thumbnailUrl: ep.thumbnailUrl ?? null,
+      airDate: ep.airDate ? new Date(ep.airDate * 1000) : null,
+      isFiller: ep.isFiller ?? false,
+    }));
   }
 
   /** Single episode by local id. */
   async getEpisode(episodeId: string): Promise<Record<string, any> | null> {
-    return this.repo.getEpisode(episodeId);
+    try {
+      return await this.repo.getEpisode(episodeId);
+    } catch {
+      return null;
+    }
   }
 }

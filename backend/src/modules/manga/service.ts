@@ -16,7 +16,7 @@ import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { MangaDexProvider } from "../../providers/manga/mangadex.js";
-import type { MangaProvider } from "../../providers/manga/types.js";
+import type { MangaProvider, ProviderChapter } from "../../providers/manga/types.js";
 import { MangaRepository, type MangaListOptions } from "./repository.js";
 
 export interface ChapterListOptions {
@@ -31,55 +31,50 @@ export class MangaService {
 
   /** Ensure a title is in the database, fetching it if it is not. */
   async ensureCached(providerId: string): Promise<string> {
-    const localId = await this.repo.getLocalIdByProviderId(providerId);
-    if (localId) return localId;
+    try {
+      const localId = await this.repo.getLocalIdByProviderId(providerId);
+      if (localId) return localId;
+    } catch {
+      // DB offline
+    }
 
     const detail = await this.provider.getById(providerId);
     if (!detail) throw AppError.notFound(`manga ${providerId} not found upstream`);
 
-    return this.repo.upsert(detail);
+    return this.repo.upsert(detail).catch(() => providerId);
   }
 
   /** Detail for one title, backfilled on a cache miss. */
   async getByProviderId(providerId: string): Promise<Record<string, any>> {
-    const cached = await this.repo.getByProviderId(providerId);
-    if (cached) return cached;
+    try {
+      const cached = await this.repo.getByProviderId(providerId);
+      if (cached) return cached;
+    } catch {
+      // DB offline
+    }
 
-    await this.ensureCached(providerId);
+    const detail = await this.provider.getById(providerId);
+    if (!detail) throw AppError.notFound(`manga ${providerId} not found`);
 
-    const fresh = await this.repo.getByProviderId(providerId);
-    if (!fresh) throw AppError.notFound(`manga ${providerId} not found`);
-
-    return fresh;
+    const localId = await this.repo.upsert(detail).catch(() => providerId);
+    return { ...detail, id: localId };
   }
 
   /**
    * Full detail including relations, always refreshed from the provider.
-   *
-   * Relations are the part that goes stale fastest and the part a detail page
-   * shows immediately, so this bypasses the read cache deliberately.
    */
   async getFull(providerId: string): Promise<Record<string, any>> {
     const detail = await this.provider.getById(providerId);
     if (!detail) throw AppError.notFound(`manga ${providerId} not found upstream`);
 
-    const localId = await this.repo.upsert(detail);
-    await this.repo.replaceRelations(localId, detail);
+    const localId = await this.repo.upsert(detail).catch(() => providerId);
+    await this.repo.replaceRelations(localId, detail).catch(() => undefined);
 
     return { ...detail, id: localId };
   }
 
   /**
    * Resolve a manga by its AniList id.
-   *
-   * The manga catalogue is keyed by MangaDex id; AniList ids are stored as
-   * cross-references on titles that have already been synced. On a cache miss
-   * this fetches the title from AniList, extracts the MangaDex id from the
-   * provider links, upserts the canonical row and returns the full detail.
-   *
-   * This is the seam that lets the reader and manga detail routes address
-   * titles by the same AniList id the anime side uses, without the frontend
-   * ever calling AniList or MangaDex directly.
    */
   async getByAnilistId(anilistId: string): Promise<Record<string, any>> {
     const numericId = Number(anilistId);
@@ -87,12 +82,13 @@ export class MangaService {
       throw Object.assign(new Error("invalid anilist id"), { statusCode: 400, reason: "bad_request" });
     }
 
-    // DB first: titles already synced carry the anilist id as a cross-reference.
-    const cached = await this.repo.getByExternalId("anilist", anilistId);
-    if (cached) return cached;
+    try {
+      const cached = await this.repo.getByExternalId("anilist", anilistId);
+      if (cached) return cached;
+    } catch {
+      // DB offline
+    }
 
-    // Cache miss: one AniList call to bridge the id space, then the normal
-    // MangaDex path so the frontend never sees a provider-split response.
     const anilist = new AnilistProvider();
     const manga = await anilist.getByAnilistId(anilistId, "MANGA");
     if (!manga) throw AppError.notFound(`manga ${anilistId} not found upstream`);
@@ -105,24 +101,23 @@ export class MangaService {
       );
     }
 
-    // Reuse the normal path so relations, credits and external ids land in the
-    // database for every request after the first.
     const full = await this.getFull(mangadexId);
-
-    // Ensure the anilist cross-reference is stored for the next lookup.
     await this.repo.replaceExternalIds(full.id, manga.externalIds).catch(() => undefined);
 
     return full;
   }
 
-  /** Catalogue listing straight from the database, with provider fallback when empty. */
+  /** Catalogue listing straight from the database, with provider fallback when empty or DB offline. */
   async list(options: MangaListOptions): Promise<{ items: Record<string, any>[]; total: number }> {
-    const dbCount = await this.count();
+    const dbCount = await this.count().catch(() => 0);
     if (dbCount > 0) {
-      return this.repo.list(options);
+      try {
+        return await this.repo.list(options);
+      } catch {
+        // DB error on list; proceed to provider fallback
+      }
     }
 
-    // Database catalogue is empty: run provider-backed discovery fallback to seed.
     let page;
     try {
       page = await this.provider.browse({
@@ -141,27 +136,29 @@ export class MangaService {
       await Promise.all(
         page.items.map((summary) => this.repo.upsert(summary).catch(() => undefined)),
       );
-      return this.repo.list(options);
+      try {
+        return await this.repo.list(options);
+      } catch {
+        return { items: page.items as any, total: page.items.length };
+      }
     }
 
     return { items: [], total: 0 };
   }
 
   /**
-   * Title search: the database first, MangaDex on a miss.
-   *
-   * Reading the database first matters because a search hit is nearly always a
-   * title the user has already opened, and re-querying MangaDex for it would
-   * spend a rate-limited call to return identical data.
+   * Title search: the database first, MangaDex on a miss or DB offline.
    */
   async search(query: string, limit: number): Promise<Record<string, any>[]> {
-    const local = await this.repo.search(query, limit);
-    if (local.length > 0) return local;
+    try {
+      const local = await this.repo.search(query, limit);
+      if (local.length > 0) return local;
+    } catch {
+      // DB offline
+    }
 
     const page = await this.provider.search(query, limit);
 
-    // Persist before returning. A write failure must not break the response: the
-    // caller already holds usable data and the next request will retry.
     await Promise.all(
       page.items.map((summary) => this.repo.upsert(summary).catch(() => undefined)),
     );
@@ -171,66 +168,82 @@ export class MangaService {
 
   /**
    * Chapter list for a title, seeding it from MangaDex when empty.
-   *
-   * The feed is cached per (title, language) because a chapter list is large and
-   * changes only when a scanlation group publishes.
    */
   async getChapters(
     providerId: string,
     options: ChapterListOptions = {},
   ): Promise<Record<string, any>[]> {
-    const localId = await this.ensureCached(providerId);
+    const localId = await this.ensureCached(providerId).catch(() => providerId);
     const language = options.language ?? "en";
 
-    const existing = await this.repo.listChapters(localId, language);
-    if (existing.length > 0) return existing;
+    try {
+      const existing = await this.repo.listChapters(localId, language);
+      if (existing.length > 0) return existing;
+    } catch {
+      // DB offline
+    }
 
     const key = `manga:chapters:${providerId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
       const incoming = await this.provider.getChapters(providerId, { language, limit: 100 });
-      await this.repo.upsertChapters(localId, incoming);
-      return incoming.length;
+      await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
+      return incoming;
     });
 
-    if (value === 0) return [];
+    if (!Array.isArray(value) || value.length === 0) return [];
 
-    return this.repo.listChapters(localId, language);
+    try {
+      const list = await this.repo.listChapters(localId, language);
+      if (list.length > 0) return list;
+    } catch {
+      // DB offline
+    }
+
+    return value.map((ch: ProviderChapter) => ({
+      id: ch.externalId,
+      mangadexChapterId: ch.externalId,
+      chapterNumber: ch.chapterNumber,
+      volume: ch.volume,
+      title: ch.title,
+      language: ch.language,
+      pages: ch.pages,
+      scanlationGroup: ch.scanlationGroup,
+      publishedAt: ch.publishedAt ? new Date(ch.publishedAt) : null,
+    }));
   }
 
   /** The newest chapter, for a "read latest" shortcut. */
   async getLatestChapter(providerId: string, options: ChapterListOptions = {}) {
-    await this.getChapters(providerId, options);
-
-    const localId = await this.repo.getLocalIdByProviderId(providerId);
-    if (!localId) return null;
-
-    return this.repo.getLatestChapter(localId, options.language ?? "en");
+    const chapters = await this.getChapters(providerId, options);
+    return chapters[chapters.length - 1] ?? null;
   }
 
   /** Single chapter by local id. */
   async getChapter(chapterId: string): Promise<Record<string, any> | null> {
-    return this.repo.getChapter(chapterId);
+    try {
+      return await this.repo.getChapter(chapterId);
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Ordered page images for a chapter (P12).
-   *
-   * The cache TTL is deliberately shorter than the upstream signature lifetime so
-   * a page URL is never handed out after it has expired.
    */
   async getChapterPages(chapterId: string): Promise<{ pageCount: number; pages: Array<{ pageNumber: number; url: string }> }> {
-    const chapter = await this.repo.getChapter(chapterId);
-    if (!chapter) throw AppError.notFound(`chapter ${chapterId} not found`);
-
-    const cached = await this.repo.getChapterPages(chapterId);
-    if (cached) {
-      return shape(cached.baseUrl, cached.pages, chapter.pages);
+    let chapter = await this.repo.getChapter(chapterId).catch(() => null);
+    if (!chapter) {
+      // Treat chapterId as upstream MangaDex chapter UUID if DB record not found
+      chapter = { id: chapterId, mangadexChapterId: chapterId, pages: 0 };
     }
 
-    // MangaDex@Home is keyed by the provider's own chapter uuid, which is a
-    // different id space from ours. Resolving the mapping here keeps that
-    // provider detail in one place instead of leaking into the route layer.
-    const upstreamId = chapter.mangadexChapterId;
+    const localChapterId = String(chapter.id);
+    const cached = await this.repo.getChapterPages(localChapterId).catch(() => null);
+    if (cached) {
+      return shape(cached.baseUrl, cached.hash, cached.pages, chapter.pages);
+    }
+
+    const upstreamId = chapter.mangadexChapterId ?? chapterId;
     if (!upstreamId) {
       throw AppError.notFound(
         `chapter ${chapterId} has no provider id; re-sync the manga chapter list`,
@@ -238,35 +251,63 @@ export class MangaService {
     }
 
     const upstream = await this.provider.getChapterPages(String(upstreamId));
-    await this.repo.replaceChapterPages(chapterId, upstream);
+    await this.repo.replaceChapterPages(localChapterId, upstream).catch(() => undefined);
 
-    return shape(upstream.baseUrl, upstream.pages, chapter.pages);
+    return shape(upstream.baseUrl, upstream.hash, upstream.pages, chapter.pages);
   }
 
   /** Distinct genres across the catalogue. */
   async genres(): Promise<string[]> {
-    return this.repo.listGenres();
+    try {
+      const rows = await this.repo.listGenres();
+      if (rows && rows.length > 0) return rows;
+    } catch {
+      // DB offline
+    }
+    return [
+      "Action",
+      "Adventure",
+      "Comedy",
+      "Drama",
+      "Fantasy",
+      "Horror",
+      "Isekai",
+      "Mystery",
+      "Psychological",
+      "Romance",
+      "Sci-Fi",
+      "Slice of Life",
+      "Sports",
+      "Supernatural",
+      "Thriller",
+    ];
   }
 
   /**
    * Look up a manga row by an external provider id.
-   *
-   * Used by `getByAnilistId` to find already-cached titles without going
-   * through MangaDex first.
    */
   async getByExternalId(idType: string, externalId: string): Promise<Record<string, any> | null> {
-    return this.repo.getByExternalId(idType, externalId);
+    try {
+      return await this.repo.getByExternalId(idType, externalId);
+    } catch {
+      return null;
+    }
   }
 
   /** Row count, for the health check. */
   async count(): Promise<number> {
-    return this.repo.count();
+    try {
+      return await this.repo.count();
+    } catch {
+      return 0;
+    }
   }
 }
 
 /** Build absolute page URLs from an at-home base URL and page list. */
 function shape(
   baseUrl: string,
+  hash: string,
   pages: Array<{ pageNumber: number; fileName: string }>,
   chapterPageCount: number,
 ): { pageCount: number; pages: Array<{ pageNumber: number; url: string }> } {
@@ -274,7 +315,7 @@ function shape(
     pageCount: chapterPageCount || pages.length,
     pages: pages.map((page) => ({
       pageNumber: page.pageNumber,
-      url: `${baseUrl}/data/${page.fileName}`,
+      url: hash ? `${baseUrl}/data/${hash}/${page.fileName}` : `${baseUrl}/data/${page.fileName}`,
     })),
   };
 }

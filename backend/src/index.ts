@@ -17,7 +17,7 @@ import { errorMessage } from "./http/errors.js";
 
 async function main(): Promise<void> {
   const resources = await createResources();
-  const databaseReady = await waitForDatabase(resources.db, 30_000);
+  const databaseReady = await waitForDatabase(resources.db, 2_000);
 
   if (!databaseReady) {
     // Not fatal: the server still starts so /health can report `degraded`, which

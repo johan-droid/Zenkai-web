@@ -125,6 +125,8 @@ export class Cache {
     this.#memory.clear();
   }
 
+  #inFlight = new Map<string, Promise<unknown>>();
+
   /** Read-through helper: return the cached value, else compute and store it. */
   async remember<T>(
     key: string,
@@ -134,7 +136,15 @@ export class Cache {
     const cached = await this.get<T>(key);
     if (cached !== undefined) return { value: cached, hit: true };
 
-    const value = await producer();
+    let pending = this.#inFlight.get(key) as Promise<T> | undefined;
+    if (!pending) {
+      pending = producer().finally(() => {
+        this.#inFlight.delete(key);
+      });
+      this.#inFlight.set(key, pending);
+    }
+
+    const value = await pending;
     // A failed cache write must never fail the request it was serving.
     await this.set(key, value, ttlSeconds).catch(() => undefined);
     return { value, hit: false };

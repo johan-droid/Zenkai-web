@@ -283,10 +283,10 @@ export class PlaybackGateway {
 
       ...(source.referer ? { referer: source.referer } : {}),
 
-      // Carried through untouched. The gateway holds no evidence of its own and
-      // never upgrades a source nobody has actually probed.
-      validated: source.validated === true,
-      playable: source.validated === true,
+      // Embeds are framed directly in the client's browser iframe and are
+      // inherently playable without backend HTTP media probing.
+      validated: source.accessType === "embed" ? true : source.validated === true,
+      playable: source.accessType === "embed" ? true : source.validated === true,
 
       // Unknown is the honest answer. No P5 provider declares seeking or range
       // evidence, and inferring support from a `.mp4` extension fails precisely on

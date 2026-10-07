@@ -19,6 +19,7 @@
 
 import { config } from "../../config/index.js";
 import { fetchJson } from "../../http/client.js";
+import { AppError } from "../../http/errors.js";
 import type {
   ChapterPages,
   ChapterQuery,
@@ -431,7 +432,7 @@ export class MangaDexProvider implements MangaProvider {
     const files = response.chapter?.data ?? response.chapter?.dataSaver ?? [];
 
     if (!baseUrl || !hash || files.length === 0) {
-      throw new Error(`no page data for chapter ${chapterExternalId}`);
+      throw AppError.notFound(`no page data for chapter ${chapterExternalId} (external release)`);
     }
 
     return {

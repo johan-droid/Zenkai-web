@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "motion/react";
 import { Info, Play, Star } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -43,7 +43,7 @@ export function HeroCarousel({
   const active = items[Math.min(index, items.length - 1)]!;
 
   return (
-    <section className="glass-panel relative overflow-hidden rounded-3xl">
+    <section className="glass-panel relative overflow-hidden rounded-3xl border border-white/[0.08] bg-black">
       <div className="relative min-h-[clamp(22rem,52vh,34rem)] w-full">
         <AnimatePresence mode="popLayout">
           <motion.div
@@ -67,12 +67,12 @@ export function HeroCarousel({
                 className="size-full object-cover object-center"
               />
             ) : (
-              <div className="size-full bg-gradient-to-br from-brand-700/50 to-background" />
+              <div className="size-full bg-gradient-to-br from-[#c8102e]/30 to-background" />
             )}
           </motion.div>
         </AnimatePresence>
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/60 to-transparent" />
 
         <div className="relative flex h-full flex-col justify-end gap-4 p-6 sm:p-10">
@@ -84,7 +84,7 @@ export function HeroCarousel({
             className="flex max-w-2xl flex-col gap-4"
           >
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-purple-600/30 text-purple-200 border-purple-500/40 rounded-lg px-2.5 py-1 tracking-wider text-xs font-bold">
+              <Badge className="bg-[#c8102e]/30 text-rose-200 border-[#c8102e]/40 rounded-lg px-2.5 py-1 tracking-wider text-xs font-bold">
                 #{(index + 1).toString().padStart(2, "0")} TRENDING
               </Badge>
               {seasonLabel(active.season, active.seasonYear) ? (
@@ -111,7 +111,7 @@ export function HeroCarousel({
             ) : null}
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Button size="lg" className="rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-purple-600/30" asChild>
+              <Button size="lg" className="rounded-xl bg-gradient-to-r from-[#c8102e] via-[#e52545] to-[#c8102e] hover:brightness-110 text-white font-bold shadow-lg shadow-[#c8102e]/35" asChild>
                 <Link href={`/watch/${active.id}/1`}>
                   <Play className="fill-current size-4" />
                   Watch Now
@@ -137,7 +137,7 @@ export function HeroCarousel({
                 className={cn(
                   "h-1.5 rounded-full transition-all duration-300",
                   itemIndex === index
-                    ? "w-8 bg-brand-400"
+                    ? "w-8 bg-[#e52545]"
                     : "w-3 bg-white/25 hover:bg-white/40",
                 )}
               />

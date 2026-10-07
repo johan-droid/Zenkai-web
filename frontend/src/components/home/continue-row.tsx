@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { History, Play, BookOpen } from "lucide-react";
+import { motion } from "motion/react";
 
 import { Progress } from "@/components/ui/progress";
 import { useHasAnyProgress, useContinueWatching } from "@/hooks/use-progress";
@@ -14,15 +15,20 @@ function ContinueCard({ entry }: { entry: ContinueEntry }) {
       : `/read/${entry.mediaId}/${entry.unit}`;
 
   return (
-    <Link href={href} className="group relative flex w-32 shrink-0 snap-start flex-col gap-2 sm:w-40">
+    <Link href={href} className="group relative flex w-32 shrink-0 snap-start flex-col gap-2 sm:w-40 select-none">
       {/* Cover */}
-      <div className="relative aspect-[2/3] overflow-hidden rounded-2xl bg-white/5">
+      <motion.div
+        whileHover={{ y: -5, scale: 1.025 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 380, damping: 25 }}
+        className="relative aspect-[2/3] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#07070a]/90 transition-colors duration-300 group-hover:border-[#c8102e]/60 group-hover:shadow-[0_12px_32px_rgba(200,16,46,0.2)]"
+      >
         {entry.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={entry.coverUrl}
             alt={entry.title}
-            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-108"
           />
         ) : (
           <div className="flex size-full items-center justify-center">
@@ -35,26 +41,28 @@ function ContinueCard({ entry }: { entry: ContinueEntry }) {
         )}
 
         {/* Overlay on hover */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-          <div className="grid size-10 place-items-center rounded-full bg-brand-500 shadow-lg shadow-brand-500/40">
-            <Play className="size-4 fill-white text-white" />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          <div className="grid size-10 place-items-center rounded-full bg-[#c8102e] text-white shadow-lg shadow-[#c8102e]/50">
+            <Play className="ml-0.5 size-4 fill-white" />
           </div>
         </div>
 
         {/* Progress bar at bottom of card */}
         {entry.fraction > 0 ? (
-          <div className="absolute inset-x-0 bottom-0">
-            <Progress value={entry.fraction * 100} className="h-1 rounded-none" />
+          <div className="absolute inset-x-0 bottom-0 bg-black/60">
+            <Progress value={entry.fraction * 100} className="h-1 rounded-none bg-white/10 [&>div]:bg-[#c8102e]" />
           </div>
         ) : null}
 
         {/* Episode badge */}
-        <div className="absolute left-2 top-2 rounded-lg bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+        <div className="absolute left-2 top-2 rounded-lg border border-white/10 bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-md">
           {entry.kind === "anime" ? `EP ${entry.unit}` : `CH ${entry.unit}`}
         </div>
-      </div>
+      </motion.div>
 
-      <p className="line-clamp-2 text-xs font-medium leading-tight">{entry.title}</p>
+      <p className="line-clamp-2 text-xs font-semibold leading-tight text-white/90 group-hover:text-rose-100 transition-colors">
+        {entry.title}
+      </p>
     </Link>
   );
 }

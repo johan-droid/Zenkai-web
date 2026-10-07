@@ -87,3 +87,7 @@ tmp-*/
 
 # Deployment
 .vercel
+
+# Auto-generated Agent Rules
+AGENTS.md
+CLAUDE.md

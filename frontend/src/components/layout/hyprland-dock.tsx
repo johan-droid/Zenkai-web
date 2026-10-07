@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import {
   Home,
   Tv,
@@ -46,7 +46,7 @@ export function HyprlandDock() {
   const activeTab = NAV_ITEMS.find((tab) => isActivePath(pathname, tab.href)) ?? NAV_ITEMS[0]!;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-[#09090e]/85 backdrop-blur-2xl transition-all duration-300">
+    <header className="sticky top-0 z-50 w-full border-b border-white/[0.08] bg-black/85 backdrop-blur-2xl transition-all duration-300">
       <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6">
         {/* Left: Brand Logo */}
         <div className="flex items-center gap-6">
@@ -73,7 +73,7 @@ export function HyprlandDock() {
                   isActive ? "text-white" : "text-zinc-400 hover:text-white",
                 )}
               >
-                {/* Active Sliding Pill with Framer Motion spring physics */}
+                {/* Active Sliding Pill with Motion spring physics */}
                 {isActive && (
                   <motion.div
                     layoutId="hyprland-active-pill"
@@ -82,7 +82,7 @@ export function HyprlandDock() {
                       stiffness: 420,
                       damping: 32,
                     }}
-                    className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 shadow-[0_0_20px_rgba(168,85,247,0.5)] ring-1 ring-white/30"
+                    className="absolute inset-0 rounded-full bg-gradient-to-r from-[#c8102e] via-[#e52545] to-[#c8102e] shadow-[0_0_20px_rgba(200,16,46,0.45)] ring-1 ring-white/30"
                   />
                 )}
 
@@ -114,9 +114,9 @@ export function HyprlandDock() {
             <Button
               variant="ghost"
               size="sm"
-              className="glass hidden h-9 w-48 justify-start gap-2.5 rounded-full border border-white/10 bg-white/5 px-3 text-xs text-zinc-400 transition-all duration-200 hover:border-purple-500/40 hover:text-white sm:flex sm:w-56"
+              className="glass hidden h-9 w-48 justify-start gap-2.5 rounded-full border border-white/10 bg-white/5 px-3 text-xs text-zinc-400 transition-all duration-200 hover:border-[#c8102e]/50 hover:text-white sm:flex sm:w-56"
             >
-              <Search className="size-3.5 text-purple-400" />
+              <Search className="size-3.5 text-rose-400" />
               <span>Search anime, manga…</span>
               <kbd className="ml-auto rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 text-[0.65rem] font-mono font-medium text-zinc-400">
                 ⌘K
@@ -130,7 +130,7 @@ export function HyprlandDock() {
               asChild
             >
               <Link href="/search">
-                <Search className="size-4 text-purple-400" />
+                <Search className="size-4 text-rose-400" />
               </Link>
             </Button>
           </SearchCommand>

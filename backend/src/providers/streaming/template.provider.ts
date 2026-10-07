@@ -30,34 +30,62 @@ export interface TemplateEndpoint {
   endpointSlug: string;
   displayName: string;
   language: AudioTrack;
-  accessType: "hls" | "mp4" | "direct";
+  accessType: "hls" | "mp4" | "direct" | "embed";
   badge: string;
-  /** Placeholders: {anilist}, {mal}, {tmdb}, {episode}. */
+  /** Placeholders: {anilist}, {anilist_id}, {mal}, {mal_id}, {tmdb}, {tmdb_id}, {id}, {episode}, {ep}, {e}, {slug}, {lang}. */
   urlTemplate: string;
-  requiredIdType: "anilist" | "mal" | "tmdb";
+  requiredIdType: "anilist" | "mal" | "tmdb" | "slug" | "none";
   priority: number;
   /** Known ceiling, used to pre-rank without probing. */
   maxResolution?: number;
 }
 
-/** Fill `{anilist}`/`{mal}`/`{episode}` placeholders in a URL template. */
+function slugifyTitle(title?: string): string {
+  if (!title) return "";
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Fill `{anilist_id}`/`{mal_id}`/`{tmdb_id}`/`{episode}`/`{slug}` placeholders in a URL template. */
 export function renderTemplate(
   template: string,
   request: ResolveRequest,
   requiredIdType: TemplateEndpoint["requiredIdType"],
 ): string | null {
-  const availableId = { anilist: request.anilistId, mal: request.malId, tmdb: undefined }[
-    requiredIdType
-  ];
+  const anilistId = request.anilistId || request.externalIds?.anilist;
+  const malId = request.malId || request.externalIds?.mal;
+  const tmdbId = request.externalIds?.tmdb;
+  const slug = slugifyTitle(request.animeTitle);
 
-  // Without the id this endpoint needs, the honest answer is "cannot serve".
-  if (!availableId) return null;
+  // Check required ID constraint if configured
+  if (requiredIdType === "anilist" && !anilistId) return null;
+  if (requiredIdType === "mal" && !malId) return null;
+  if (requiredIdType === "tmdb" && !tmdbId) return null;
+  if (requiredIdType === "slug" && !slug) return null;
+
+  // If template references specific ID tokens, verify they are available
+  if (/\{(?:tmdb_id|tmdb)\}/i.test(template) && !tmdbId) return null;
+  if (/\{(?:mal_id|mal)\}/i.test(template) && !malId) return null;
+  if (/\{(?:anilist_id|anilist)\}/i.test(template) && !anilistId) return null;
+
+  // A template without an episode placeholder cannot serve a specific episode
+  if (!/\{(?:episode|ep|e)\}/i.test(template)) return null;
 
   const rendered = template
-    .replace(/\{anilist\}/g, request.anilistId)
-    .replace(/\{mal\}/g, request.malId ?? "")
-    .replace(/\{tmdb\}/g, "")
-    .replace(/\{episode\}/g, String(request.episodeNumber));
+    .replace(/\{anilist_id\}/gi, anilistId ?? "")
+    .replace(/\{anilist\}/gi, anilistId ?? "")
+    .replace(/\{mal_id\}/gi, malId ?? "")
+    .replace(/\{mal\}/gi, malId ?? "")
+    .replace(/\{tmdb_id\}/gi, tmdbId ?? "")
+    .replace(/\{tmdb\}/gi, tmdbId ?? "")
+    .replace(/\{id\}/gi, anilistId ?? malId ?? "")
+    .replace(/\{episode\}/gi, String(request.episodeNumber))
+    .replace(/\{ep\}/gi, String(request.episodeNumber))
+    .replace(/\{e\}/gi, String(request.episodeNumber))
+    .replace(/\{slug\}/gi, slug || anilistId || "")
+    .replace(/\{lang\}/gi, request.language ?? "sub");
 
   if (rendered.startsWith("http://") || rendered.startsWith("https://")) {
     return rendered;
@@ -88,12 +116,11 @@ export class TemplateProvider implements StreamingProvider {
     this.capabilities = {
       languages: [endpoint.language],
       accessTypes: [endpoint.accessType],
-      // A self-hosted HLS library is under our control, so markers and subtitle
-      // sidecars can be published alongside it.
       supportsSubtitles: true,
       supportsSkipMarkers: true,
       maxResolution: endpoint.maxResolution,
       requiresMalId: endpoint.requiredIdType === "mal",
+      requiredIdType: endpoint.requiredIdType,
     };
   }
 

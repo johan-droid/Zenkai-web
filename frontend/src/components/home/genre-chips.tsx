@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "motion/react";
 import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,13 +28,19 @@ export function GenreChips({ className }: { className?: string }) {
               <Skeleton key={index} className="h-8 w-24 shrink-0 rounded-full" />
             ))
           : (genres ?? []).map((genre) => (
-              <Link
+              <motion.div
                 key={genre}
-                href={`/anime?genre=${encodeURIComponent(genre)}`}
-                className="glass glass-hover shrink-0 rounded-full px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 450, damping: 25 }}
               >
-                {genre}
-              </Link>
+                <Link
+                  href={`/anime?genre=${encodeURIComponent(genre)}`}
+                  className="glass block shrink-0 rounded-full border border-white/[0.08] bg-black/60 px-4 py-1.5 text-sm font-medium text-zinc-400 transition-colors duration-200 hover:border-[#c8102e]/60 hover:text-white hover:shadow-[0_4px_16px_rgba(200,16,46,0.3)] backdrop-blur-md"
+                >
+                  {genre}
+                </Link>
+              </motion.div>
             ))}
       </div>
     </section>

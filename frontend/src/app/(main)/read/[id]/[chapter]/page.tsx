@@ -102,6 +102,7 @@ export default function ReadPage() {
   return (
     <MangaReader
       mangaId={mangaId}
+      anilistId={anilistId}
       chapterNumber={chapterNumber}
       title={title}
       coverUrl={media.data?.coverUrl ?? media.data?.coverImageLarge ?? null}

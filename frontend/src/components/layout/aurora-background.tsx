@@ -7,13 +7,13 @@ export function AuroraBackground() {
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       <div className="absolute inset-0 bg-background" />
 
-      <div className="animate-aurora absolute -top-1/3 -left-1/4 h-[70vmax] w-[70vmax] rounded-full bg-brand-600/25 blur-[120px]" />
+      <div className="animate-aurora transform-gpu will-change-transform absolute -top-1/3 -left-1/4 h-[70vmax] w-[70vmax] rounded-full bg-[#c8102e]/12 blur-[150px]" />
       <div
-        className="animate-aurora absolute top-1/4 -right-1/4 h-[60vmax] w-[60vmax] rounded-full bg-brand-400/20 blur-[130px]"
+        className="animate-aurora transform-gpu will-change-transform absolute top-1/4 -right-1/4 h-[60vmax] w-[60vmax] rounded-full bg-rose-950/20 blur-[160px]"
         style={{ animationDelay: "-8s" }}
       />
       <div
-        className="animate-aurora absolute -bottom-1/3 left-1/3 h-[50vmax] w-[50vmax] rounded-full bg-chart-2/15 blur-[140px]"
+        className="animate-aurora transform-gpu will-change-transform absolute -bottom-1/3 left-1/3 h-[50vmax] w-[50vmax] rounded-full bg-[#180a24]/25 blur-[160px]"
         style={{ animationDelay: "-16s" }}
       />
 

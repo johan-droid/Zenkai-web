@@ -445,13 +445,30 @@ export class AnimeRepository {
 /** Full detail plus relations and external ids, for `GET /anime/:id`. */
   async getByAnilistId(anilistId: string): Promise<Record<string, any> | null> {
     const numericId = Number(anilistId);
-    if (!Number.isFinite(numericId)) return null;
+    let record: any = null;
 
-    const [record] = await this.db
-      .select()
-      .from(anime)
-      .where(eq(anime.anilistId, numericId))
-      .limit(1);
+    if (Number.isFinite(numericId)) {
+      const [found] = await this.db
+        .select()
+        .from(anime)
+        .where(eq(anime.anilistId, numericId))
+        .limit(1);
+      record = found;
+    }
+
+    if (!record) {
+      try {
+        const [found] = await this.db
+          .select()
+          .from(anime)
+          .where(eq(anime.id, anilistId))
+          .limit(1);
+        record = found;
+      } catch {
+        record = null;
+      }
+    }
+
     if (!record) return null;
 
     const [genres, studios, relations, externalIds] = await Promise.all([
@@ -488,29 +505,52 @@ export class AnimeRepository {
    */
   async getTotalEpisodes(anilistId: string): Promise<number | null> {
     const numericId = Number(anilistId);
-    if (!Number.isFinite(numericId)) return null;
+    if (Number.isFinite(numericId)) {
+      const [row] = await this.db
+        .select({ totalEpisodes: anime.totalEpisodes })
+        .from(anime)
+        .where(eq(anime.anilistId, numericId))
+        .limit(1);
 
-    const [row] = await this.db
-      .select({ totalEpisodes: anime.totalEpisodes })
-      .from(anime)
-      .where(eq(anime.anilistId, numericId))
-      .limit(1);
+      if (row?.totalEpisodes !== undefined) return row.totalEpisodes;
+    }
 
-    // Null stays null. Coercing to 0 would claim the show has no episodes.
-    return row?.totalEpisodes ?? null;
+    try {
+      const [row] = await this.db
+        .select({ totalEpisodes: anime.totalEpisodes })
+        .from(anime)
+        .where(eq(anime.id, anilistId))
+        .limit(1);
+
+      return row?.totalEpisodes ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async getLocalIdByAnilistId(anilistId: string): Promise<string | null> {
     const numericId = Number(anilistId);
-    if (!Number.isFinite(numericId)) return null;
+    if (Number.isFinite(numericId)) {
+      const [record] = await this.db
+        .select({ id: anime.id })
+        .from(anime)
+        .where(eq(anime.anilistId, numericId))
+        .limit(1);
 
-    const [record] = await this.db
-      .select({ id: anime.id })
-      .from(anime)
-      .where(eq(anime.anilistId, numericId))
-      .limit(1);
+      if (record?.id) return record.id;
+    }
 
-    return record?.id ?? null;
+    try {
+      const [record] = await this.db
+        .select({ id: anime.id })
+        .from(anime)
+        .where(eq(anime.id, anilistId))
+        .limit(1);
+
+      return record?.id ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**

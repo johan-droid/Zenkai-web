@@ -385,10 +385,24 @@ export class MangaRepository {
   async upsertChapters(mangaId: string, incoming: ProviderChapter[]): Promise<number> {
     if (incoming.length === 0) return 0;
 
+    // Deduplicate within the incoming batch so PostgreSQL ON CONFLICT DO UPDATE
+    // never fails with "command cannot affect row a second time" (error 21000).
+    // Prefer entries with pages > 0 over external zero-page placeholders.
+    const dedupedMap = new Map<string, ProviderChapter>();
+    for (const chapter of incoming) {
+      const key = `${chapter.language}:${chapter.chapterNumber}`;
+      const existing = dedupedMap.get(key);
+      if (!existing || (chapter.pages > 0 && existing.pages === 0)) {
+        dedupedMap.set(key, chapter);
+      }
+    }
+    const deduped = Array.from(dedupedMap.values());
+    if (deduped.length === 0) return 0;
+
     return this.db
       .insert(mangaChapters)
       .values(
-        incoming.map((chapter) => ({
+        deduped.map((chapter) => ({
           mangaId,
           mangadexChapterId: chapter.externalId,
           chapterNumber: chapter.chapterNumber,
@@ -441,11 +455,16 @@ export class MangaRepository {
       );
   }
 
-  async getChapter(localId: string): Promise<Record<string, any> | null> {
+  async getChapter(localIdOrProviderId: string): Promise<Record<string, any> | null> {
     const [record] = await this.db
       .select()
       .from(mangaChapters)
-      .where(eq(mangaChapters.id, localId))
+      .where(
+        or(
+          eq(mangaChapters.id, localIdOrProviderId),
+          eq(mangaChapters.mangadexChapterId, localIdOrProviderId),
+        ),
+      )
       .limit(1);
     return record ?? null;
   }

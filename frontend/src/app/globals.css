@@ -66,70 +66,70 @@
  * so `:root` carries the dark tokens and `.light` opts into a brighter surface.
  */
 :root {
-  --background: #09090e;
+  --background: #000000;
   --foreground: #f8fafc;
-  --card: #111118;
+  --card: #08080a;
   --card-foreground: #f8fafc;
-  --popover: #111118;
+  --popover: #08080a;
   --popover-foreground: #f8fafc;
-  --primary: #9333ea;
+  --primary: #c8102e;
   --primary-foreground: #ffffff;
-  --secondary: #1a1a24;
+  --secondary: #101014;
   --secondary-foreground: #f8fafc;
-  --muted: #1e1e2c;
+  --muted: #14141a;
   --muted-foreground: #94a3b8;
-  --accent: #2e1065;
+  --accent: #200408;
   --accent-foreground: #f8fafc;
   --destructive: #ef4444;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.12);
-  --ring: #9333ea;
-  --chart-1: #a855f7;
-  --chart-2: #06b6d4;
-  --chart-3: #ec4899;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #c8102e;
+  --chart-1: #e50914;
+  --chart-2: #38bdf8;
+  --chart-3: #f43f5e;
   --chart-4: #eab308;
   --chart-5: #10b981;
   --radius: 0.75rem;
-  --sidebar: #0e0e14;
+  --sidebar: #040406;
   --sidebar-foreground: #f8fafc;
-  --sidebar-primary: #9333ea;
+  --sidebar-primary: #c8102e;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e1b4b;
+  --sidebar-accent: #1e0508;
   --sidebar-accent-foreground: #f8fafc;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: #9333ea;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-ring: #c8102e;
 
-  /* High contrast glass surface tokens */
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-bg-strong: rgba(18, 18, 28, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-highlight: rgba(255, 255, 255, 0.15);
-  --glass-blur: 20px;
+  /* High contrast OLED glass surface tokens */
+  --glass-bg: rgba(255, 255, 255, 0.025);
+  --glass-bg-strong: rgba(6, 6, 9, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --glass-blur: 24px;
 }
 
 .dark, .light {
-  --background: #09090e;
+  --background: #000000;
   --foreground: #f8fafc;
-  --card: #111118;
+  --card: #08080a;
   --card-foreground: #f8fafc;
-  --popover: #111118;
+  --popover: #08080a;
   --popover-foreground: #f8fafc;
-  --primary: #9333ea;
+  --primary: #c8102e;
   --primary-foreground: #ffffff;
-  --secondary: #1a1a24;
+  --secondary: #101014;
   --secondary-foreground: #f8fafc;
-  --muted: #1e1e2c;
+  --muted: #14141a;
   --muted-foreground: #94a3b8;
-  --accent: #2e1065;
+  --accent: #200408;
   --accent-foreground: #f8fafc;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.12);
-  --ring: #9333ea;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #c8102e;
 
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-bg-strong: rgba(18, 18, 28, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-highlight: rgba(255, 255, 255, 0.15);
+  --glass-bg: rgba(255, 255, 255, 0.025);
+  --glass-bg-strong: rgba(6, 6, 9, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.12);
 }
 
 @layer base {
