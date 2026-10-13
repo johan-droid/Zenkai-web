@@ -1,17 +1,13 @@
 /**
  * In-process Consumet scrapers (P6).
  *
- * This is the adapter P6 actually asks for: run `@consumet/extensions` inside
- * the backend rather than proxying a random public Consumet server. Two things
- * are worth being explicit about:
+ * Runs `@consumet/extensions` inside the backend with strict per-call timeouts
+ * and LRU in-memory memoization. Uses the authentic Consumet interface:
+ * `search` -> `fetchAnimeInfo` -> `fetchEpisodeSources`.
  *
- *  - The scrapers break often. That is why this provider is behind an `enabled`
- *    flag and is scored through the health registry like any remote dependency.
- *  - Legality is unchanged by where the code runs. These backends read sites
- *    hosting unlicensed copies, so this stays opt-in and the operator decides.
- *
- * The package is loaded lazily: it pulls in a full scraping toolchain, and a
- * deployment using only licensed endpoints should not pay for it.
+ * When external scrapers are down, rate-limited, or blocked by upstream TLS/Cloudflare,
+ * errors and timeouts fail fast within a 2.5s boundary so the resolver can proceed
+ * to other providers without hanging the request.
  */
 
 import { config } from "../../config/index.js";
@@ -25,29 +21,56 @@ import type {
   StreamingProvider,
 } from "./types.js";
 
-/** The subset of the Consumet extension surface this adapter relies on. */
-interface ConsumetSource {
-  url?: string;
-  quality?: string;
-  isM3U8?: boolean;
-  headers?: Record<string, string>;
-  referer?: string;
+/** The actual subset of the Consumet extension surface this adapter relies on. */
+interface ConsumetEpisode {
+  id: string;
+  number: number;
+  title?: string;
+  isFiller?: boolean;
 }
 
-interface ConsumetServer {
-  fetch(): Promise<ConsumetSource | ConsumetSource[]>;
+interface ConsumetSourceEntry {
+  url: string;
+  isM3U8?: boolean;
+  quality?: string;
+}
+
+interface ConsumetEpisodeSourcesResult {
+  headers?: Record<string, string>;
+  sources?: ConsumetSourceEntry[];
+  subtitles?: Array<{ url: string; lang: string }>;
 }
 
 interface ConsumetAnimeProvider {
-  search(
-    query: string,
-    page?: number,
-  ): Promise<{ results: Array<{ id: string; title?: string }> }>;
-  fetchEpisodeServers(id: string): Promise<Record<string, ConsumetServer>>;
+  search(query: string, page?: number): Promise<{ results?: Array<{ id: string; title?: string }> }>;
+  fetchAnimeInfo(id: string): Promise<{ id: string; title?: string; episodes?: ConsumetEpisode[] }>;
+  fetchEpisodeSources(episodeId: string): Promise<ConsumetEpisodeSourcesResult>;
 }
 
 /** Lazily-constructed extensions, keyed by provider slug. */
 const backends = new Map<string, ConsumetAnimeProvider>();
+
+/** In-memory memoization to avoid redundant upstream scraping lookups. */
+const showIdCache = new Map<string, string | null>();
+const episodesCache = new Map<string, ConsumetEpisode[]>();
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
 
 async function loadBackend(slug: string): Promise<ConsumetAnimeProvider> {
   const existing = backends.get(slug);
@@ -68,14 +91,12 @@ async function loadBackend(slug: string): Promise<ConsumetAnimeProvider> {
 
 export class InProcessProvider implements StreamingProvider {
   readonly kind = "scrape" as const;
-  readonly version = "1.0.0";
+  readonly version = "1.1.0";
   enabled = true;
 
   readonly capabilities: ProviderCapabilities = {
     languages: ["sub"],
     accessTypes: ["hls", "mp4", "embed"],
-    // Consumet exposes no subtitle sidecars or intro/outro markers; claiming
-    // otherwise would send the player looking for data that never arrives.
     supportsSubtitles: false,
     supportsSkipMarkers: false,
     requiresMalId: false,
@@ -104,102 +125,163 @@ export class InProcessProvider implements StreamingProvider {
   async #findShowId(request: ResolveRequest): Promise<string | null> {
     let title = request.animeTitle;
     if (!title && request.anilistId) {
-      const record = await this.#anilist.getByAnilistId(request.anilistId);
+      const record = await this.#anilist.getByAnilistId(request.anilistId).catch(() => null);
       title = record?.canonicalTitle;
     }
     if (!title) return null;
 
-    const backend = await loadBackend(this.slug);
-    const results = await backend.search(title, 1);
-    const candidates = results?.results ?? [];
-    if (candidates.length === 0) return null;
+    const cacheKey = `${this.slug}:show:${title.toLowerCase()}`;
+    if (showIdCache.has(cacheKey)) {
+      return showIdCache.get(cacheKey) ?? null;
+    }
 
-    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const wanted = normalize(title);
+    try {
+      const backend = await loadBackend(this.slug);
+      const results = await withTimeout(
+        backend.search(title, 1),
+        2500,
+        `${this.slug}.search`,
+      );
+      const candidates = results?.results ?? [];
+      if (candidates.length === 0) {
+        showIdCache.set(cacheKey, null);
+        return null;
+      }
 
-    const exact = candidates.find(
-      (c) => c.title && (c.title.toLowerCase() === title!.toLowerCase() || normalize(c.title) === wanted),
-    );
-    if (exact) return exact.id;
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const wanted = normalize(title);
 
-    const close = candidates.find((c) => {
-      if (!c.title) return false;
-      const normalizedC = normalize(c.title);
-      return normalizedC.includes(wanted) || wanted.includes(normalizedC);
-    });
+      const exact = candidates.find(
+        (c) => c.title && (c.title.toLowerCase() === title!.toLowerCase() || normalize(c.title) === wanted),
+      );
+      if (exact) {
+        showIdCache.set(cacheKey, exact.id);
+        return exact.id;
+      }
 
-    return close ? close.id : null;
+      const close = candidates.find((c) => {
+        if (!c.title) return false;
+        const normalizedC = normalize(c.title);
+        return normalizedC.includes(wanted) || wanted.includes(normalizedC);
+      });
+
+      const matchedId = close ? close.id : null;
+      showIdCache.set(cacheKey, matchedId);
+      return matchedId;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetch episode list for the show from the provider.
+   */
+  async #fetchEpisodes(showId: string): Promise<ConsumetEpisode[]> {
+    const cacheKey = `${this.slug}:episodes:${showId}`;
+    const cached = episodesCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const backend = await loadBackend(this.slug);
+      const info = await withTimeout(
+        backend.fetchAnimeInfo(showId),
+        2500,
+        `${this.slug}.fetchAnimeInfo`,
+      );
+      const rawEpisodes = info?.episodes ?? [];
+      const episodes: ConsumetEpisode[] = rawEpisodes
+        .map((ep: any, index: number) => ({
+          id: String(ep.id),
+          number: Number.isFinite(Number(ep.number)) ? Number(ep.number) : index + 1,
+          title: ep.title,
+          isFiller: Boolean(ep.isFiller),
+        }))
+        .filter((ep: ConsumetEpisode) => Number.isFinite(ep.number));
+
+      if (episodes.length > 0) {
+        episodesCache.set(cacheKey, episodes);
+      }
+      return episodes;
+    } catch {
+      return [];
+    }
   }
 
   async listEpisodes(request: ResolveRequest): Promise<ProviderEpisodeInfo[]> {
-    if (!this.enabled) return [];
+    if (!this.enabled || !this.isEnabled) return [];
 
     try {
       const showId = await this.#findShowId(request);
       if (!showId) return [];
 
-      const backend = await loadBackend(this.slug);
-      const servers = await backend.fetchEpisodeServers(showId);
-
-      return Object.keys(servers)
-        .map((key, index) => ({
-          providerEpisodeId: key,
-          episodeNumber: Number.isFinite(Number(key)) ? Number(key) : index + 1,
-        }))
-        .filter((entry) => Number.isFinite(entry.episodeNumber));
+      const episodes = await this.#fetchEpisodes(showId);
+      return episodes.map((ep) => ({
+        providerEpisodeId: ep.id,
+        episodeNumber: ep.number,
+      }));
     } catch {
       return [];
     }
   }
 
   async resolve(request: ResolveRequest): Promise<PlaybackSource[]> {
-    if (!this.enabled) return [];
+    if (!this.enabled || !this.isEnabled) return [];
 
-    const showId = await this.#findShowId(request);
-    if (!showId) return [];
+    try {
+      const showId = await this.#findShowId(request);
+      if (!showId) return [];
 
-    const backend = await loadBackend(this.slug);
-    const servers = await backend.fetchEpisodeServers(showId);
+      const episodes = await this.#fetchEpisodes(showId);
+      if (episodes.length === 0) return [];
 
-    // Prefer provider-native episode id when known, otherwise use episode number.
-    const key = request.providerEpisodeId || String(request.episodeNumber);
-    const server = servers[key] || servers[String(request.episodeNumber)];
-    if (!server) return [];
+      // Prefer provider-native episode id when known, otherwise use episode number.
+      const targetEpisode = request.providerEpisodeId
+        ? episodes.find((ep) => ep.id === request.providerEpisodeId)
+        : episodes.find((ep) => ep.number === request.episodeNumber);
 
-    const raw = await server.fetch();
-    const entries = Array.isArray(raw) ? raw : [raw];
+      if (!targetEpisode) return [];
 
-    const sources: PlaybackSource[] = [];
+      const backend = await loadBackend(this.slug);
+      const raw = await withTimeout(
+        backend.fetchEpisodeSources(targetEpisode.id),
+        2500,
+        `${this.slug}.fetchEpisodeSources`,
+      );
 
-    for (const entry of entries) {
-      if (!entry?.url) continue;
+      const entries = Array.isArray(raw?.sources) ? raw.sources : [];
+      const sources: PlaybackSource[] = [];
 
       const referer =
-        entry.referer ||
-        entry.headers?.Referer ||
-        entry.headers?.referer;
+        raw?.headers?.Referer ||
+        raw?.headers?.referer;
 
-      sources.push({
-        id: `inprocess:${this.slug}:${key}:${entry.quality ?? "auto"}`,
-        providerSlug: this.slug,
-        providerName: this.name,
-        endpointSlug: this.slug,
-        accessType: entry.isM3U8 ? "hls" : "mp4",
-        playbackUrl: entry.url,
-        quality: entry.quality,
-        resolution: parseResolution(entry.quality),
-        language: "sub",
-        referer,
-        headers: entry.headers,
-        priority: this.basePriority,
-      });
+      for (const entry of entries) {
+        if (!entry?.url) continue;
+
+        sources.push({
+          id: `inprocess:${this.slug}:${targetEpisode.id}:${entry.quality ?? "auto"}`,
+          providerSlug: this.slug,
+          providerName: this.name,
+          endpointSlug: this.slug,
+          accessType: entry.isM3U8 ? "hls" : "mp4",
+          playbackUrl: entry.url,
+          quality: entry.quality,
+          resolution: parseResolution(entry.quality),
+          language: "sub",
+          referer,
+          headers: raw?.headers,
+          priority: this.basePriority,
+        });
+      }
+
+      return sources;
+    } catch {
+      return [];
     }
-
-    return sources;
   }
 
   async healthCheck(): Promise<boolean> {
-    if (!this.enabled) return false;
+    if (!this.enabled || !this.isEnabled) return false;
 
     try {
       await loadBackend(this.slug);

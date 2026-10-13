@@ -134,15 +134,18 @@ export function registerAnimeRoutes(
   });
 
   /** Full detail including relations, from the provider. */
-  app.get("/api/v1/anime/:id", async (request) => {
+  app.get("/api/v1/anime/:id", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
-    return service.getFull(id);
+    const detail = await service.getFull(id);
+    reply.header("cache-control", "public, max-age=300, s-maxage=600, stale-while-revalidate=1800");
+    return detail;
   });
 
   /** Relations for one title. */
-  app.get("/api/v1/anime/:id/relations", async (request) => {
+  app.get("/api/v1/anime/:id/relations", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
     const detail = await service.getByAnilistId(id);
+    reply.header("cache-control", "public, max-age=300, s-maxage=600, stale-while-revalidate=1800");
     return { relations: detail.relations ?? [] };
   });
 
@@ -158,7 +161,7 @@ export function registerAnimeRoutes(
    * catalogue. A provider failure there surfaces as an error rather than an
    * empty list, so a client can tell "no episodes" from "we could not check".
    */
-  app.get("/api/v1/anime/:id/episodes", async (request) => {
+  app.get("/api/v1/anime/:id/episodes", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
 
     await service.getEpisodes(id);
@@ -166,6 +169,7 @@ export function registerAnimeRoutes(
     const catalogue = await episodes.catalogue(id);
     if (!catalogue) throw AppError.notFound(`anime ${id} not found`);
 
+    reply.header("cache-control", "public, max-age=180, s-maxage=300, stale-while-revalidate=600");
     return catalogue;
   });
 
@@ -363,7 +367,8 @@ app.get("/api/v1/anime/discovery/:bucket", async (request) => {
  *
  * Case variants are collapsed, so "Action", "action" and "ACTION" are one entry.
  */
-app.get("/api/v1/genres", async () => {
+app.get("/api/v1/genres", async (_request, reply) => {
+  reply.header("cache-control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400");
   return { items: await discovery.genres() };
 });
 
@@ -374,11 +379,12 @@ app.get("/api/v1/genres", async () => {
  * each section carries its own status so one failing provider does not blank the
  * whole page.
  */
-app.get("/api/v1/home", async (request) => {
+app.get("/api/v1/home", async (request, reply) => {
   const query = parseOrThrow(
     z.object({ perPage: z.coerce.number().int().min(1).max(50).default(10) }),
     request.query,
   );
+  reply.header("cache-control", "public, max-age=60, s-maxage=120, stale-while-revalidate=300");
   return discovery.home(query.perPage);
 });
 }

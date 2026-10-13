@@ -19,10 +19,13 @@ import type { AnimeRepository } from "../src/modules/anime/repository.js";
 import { registerAnimeRoutes } from "../src/modules/anime/routes.js";
 import { AppError } from "../src/http/errors.js";
 
+import { cache } from "../src/cache/index.js";
+
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  cache.clear();
 });
 
 function createMockDetail(id = "207329", title = "The Laid-Off Cheat-Granting Mage") {

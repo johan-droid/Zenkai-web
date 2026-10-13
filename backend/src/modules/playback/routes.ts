@@ -9,7 +9,7 @@
  * empty state and a wrongly cached failure.
  */
 
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { AppError } from "../../http/errors.js";
 import { playbackGateway, redactPlaybackUrl } from "../../providers/streaming/gateway.js";
@@ -47,7 +47,7 @@ export function registerPlaybackRoutes(
    * first; that is the P4 exit gate and keeps this route from having to guess an
    * AniList id from a provider slug.
    */
-  app.get("/api/v1/episodes/:episodeId/sources", async (request: FastifyRequest) => {
+  app.get("/api/v1/episodes/:episodeId/sources", async (request: FastifyRequest, reply: FastifyReply) => {
     const { episodeId } = parseOrThrow(
       z.object({ episodeId: z.string().trim().min(1) }),
       request.params,
@@ -131,6 +131,10 @@ export function registerPlaybackRoutes(
         { episodeId, unmapped: plans.unmapped, sourceCount: result.sources.length },
         "playback sources could not be mapped to a plan",
       );
+    }
+
+    if (plans.plans.length > 0) {
+      reply.header("cache-control", "public, max-age=30, s-maxage=60, stale-while-revalidate=30");
     }
 
     return {

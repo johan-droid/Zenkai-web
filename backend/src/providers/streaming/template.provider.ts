@@ -70,8 +70,10 @@ export function renderTemplate(
   if (/\{(?:mal_id|mal)\}/i.test(template) && !malId) return null;
   if (/\{(?:anilist_id|anilist)\}/i.test(template) && !anilistId) return null;
 
-  // A template without an episode placeholder cannot serve a specific episode
-  if (!/\{(?:episode|ep|e)\}/i.test(template)) return null;
+  // A template without an episode placeholder cannot serve a specific episode unless it is a fixed stream URL
+  if (!/\{(?:episode|ep|e)\}/i.test(template) && !template.startsWith("http://") && !template.startsWith("https://")) {
+    return null;
+  }
 
   const rendered = template
     .replace(/\{anilist_id\}/gi, anilistId ?? "")

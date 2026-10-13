@@ -75,20 +75,25 @@ export class AnimeService {
     return { ...detail, id: localId };
   }
 
-  /** Detail plus relations and episodes, always hitting AniList. */
+  /** Detail plus relations and episodes, cached with metadata TTL. */
   async getFull(anilistId: string): Promise<Record<string, any>> {
-    const detail = await this.#anilist.getByAnilistId(anilistId);
-    if (!detail) throw AppError.notFound(`anime ${anilistId} not found upstream`);
+    const key = `anime:full:${anilistId}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      const detail = await this.#anilist.getByAnilistId(anilistId);
+      if (!detail) throw AppError.notFound(`anime ${anilistId} not found upstream`);
 
-    let localId: string = anilistId;
-    try {
-      localId = await this.repo.upsert(detail);
-      await this.repo.replaceRelations(localId, detail);
-    } catch {
-      // Database offline/unreachable fallback
-    }
+      let localId: string = anilistId;
+      try {
+        localId = await this.repo.upsert(detail);
+        await this.repo.replaceRelations(localId, detail);
+      } catch {
+        // Database offline/unreachable fallback
+      }
 
-    return { ...detail, id: localId };
+      return { ...detail, id: localId };
+    });
+
+    return value;
   }
 
 /**
@@ -243,29 +248,34 @@ export class AnimeService {
     return page.items.map((summary, index) => toCard(summary, localIds[index] ?? null));
   }
 
-  /** Episode catalog for a title, seeding it from AniList's count if empty or DB offline. */
+  /** Episode catalog for a title, cached with metadata TTL, seeding from AniList if empty or DB offline. */
   async getEpisodes(anilistId: string): Promise<Record<string, any>[]> {
-    try {
-      const localId = await this.ensureCached(anilistId).catch(() => null);
-      if (localId) {
-        const existing = await this.repo.listEpisodes(localId).catch(() => []);
-        if (existing.length > 0) return existing;
+    const key = `anime:episodes:${anilistId}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      try {
+        const localId = await this.ensureCached(anilistId).catch(() => null);
+        if (localId) {
+          const existing = await this.repo.listEpisodes(localId).catch(() => []);
+          if (existing.length > 0) return existing;
+        }
+      } catch {
+        // DB offline fallback
       }
-    } catch {
-      // DB offline fallback
-    }
 
-    const detail = await this.#anilist.getByAnilistId(anilistId);
-    const seeded: ProviderEpisode[] = detail?.episodes ?? [];
-    return seeded.map((ep) => ({
-      id: `ep-${anilistId}-${ep.episodeNumber}`,
-      animeId: anilistId,
-      episodeNumber: ep.episodeNumber,
-      title: ep.title ?? `Episode ${ep.episodeNumber}`,
-      thumbnailUrl: ep.thumbnailUrl ?? null,
-      airDate: ep.airDate ? new Date(ep.airDate * 1000) : null,
-      isFiller: ep.isFiller ?? false,
-    }));
+      const detail = await this.#anilist.getByAnilistId(anilistId);
+      const seeded: ProviderEpisode[] = detail?.episodes ?? [];
+      return seeded.map((ep) => ({
+        id: `ep-${anilistId}-${ep.episodeNumber}`,
+        animeId: anilistId,
+        episodeNumber: ep.episodeNumber,
+        title: ep.title ?? `Episode ${ep.episodeNumber}`,
+        thumbnailUrl: ep.thumbnailUrl ?? null,
+        airDate: ep.airDate ? new Date(ep.airDate * 1000) : null,
+        isFiller: ep.isFiller ?? false,
+      }));
+    });
+
+    return value;
   }
 
   /** Single episode by local id. */

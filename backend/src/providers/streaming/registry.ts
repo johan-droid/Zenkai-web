@@ -108,6 +108,14 @@ export function buildProviders(): StreamingProvider[] {
     providers.push(new ConsumetProvider());
   }
 
+  if (config.ENABLE_DEMO_STREAMS) {
+    for (const endpoint of DEMO_ENDPOINTS) {
+      providers.push(
+        new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
+      );
+    }
+  }
+
   return providers;
 }
 
@@ -115,9 +123,11 @@ export function buildProviders(): StreamingProvider[] {
 export function buildProvidersWithDemos(): StreamingProvider[] {
   const providers = buildProviders();
   for (const endpoint of DEMO_ENDPOINTS) {
-    providers.push(
-      new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
-    );
+    if (!providers.some((p) => p.slug === endpoint.providerSlug)) {
+      providers.push(
+        new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
+      );
+    }
   }
   return providers;
 }

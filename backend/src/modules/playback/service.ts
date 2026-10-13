@@ -72,7 +72,7 @@ const MAX_VALIDATED_SOURCES = 15;
  * imposed from the outside, one such provider stalls the entire request, which
  * defeats the point of running providers concurrently.
  */
-const PROVIDER_DEADLINE_MS = 5_000;
+const PROVIDER_DEADLINE_MS = 3_000;
 
 /**
  * Race a promise against a deadline.
@@ -168,17 +168,16 @@ export class PlaybackResolver {
     const started = Date.now();
 
     const key = `sources:${request.anilistId}:${request.episodeNumber}:${language}`;
-    const cached = await cache.get<ResolveResult>(key);
-    if (cached) return cached;
-
-    const outcome = await this.#resolveUncached(full, episodeIdentity);
-    const result: ResolveResult = { ...outcome, resolutionTimeMs: Date.now() - started };
+    const { value: result } = await cache.remember<ResolveResult>(key, SOURCE_CACHE_TTL_S, async () => {
+      const outcome = await this.#resolveUncached(full, episodeIdentity);
+      return { ...outcome, resolutionTimeMs: Date.now() - started };
+    });
 
     // A failed resolution is deliberately not cached: a provider may recover in
     // seconds, and caching the failure would keep serving "nothing here" long
     // after it healed.
-    if (result.sources.length > 0) {
-      await cache.set(key, result, SOURCE_CACHE_TTL_S).catch(() => undefined);
+    if (result.sources.length === 0) {
+      await cache.delete(key).catch(() => undefined);
     }
 
     return result;
@@ -346,6 +345,7 @@ export class PlaybackResolver {
           };
           const probe = await probeUrl(source.playbackUrl, {
             headers: probeHeaders,
+            timeoutMs: 2500,
           });
 
           // 206 is the expected answer for a media probe; a bare 200 on a large

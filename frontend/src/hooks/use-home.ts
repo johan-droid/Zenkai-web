@@ -17,7 +17,8 @@ export function useHome(perPage = 10) {
   return useQuery({
     queryKey: ["zenkai", "home", perPage],
     queryFn: () => fetchHome(perPage),
-    staleTime: 60_000,
+    staleTime: 3 * 60_000,
+    gcTime: 10 * 60_000,
   });
 }
 
@@ -25,7 +26,8 @@ export function useGenres() {
   return useQuery({
     queryKey: ["zenkai", "genres"],
     queryFn: () => fetchGenres(),
-    staleTime: 60_000,
+    staleTime: 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
   });
 }
 
@@ -33,6 +35,7 @@ export function useMangaShelf(limit = 14) {
   return useQuery({
     queryKey: ["zenkai", "manga-shelf", limit],
     queryFn: () => fetchMangaCatalogue(limit),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
   });
 }

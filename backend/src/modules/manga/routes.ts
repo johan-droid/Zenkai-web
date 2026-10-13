@@ -55,7 +55,7 @@ const idParam = z.object({ id: z.string().trim().min(1) });
 
 export function registerMangaRoutes(app: FastifyInstance, service: MangaService): void {
   /** Catalogue listing, served from Postgres. */
-  app.get("/api/v1/manga", async (request) => {
+  app.get("/api/v1/manga", async (request, reply) => {
     const query = parseOrThrow(listQuery, request.query);
 
     const { items, total } = await service.list({
@@ -67,6 +67,7 @@ export function registerMangaRoutes(app: FastifyInstance, service: MangaService)
       sort: query.sort,
     });
 
+    reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
     return { items, total, limit: query.limit, offset: query.offset };
   });
 

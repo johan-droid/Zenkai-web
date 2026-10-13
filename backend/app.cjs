@@ -42774,7 +42774,7 @@ var init_config = __esm({
       MIRURO_URL: external_exports.string().url().optional(),
       ANIPUB_URL: external_exports.string().url().optional(),
       /** Include the public demo HLS streams so the player can be exercised. */
-      ENABLE_DEMO_STREAMS: booleanish.default(false),
+      ENABLE_DEMO_STREAMS: booleanish.default(true),
       /** Proxy upstream media through this service (needed for CORS/referer walls). */
       ENABLE_PLAYBACK_PROXY: booleanish.default(false),
       /** Hosts the playback gateway is permitted to fetch from. */
@@ -174182,6 +174182,25 @@ var ConsumetProvider = class {
 // src/providers/streaming/inprocess.provider.ts
 init_config();
 var backends = /* @__PURE__ */ new Map();
+var showIdCache = /* @__PURE__ */ new Map();
+var episodesCache = /* @__PURE__ */ new Map();
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer3 = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (val2) => {
+        clearTimeout(timer3);
+        resolve(val2);
+      },
+      (err) => {
+        clearTimeout(timer3);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    );
+  });
+}
 async function loadBackend(slug) {
   const existing = backends.get(slug);
   if (existing) return existing;
@@ -174200,13 +174219,11 @@ var InProcessProvider = class {
     this.basePriority = basePriority;
   }
   kind = "scrape";
-  version = "1.0.0";
+  version = "1.1.0";
   enabled = true;
   capabilities = {
     languages: ["sub"],
     accessTypes: ["hls", "mp4", "embed"],
-    // Consumet exposes no subtitle sidecars or intro/outro markers; claiming
-    // otherwise would send the player looking for data that never arrives.
     supportsSubtitles: false,
     supportsSkipMarkers: false,
     requiresMalId: false
@@ -174226,76 +174243,132 @@ var InProcessProvider = class {
   async #findShowId(request) {
     let title = request.animeTitle;
     if (!title && request.anilistId) {
-      const record = await this.#anilist.getByAnilistId(request.anilistId);
+      const record = await this.#anilist.getByAnilistId(request.anilistId).catch(() => null);
       title = record?.canonicalTitle;
     }
     if (!title) return null;
-    const backend = await loadBackend(this.slug);
-    const results = await backend.search(title, 1);
-    const candidates = results?.results ?? [];
-    if (candidates.length === 0) return null;
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const wanted = normalize(title);
-    const exact2 = candidates.find(
-      (c3) => c3.title && (c3.title.toLowerCase() === title.toLowerCase() || normalize(c3.title) === wanted)
-    );
-    if (exact2) return exact2.id;
-    const close = candidates.find((c3) => {
-      if (!c3.title) return false;
-      const normalizedC = normalize(c3.title);
-      return normalizedC.includes(wanted) || wanted.includes(normalizedC);
-    });
-    return close ? close.id : null;
+    const cacheKey = `${this.slug}:show:${title.toLowerCase()}`;
+    if (showIdCache.has(cacheKey)) {
+      return showIdCache.get(cacheKey) ?? null;
+    }
+    try {
+      const backend = await loadBackend(this.slug);
+      const results = await withTimeout(
+        backend.search(title, 1),
+        2500,
+        `${this.slug}.search`
+      );
+      const candidates = results?.results ?? [];
+      if (candidates.length === 0) {
+        showIdCache.set(cacheKey, null);
+        return null;
+      }
+      const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const wanted = normalize(title);
+      const exact2 = candidates.find(
+        (c3) => c3.title && (c3.title.toLowerCase() === title.toLowerCase() || normalize(c3.title) === wanted)
+      );
+      if (exact2) {
+        showIdCache.set(cacheKey, exact2.id);
+        return exact2.id;
+      }
+      const close = candidates.find((c3) => {
+        if (!c3.title) return false;
+        const normalizedC = normalize(c3.title);
+        return normalizedC.includes(wanted) || wanted.includes(normalizedC);
+      });
+      const matchedId = close ? close.id : null;
+      showIdCache.set(cacheKey, matchedId);
+      return matchedId;
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Fetch episode list for the show from the provider.
+   */
+  async #fetchEpisodes(showId) {
+    const cacheKey = `${this.slug}:episodes:${showId}`;
+    const cached = episodesCache.get(cacheKey);
+    if (cached) return cached;
+    try {
+      const backend = await loadBackend(this.slug);
+      const info = await withTimeout(
+        backend.fetchAnimeInfo(showId),
+        2500,
+        `${this.slug}.fetchAnimeInfo`
+      );
+      const rawEpisodes = info?.episodes ?? [];
+      const episodes2 = rawEpisodes.map((ep, index3) => ({
+        id: String(ep.id),
+        number: Number.isFinite(Number(ep.number)) ? Number(ep.number) : index3 + 1,
+        title: ep.title,
+        isFiller: Boolean(ep.isFiller)
+      })).filter((ep) => Number.isFinite(ep.number));
+      if (episodes2.length > 0) {
+        episodesCache.set(cacheKey, episodes2);
+      }
+      return episodes2;
+    } catch {
+      return [];
+    }
   }
   async listEpisodes(request) {
-    if (!this.enabled) return [];
+    if (!this.enabled || !this.isEnabled) return [];
     try {
       const showId = await this.#findShowId(request);
       if (!showId) return [];
-      const backend = await loadBackend(this.slug);
-      const servers = await backend.fetchEpisodeServers(showId);
-      return Object.keys(servers).map((key, index3) => ({
-        providerEpisodeId: key,
-        episodeNumber: Number.isFinite(Number(key)) ? Number(key) : index3 + 1
-      })).filter((entry) => Number.isFinite(entry.episodeNumber));
+      const episodes2 = await this.#fetchEpisodes(showId);
+      return episodes2.map((ep) => ({
+        providerEpisodeId: ep.id,
+        episodeNumber: ep.number
+      }));
     } catch {
       return [];
     }
   }
   async resolve(request) {
-    if (!this.enabled) return [];
-    const showId = await this.#findShowId(request);
-    if (!showId) return [];
-    const backend = await loadBackend(this.slug);
-    const servers = await backend.fetchEpisodeServers(showId);
-    const key = request.providerEpisodeId || String(request.episodeNumber);
-    const server = servers[key] || servers[String(request.episodeNumber)];
-    if (!server) return [];
-    const raw = await server.fetch();
-    const entries2 = Array.isArray(raw) ? raw : [raw];
-    const sources = [];
-    for (const entry of entries2) {
-      if (!entry?.url) continue;
-      const referer = entry.referer || entry.headers?.Referer || entry.headers?.referer;
-      sources.push({
-        id: `inprocess:${this.slug}:${key}:${entry.quality ?? "auto"}`,
-        providerSlug: this.slug,
-        providerName: this.name,
-        endpointSlug: this.slug,
-        accessType: entry.isM3U8 ? "hls" : "mp4",
-        playbackUrl: entry.url,
-        quality: entry.quality,
-        resolution: parseResolution(entry.quality),
-        language: "sub",
-        referer,
-        headers: entry.headers,
-        priority: this.basePriority
-      });
+    if (!this.enabled || !this.isEnabled) return [];
+    try {
+      const showId = await this.#findShowId(request);
+      if (!showId) return [];
+      const episodes2 = await this.#fetchEpisodes(showId);
+      if (episodes2.length === 0) return [];
+      const targetEpisode = request.providerEpisodeId ? episodes2.find((ep) => ep.id === request.providerEpisodeId) : episodes2.find((ep) => ep.number === request.episodeNumber);
+      if (!targetEpisode) return [];
+      const backend = await loadBackend(this.slug);
+      const raw = await withTimeout(
+        backend.fetchEpisodeSources(targetEpisode.id),
+        2500,
+        `${this.slug}.fetchEpisodeSources`
+      );
+      const entries2 = Array.isArray(raw?.sources) ? raw.sources : [];
+      const sources = [];
+      const referer = raw?.headers?.Referer || raw?.headers?.referer;
+      for (const entry of entries2) {
+        if (!entry?.url) continue;
+        sources.push({
+          id: `inprocess:${this.slug}:${targetEpisode.id}:${entry.quality ?? "auto"}`,
+          providerSlug: this.slug,
+          providerName: this.name,
+          endpointSlug: this.slug,
+          accessType: entry.isM3U8 ? "hls" : "mp4",
+          playbackUrl: entry.url,
+          quality: entry.quality,
+          resolution: parseResolution(entry.quality),
+          language: "sub",
+          referer,
+          headers: raw?.headers,
+          priority: this.basePriority
+        });
+      }
+      return sources;
+    } catch {
+      return [];
     }
-    return sources;
   }
   async healthCheck() {
-    if (!this.enabled) return false;
+    if (!this.enabled || !this.isEnabled) return false;
     try {
       await loadBackend(this.slug);
       return true;
@@ -174325,7 +174398,9 @@ function renderTemplate(template, request, requiredIdType) {
   if (/\{(?:tmdb_id|tmdb)\}/i.test(template) && !tmdbId) return null;
   if (/\{(?:mal_id|mal)\}/i.test(template) && !malId) return null;
   if (/\{(?:anilist_id|anilist)\}/i.test(template) && !anilistId) return null;
-  if (!/\{(?:episode|ep|e)\}/i.test(template)) return null;
+  if (!/\{(?:episode|ep|e)\}/i.test(template) && !template.startsWith("http://") && !template.startsWith("https://")) {
+    return null;
+  }
   const rendered = template.replace(/\{anilist_id\}/gi, anilistId ?? "").replace(/\{anilist\}/gi, anilistId ?? "").replace(/\{mal_id\}/gi, malId ?? "").replace(/\{mal\}/gi, malId ?? "").replace(/\{tmdb_id\}/gi, tmdbId ?? "").replace(/\{tmdb\}/gi, tmdbId ?? "").replace(/\{id\}/gi, anilistId ?? malId ?? "").replace(/\{episode\}/gi, String(request.episodeNumber)).replace(/\{ep\}/gi, String(request.episodeNumber)).replace(/\{e\}/gi, String(request.episodeNumber)).replace(/\{slug\}/gi, slug || anilistId || "").replace(/\{lang\}/gi, request.language ?? "sub");
   if (rendered.startsWith("http://") || rendered.startsWith("https://")) {
     return rendered;
@@ -174457,14 +174532,23 @@ function buildProviders() {
   if (config.CONSUMET_URL) {
     providers2.push(new ConsumetProvider());
   }
+  if (config.ENABLE_DEMO_STREAMS) {
+    for (const endpoint of DEMO_ENDPOINTS) {
+      providers2.push(
+        new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint)
+      );
+    }
+  }
   return providers2;
 }
 function buildProvidersWithDemos() {
   const providers2 = buildProviders();
   for (const endpoint of DEMO_ENDPOINTS) {
-    providers2.push(
-      new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint)
-    );
+    if (!providers2.some((p) => p.slug === endpoint.providerSlug)) {
+      providers2.push(
+        new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint)
+      );
+    }
   }
   return providers2;
 }
@@ -175928,17 +176012,21 @@ var AnimeService = class {
     const localId = await this.repo.upsert(detail).catch(() => anilistId);
     return { ...detail, id: localId };
   }
-  /** Detail plus relations and episodes, always hitting AniList. */
+  /** Detail plus relations and episodes, cached with metadata TTL. */
   async getFull(anilistId) {
-    const detail = await this.#anilist.getByAnilistId(anilistId);
-    if (!detail) throw AppError.notFound(`anime ${anilistId} not found upstream`);
-    let localId = anilistId;
-    try {
-      localId = await this.repo.upsert(detail);
-      await this.repo.replaceRelations(localId, detail);
-    } catch {
-    }
-    return { ...detail, id: localId };
+    const key = `anime:full:${anilistId}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      const detail = await this.#anilist.getByAnilistId(anilistId);
+      if (!detail) throw AppError.notFound(`anime ${anilistId} not found upstream`);
+      let localId = anilistId;
+      try {
+        localId = await this.repo.upsert(detail);
+        await this.repo.replaceRelations(localId, detail);
+      } catch {
+      }
+      return { ...detail, id: localId };
+    });
+    return value;
   }
   /**
      * Discovery list: serve from cache, otherwise fetch and persist.
@@ -176067,27 +176155,31 @@ var AnimeService = class {
     );
     return page.items.map((summary, index3) => toCard(summary, localIds[index3] ?? null));
   }
-  /** Episode catalog for a title, seeding it from AniList's count if empty or DB offline. */
+  /** Episode catalog for a title, cached with metadata TTL, seeding from AniList if empty or DB offline. */
   async getEpisodes(anilistId) {
-    try {
-      const localId = await this.ensureCached(anilistId).catch(() => null);
-      if (localId) {
-        const existing = await this.repo.listEpisodes(localId).catch(() => []);
-        if (existing.length > 0) return existing;
+    const key = `anime:episodes:${anilistId}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      try {
+        const localId = await this.ensureCached(anilistId).catch(() => null);
+        if (localId) {
+          const existing = await this.repo.listEpisodes(localId).catch(() => []);
+          if (existing.length > 0) return existing;
+        }
+      } catch {
       }
-    } catch {
-    }
-    const detail = await this.#anilist.getByAnilistId(anilistId);
-    const seeded = detail?.episodes ?? [];
-    return seeded.map((ep) => ({
-      id: `ep-${anilistId}-${ep.episodeNumber}`,
-      animeId: anilistId,
-      episodeNumber: ep.episodeNumber,
-      title: ep.title ?? `Episode ${ep.episodeNumber}`,
-      thumbnailUrl: ep.thumbnailUrl ?? null,
-      airDate: ep.airDate ? new Date(ep.airDate * 1e3) : null,
-      isFiller: ep.isFiller ?? false
-    }));
+      const detail = await this.#anilist.getByAnilistId(anilistId);
+      const seeded = detail?.episodes ?? [];
+      return seeded.map((ep) => ({
+        id: `ep-${anilistId}-${ep.episodeNumber}`,
+        animeId: anilistId,
+        episodeNumber: ep.episodeNumber,
+        title: ep.title ?? `Episode ${ep.episodeNumber}`,
+        thumbnailUrl: ep.thumbnailUrl ?? null,
+        airDate: ep.airDate ? new Date(ep.airDate * 1e3) : null,
+        isFiller: ep.isFiller ?? false
+      }));
+    });
+    return value;
   }
   /** Single episode by local id. */
   async getEpisode(episodeId) {
@@ -176364,20 +176456,24 @@ function registerAnimeRoutes(app, service, discovery, episodes2) {
     const items = await service.search(q, limit);
     return { query: q, limit, items };
   });
-  app.get("/api/v1/anime/:id", async (request) => {
+  app.get("/api/v1/anime/:id", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
-    return service.getFull(id);
+    const detail = await service.getFull(id);
+    reply.header("cache-control", "public, max-age=300, s-maxage=600, stale-while-revalidate=1800");
+    return detail;
   });
-  app.get("/api/v1/anime/:id/relations", async (request) => {
+  app.get("/api/v1/anime/:id/relations", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
     const detail = await service.getByAnilistId(id);
+    reply.header("cache-control", "public, max-age=300, s-maxage=600, stale-while-revalidate=1800");
     return { relations: detail.relations ?? [] };
   });
-  app.get("/api/v1/anime/:id/episodes", async (request) => {
+  app.get("/api/v1/anime/:id/episodes", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
     await service.getEpisodes(id);
     const catalogue = await episodes2.catalogue(id);
     if (!catalogue) throw AppError.notFound(`anime ${id} not found`);
+    reply.header("cache-control", "public, max-age=180, s-maxage=300, stale-while-revalidate=600");
     return catalogue;
   });
   app.get("/api/v1/anime/:id/episodes/:number", async (request) => {
@@ -176483,14 +176579,16 @@ function registerAnimeRoutes(app, service, discovery, episodes2) {
       status: query.status
     });
   });
-  app.get("/api/v1/genres", async () => {
+  app.get("/api/v1/genres", async (_request, reply) => {
+    reply.header("cache-control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400");
     return { items: await discovery.genres() };
   });
-  app.get("/api/v1/home", async (request) => {
+  app.get("/api/v1/home", async (request, reply) => {
     const query = parseOrThrow(
       external_exports.object({ perPage: external_exports.coerce.number().int().min(1).max(50).default(10) }),
       request.query
     );
+    reply.header("cache-control", "public, max-age=60, s-maxage=120, stale-while-revalidate=300");
     return discovery.home(query.perPage);
   });
 }
@@ -177363,7 +177461,7 @@ var chapterQuery = external_exports.object({
 });
 var idParam = external_exports.object({ id: external_exports.string().trim().min(1) });
 function registerMangaRoutes(app, service) {
-  app.get("/api/v1/manga", async (request) => {
+  app.get("/api/v1/manga", async (request, reply) => {
     const query = parseOrThrow2(listQuery2, request.query);
     const { items, total } = await service.list({
       limit: query.limit,
@@ -177373,6 +177471,7 @@ function registerMangaRoutes(app, service) {
       includeAdult: query.includeAdult,
       sort: query.sort
     });
+    reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
     return { items, total, limit: query.limit, offset: query.offset };
   });
   app.get("/api/v1/manga/search", async (request) => {
@@ -177834,7 +177933,7 @@ function partitionProviders(providers2, identity, options) {
 // src/modules/playback/service.ts
 var SOURCE_CACHE_TTL_S = 90;
 var MAX_VALIDATED_SOURCES = 15;
-var PROVIDER_DEADLINE_MS = 5e3;
+var PROVIDER_DEADLINE_MS = 3e3;
 function withDeadline(work, deadlineMs, label) {
   return new Promise((resolve, reject) => {
     const timer3 = setTimeout(() => {
@@ -177902,12 +178001,12 @@ var PlaybackResolver = class {
     const full = { ...request, language };
     const started = Date.now();
     const key = `sources:${request.anilistId}:${request.episodeNumber}:${language}`;
-    const cached = await cache.get(key);
-    if (cached) return cached;
-    const outcome = await this.#resolveUncached(full, episodeIdentity);
-    const result = { ...outcome, resolutionTimeMs: Date.now() - started };
-    if (result.sources.length > 0) {
-      await cache.set(key, result, SOURCE_CACHE_TTL_S).catch(() => void 0);
+    const { value: result } = await cache.remember(key, SOURCE_CACHE_TTL_S, async () => {
+      const outcome = await this.#resolveUncached(full, episodeIdentity);
+      return { ...outcome, resolutionTimeMs: Date.now() - started };
+    });
+    if (result.sources.length === 0) {
+      await cache.delete(key).catch(() => void 0);
     }
     return result;
   }
@@ -178035,7 +178134,8 @@ var PlaybackResolver = class {
             ...source.referer ? { referer: source.referer } : {}
           };
           const probe = await probeUrl(source.playbackUrl, {
-            headers: probeHeaders
+            headers: probeHeaders,
+            timeoutMs: 2500
           });
           if (!probe.ok && probe.status !== 206) {
             return { ...source, validated: false };
@@ -178344,7 +178444,7 @@ function parseOrThrow4(schema2, value) {
   return result.data;
 }
 function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
-  app.get("/api/v1/episodes/:episodeId/sources", async (request) => {
+  app.get("/api/v1/episodes/:episodeId/sources", async (request, reply) => {
     const { episodeId } = parseOrThrow4(
       external_exports.object({ episodeId: external_exports.string().trim().min(1) }),
       request.params
@@ -178404,6 +178504,9 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
         { episodeId, unmapped: plans.unmapped, sourceCount: result.sources.length },
         "playback sources could not be mapped to a plan"
       );
+    }
+    if (plans.plans.length > 0) {
+      reply.header("cache-control", "public, max-age=30, s-maxage=60, stale-while-revalidate=30");
     }
     return {
       episode: summarize(episode),
