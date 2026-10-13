@@ -85,7 +85,9 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     // Health checks and the provider list are called by monitoring far more
     // often than a human would, and must not be throttled into a false alarm.
     allowList: (request) =>
-      request.url === "/health" || request.url.startsWith("/api/v1/playback/providers"),
+      request.url === "/health" ||
+      request.url === "/api/v1/health" ||
+      request.url.startsWith("/api/v1/playback/providers"),
   });
 
   /**
@@ -215,6 +217,17 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
       timestamp: new Date().toISOString(),
     });
   });
+
+  /**
+   * Minimal public liveness endpoint.
+   * Exposes only basic liveness status without internal database, provider,
+   * or infrastructure diagnostic details.
+   */
+  app.get("/api/v1/health", async () => ({
+    status: "ok",
+    service: "zenkai-backend",
+    timestamp: new Date().toISOString(),
+  }));
 
   /** Per-provider health, for the observability dashboard (P19). */
   app.get("/api/v1/providers/health", async () => ({

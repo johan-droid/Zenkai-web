@@ -19,9 +19,63 @@ import { z } from "zod";
 import { fetchJson, HttpError } from "./http";
 import type { DetailData, MediaFormat, MediaKind, MediaSeason, MediaStatus, MediaSummary } from "@/lib/media";
 
+/**
+ * Resolves the backend API base URL at runtime.
+ *
+ * In Vercel multi-service deployments:
+ * - Server-side functions use the `BACKEND_URL` service binding injected by Vercel.
+ * - Client-side browser code routes requests to the public path `/api/...` on the same
+ *   origin, or uses `NEXT_PUBLIC_ZENKAI_API_URL` if explicitly configured.
+ * - In local development outside Vercel (or during Node tests), falls back to `http://localhost:4000`.
+ */
+export function getZenkaiApiUrl(): string {
+  if (typeof window === "undefined") {
+    // Server-side (runtime functions / SSR / Node test environment):
+    // Prioritize Vercel BACKEND_URL service binding, then explicit override, then local dev fallback.
+    return (
+      process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_ZENKAI_API_URL ||
+      "http://localhost:4000"
+    );
+  }
+
+  // Browser-side: never depend on server-only BACKEND_URL.
+  // In production (non-localhost), default to same-origin relative paths ("")
+  // to ensure requests route through Vercel's /api/(.*) rewrite.
+  const isLocalhost =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+
+  if (!isLocalhost) {
+    const customUrl = process.env.NEXT_PUBLIC_ZENKAI_API_URL;
+    // Guard against accidental localhost or insecure http overrides in production
+    if (customUrl && customUrl.startsWith("https://") && !customUrl.includes("localhost")) {
+      return customUrl;
+    }
+    return "";
+  }
+
+  // Local development:
+  if (process.env.NEXT_PUBLIC_ZENKAI_API_URL) {
+    return process.env.NEXT_PUBLIC_ZENKAI_API_URL;
+  }
+
+  // Standalone local development fallback:
+  return window.location.port === "4000" ? "" : "http://localhost:4000";
+}
+
 /** Backend origin. Overridable at build time; defaults to local development. */
 export const ZENKAI_API_URL =
-  process.env.NEXT_PUBLIC_ZENKAI_API_URL ?? "http://localhost:4000";
+  process.env.BACKEND_URL ??
+  process.env.NEXT_PUBLIC_ZENKAI_API_URL ??
+  "http://localhost:4000";
+
+export function buildApiUrl(path: string, suffix = ""): string {
+  const base = getZenkaiApiUrl();
+  const normalizedBase = base.replace(/\/+$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}${suffix}`;
+}
 
 /** Thrown when a response fails contract validation. Never rendered as data. */
 export class ZenkaiContractError extends Error {
@@ -461,7 +515,7 @@ async function getValidated<T extends z.ZodTypeAny>(
     if (value !== undefined) query.set(key, String(value));
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
-  const url = `${ZENKAI_API_URL}${path}${suffix}`;
+  const url = buildApiUrl(path, suffix);
 
   const raw = await fetchJson<unknown>(url, { retries: 0 });
   const parsed = schema.safeParse(raw);
@@ -971,7 +1025,7 @@ async function postValidated<T extends z.ZodTypeAny>(
   schema: T,
   body: unknown,
 ): Promise<z.infer<T>> {
-  const url = `${ZENKAI_API_URL}${path}`;
+  const url = buildApiUrl(path);
   const raw = await fetchJson<unknown>(url, { method: "POST", body, retries: 0 });
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
