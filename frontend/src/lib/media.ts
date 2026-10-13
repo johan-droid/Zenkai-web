@@ -5,7 +5,7 @@
  * these shapes so the UI never depends on a specific upstream schema.
  */
 
-export type MediaKind = "anime" | "manga";
+export type MediaKind = "anime" | "manga" | "novel";
 
 export type MediaFormat =
   | "TV"
@@ -155,7 +155,9 @@ export function fuzzyDateToIso(
 }
 
 export function mediaHref(media: Pick<MediaSummary, "kind" | "id">): string {
-  return media.kind === "anime" ? `/anime/${media.id}` : `/manga/${media.id}`;
+  if (media.kind === "anime") return `/anime/${media.id}`;
+  if (media.kind === "manga") return `/manga/${media.id}`;
+  return `/novel/${media.id}`;
 }
 
 export function watchHref(id: string | number, episode: string | number): string {
@@ -164,6 +166,10 @@ export function watchHref(id: string | number, episode: string | number): string
 
 export function readHref(id: string | number, chapter: string | number): string {
   return `/read/${id}/${chapter}`;
+}
+
+export function readNovelHref(id: string | number, chapter: string | number): string {
+  return `/read-novel/${id}/${chapter}`;
 }
 
 /** Placeholder used when a provider has no artwork for a title. */

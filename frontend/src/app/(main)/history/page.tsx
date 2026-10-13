@@ -32,6 +32,8 @@ function HistoryCard({ entry }: { entry: ContinueEntry }) {
   const href =
     entry.kind === "anime"
       ? `/watch/${entry.mediaId}/${entry.unit}`
+      : entry.kind === "novel"
+      ? `/read-novel/${entry.mediaId}/${entry.unit}`
       : `/read/${entry.mediaId}/${entry.unit}`;
 
   return (
@@ -96,15 +98,20 @@ function HistoryCard({ entry }: { entry: ContinueEntry }) {
 
 export default function HistoryPage() {
   const [clearing, setClearing] = useState(false);
+  const [filter, setFilter] = useState<"all" | "anime" | "manga" | "novel">("all");
   const animeEntries = useContinueWatching("anime");
   const mangaEntries = useContinueWatching("manga");
+  const novelEntries = useContinueWatching("novel");
 
   const allEntries: ContinueEntry[] = [
     ...(animeEntries ?? []),
     ...(mangaEntries ?? []),
+    ...(novelEntries ?? []),
   ].sort((a, b) => b.updatedAt - a.updatedAt);
 
-  const loading = animeEntries === undefined && mangaEntries === undefined;
+  const displayedEntries = filter === "all" ? allEntries : allEntries.filter((e) => e.kind === filter);
+
+  const loading = animeEntries === undefined && mangaEntries === undefined && novelEntries === undefined;
 
   async function handleClear() {
     setClearing(true);
@@ -132,13 +139,31 @@ export default function HistoryPage() {
         }
       />
 
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-2">
+        {(["all", "anime", "manga", "novel"] as const).map((tab) => (
+          <Button
+            key={tab}
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "rounded-xl capitalize text-xs",
+              filter === tab ? "bg-white/15 text-white" : "text-muted-foreground hover:text-white",
+            )}
+            onClick={() => setFilter(tab)}
+          >
+            {tab === "all" ? "All" : tab === "anime" ? "Anime" : tab === "manga" ? "Manga" : "Novels"}
+          </Button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="flex flex-col gap-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-24 animate-pulse rounded-2xl bg-white/5" />
           ))}
         </div>
-      ) : allEntries.length === 0 ? (
+      ) : displayedEntries.length === 0 ? (
         <EmptyState
           icon={History}
           title="Nothing here yet"
@@ -146,7 +171,7 @@ export default function HistoryPage() {
         />
       ) : (
         <div className="flex flex-col gap-3">
-          {allEntries.map((entry) => (
+          {displayedEntries.map((entry) => (
             <HistoryCard key={`${entry.kind}-${entry.mediaId}-${entry.unit}`} entry={entry} />
           ))}
         </div>

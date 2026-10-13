@@ -122,21 +122,17 @@ export async function resolveEpisodeIdentity(
 
   // Synthetic resolution fallback when DB is offline or uncached (e.g. "ep-15125-1" or "15125-1")
   let anilistId: string | null = null;
-  let episodeNumber = 1;
+  let episodeNumber: number | null = null;
 
   const match = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
   if (match) {
     anilistId = match[1]!;
     episodeNumber = parseInt(match[2]!, 10);
-  } else {
-    const epMatch = episodeId.match(/^(?:ep-)?(\d+)$/);
-    if (epMatch) {
-      anilistId = epMatch[1]!;
-      episodeNumber = 1;
-    }
   }
 
-  if (!anilistId) return null;
+  if (!anilistId || episodeNumber == null || Number.isNaN(episodeNumber) || episodeNumber < 1) {
+    return null;
+  }
 
   const external: Record<string, string> = { anilist: anilistId };
   return {

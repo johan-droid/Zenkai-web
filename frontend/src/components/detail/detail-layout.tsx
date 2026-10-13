@@ -52,12 +52,13 @@ function LibraryButton({
   title,
   coverUrl,
 }: {
-  kind: "anime" | "manga";
+  kind: MediaKind;
   mediaId: string;
   title: string;
   coverUrl: string | null;
 }) {
-  const dbKind = kind === "anime" ? "anime" : "manga";
+  if (kind === "novel") return null;
+  const dbKind = kind as "anime" | "manga";
   const record = useLiveQuery(
     () => getLibraryEntry(dbKind, mediaId),
     [dbKind, mediaId],

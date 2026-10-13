@@ -682,6 +682,27 @@ export async function fetchBrowsePage(
     };
   }
 
+  if (kind === "novel") {
+    const sortMap: Record<string, "POPULARITY_DESC" | "TRENDING_DESC" | "SCORE_DESC" | "START_DATE_DESC"> = {
+      trending: "TRENDING_DESC",
+      popular: "POPULARITY_DESC",
+      top: "SCORE_DESC",
+      seasonal: "POPULARITY_DESC",
+    };
+    const sort = filters.sort ? sortMap[filters.sort] ?? "POPULARITY_DESC" : "POPULARITY_DESC";
+    const result = await fetchNovelBrowse({
+      page,
+      perPage,
+      genre: filters.genre,
+      sort,
+    });
+    return {
+      items: result.items.map(novelSummaryToMedia),
+      hasNextPage: result.hasNextPage,
+      total: result.total,
+    };
+  }
+
   const result = await fetchMangaBrowse({
     page,
     perPage,
@@ -1541,4 +1562,129 @@ export function catalogueToShelfState(
   if (flags.isError) return { kind: "error", message: "The Zenkai API could not be reached." };
   if (!items) return { kind: "unavailable", reason: "missing_section" };
   return items.length > 0 ? { kind: "items", items } : { kind: "empty" };
+}
+
+// ---------------------------------------------------------------------------
+// Novels Client & Contracts (Stage 6)
+// ---------------------------------------------------------------------------
+
+export const novelSummarySchema = z.object({
+  id: z.string(),
+  anilistId: z.number(),
+  title: z.string(),
+  romajiTitle: z.string().nullable().optional(),
+  englishTitle: z.string().nullable().optional(),
+  nativeTitle: z.string().nullable().optional(),
+  coverImage: z.string().nullable().optional(),
+  bannerImage: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  averageScore: z.number().nullable().optional(),
+  popularity: z.number().nullable().optional(),
+  status: z.string(),
+  genres: z.array(z.string()).default([]),
+  chapters: z.number().nullable().optional(),
+  volumes: z.number().nullable().optional(),
+  startYear: z.number().nullable().optional(),
+});
+export type NovelSummary = z.infer<typeof novelSummarySchema>;
+
+export const novelBrowseResultSchema = z.object({
+  items: z.array(novelSummarySchema),
+  total: z.number(),
+  hasNextPage: z.boolean(),
+});
+export type NovelBrowseResult = z.infer<typeof novelBrowseResultSchema>;
+
+export const novelChapterSchema = z.object({
+  id: z.string(),
+  novelId: z.string(),
+  chapterNumber: z.number(),
+  title: z.string(),
+  releaseDate: z.string().nullable().optional(),
+});
+export type NovelChapter = z.infer<typeof novelChapterSchema>;
+
+export const novelChapterFeedSchema = z.object({
+  novelId: z.string(),
+  items: z.array(novelChapterSchema),
+});
+export type NovelChapterFeed = z.infer<typeof novelChapterFeedSchema>;
+
+export const novelChapterContentSchema = z.object({
+  id: z.string(),
+  novelId: z.string(),
+  chapterNumber: z.number(),
+  title: z.string(),
+  content: z.string(),
+  paragraphs: z.array(z.string()),
+  previousChapter: z.number().nullable(),
+  nextChapter: z.number().nullable(),
+});
+export type NovelChapterContent = z.infer<typeof novelChapterContentSchema>;
+
+export function fetchNovelBrowse(params: {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  genre?: string;
+  sort?: "POPULARITY_DESC" | "TRENDING_DESC" | "SCORE_DESC" | "START_DATE_DESC";
+} = {}): Promise<NovelBrowseResult> {
+  const query: Record<string, string | number> = {};
+  if (params.page) query.page = params.page;
+  if (params.perPage) query.perPage = params.perPage;
+  if (params.search) query.search = params.search;
+  if (params.genre) query.genre = params.genre;
+  if (params.sort) query.sort = params.sort;
+
+  return getValidated("/api/v1/novel", novelBrowseResultSchema, query);
+}
+
+export function fetchNovelSearch(q: string, limit = 20): Promise<{ query: string; items: NovelSummary[] }> {
+  return getValidated("/api/v1/novel/search", z.object({ query: z.string(), items: z.array(novelSummarySchema) }), {
+    q,
+    limit,
+  });
+}
+
+export function fetchNovelDetail(id: string): Promise<NovelSummary> {
+  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}`, novelSummarySchema);
+}
+
+export function fetchNovelChapters(id: string): Promise<NovelChapterFeed> {
+  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}/chapters`, novelChapterFeedSchema);
+}
+
+export function fetchNovelChapterContent(id: string, chapter: number): Promise<NovelChapterContent> {
+  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}/chapters/${chapter}`, novelChapterContentSchema);
+}
+
+export function novelSummaryToMedia(novel: NovelSummary): MediaSummary {
+  return {
+    id: novel.id,
+    malId: null,
+    kind: "novel",
+    provider: "zenkai",
+    title: {
+      english: novel.englishTitle ?? null,
+      romaji: novel.romajiTitle ?? null,
+      native: novel.nativeTitle ?? null,
+      preferred: novel.title,
+    },
+    cover: {
+      url: novel.coverImage ?? null,
+    },
+    banner: novel.bannerImage ?? null,
+    description: novel.description ?? null,
+    format: "NOVEL",
+    status: (novel.status as any) || "UNKNOWN",
+    season: null,
+    seasonYear: novel.startYear ?? null,
+    episodes: null,
+    chapters: novel.chapters ?? null,
+    volumes: novel.volumes ?? null,
+    durationMinutes: null,
+    averageScore: novel.averageScore ?? null,
+    popularity: novel.popularity ?? null,
+    genres: novel.genres,
+  };
 }

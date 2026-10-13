@@ -85,6 +85,7 @@ const MANGA_SORTS: { label: string; value: string }[] = [
 const DEFAULT_SORT: Record<MediaKind, string> = {
   anime: "trending",
   manga: "followed",
+  novel: "popular",
 };
 
 /** Reads and writes filter values in the URL search params. */

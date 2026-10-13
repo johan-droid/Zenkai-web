@@ -93,7 +93,15 @@ export class MangaService {
     const manga = await anilist.getByAnilistId(anilistId, "MANGA");
     if (!manga) throw AppError.notFound(`manga ${anilistId} not found upstream`);
 
-    const mangadexId = manga.externalIds?.mangadex;
+    let mangadexId = manga.externalIds?.mangadex;
+    if (!mangadexId) {
+      // Fallback: search MangaDex by title if direct cross-reference link is not present
+      const searchRes = await this.provider.search(manga.canonicalTitle, 5).catch(() => ({ items: [] }));
+      if (searchRes.items.length > 0) {
+        mangadexId = searchRes.items[0]!.providerId;
+      }
+    }
+
     if (!mangadexId) {
       throw Object.assign(
         new Error(`manga ${anilistId} has no MangaDex cross-reference`),
@@ -102,7 +110,7 @@ export class MangaService {
     }
 
     const full = await this.getFull(mangadexId);
-    await this.repo.replaceExternalIds(full.id, manga.externalIds).catch(() => undefined);
+    await this.repo.replaceExternalIds(full.id, { ...(manga.externalIds ?? {}), mangadex: mangadexId }).catch(() => undefined);
 
     return full;
   }
@@ -173,7 +181,19 @@ export class MangaService {
     providerId: string,
     options: ChapterListOptions = {},
   ): Promise<Record<string, any>[]> {
-    const localId = await this.ensureCached(providerId).catch(() => providerId);
+    let targetProviderId = providerId;
+    if (Number.isFinite(Number(providerId))) {
+      try {
+        const manga = await this.getByAnilistId(providerId);
+        if (manga && (manga.mangadexId || manga.id)) {
+          targetProviderId = manga.mangadexId ?? manga.id;
+        }
+      } catch {
+        // Fall back to providerId as is
+      }
+    }
+
+    const localId = await this.ensureCached(targetProviderId).catch(() => targetProviderId);
     const language = options.language ?? "en";
 
     try {
@@ -183,9 +203,9 @@ export class MangaService {
       // DB offline
     }
 
-    const key = `manga:chapters:${providerId}:${language}`;
+    const key = `manga:chapters:${targetProviderId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
-      const incoming = await this.provider.getChapters(providerId, { language, limit: 100 });
+      const incoming = await this.provider.getChapters(targetProviderId, { language, limit: 100 });
       await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
       return incoming;
     });

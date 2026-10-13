@@ -5,7 +5,7 @@ import Dexie, { type EntityTable } from "dexie";
  * never leaves the device unless the user exports it.
  */
 
-export type ProgressKind = "anime" | "manga";
+export type ProgressKind = "anime" | "manga" | "novel";
 
 export interface ProgressRecord {
   /** Composite key: `${kind}:${mediaId}:${unit}` (episode or chapter). */

@@ -7,12 +7,14 @@ import { DetailLayout, DetailNotFound, DetailSkeleton } from "@/components/detai
 import { Button } from "@/components/ui/button";
 import {
   fetchMangaDetail,
+  fetchMangaChapters,
   classifyMangaError,
 } from "@/lib/api/zenkai";
 import { readHref } from "@/lib/media";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Chapters the grid renders before it stops; presentation limit only. */
-const MAX_CHAPTER_BUTTONS = 60;
+const MAX_CHAPTER_BUTTONS = 100;
 
 /**
  * The manga detail surface (P17).
@@ -30,6 +32,15 @@ export function MediaDetailView({ id }: { id: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["detail", "manga", id],
     queryFn: () => fetchMangaDetail(id),
+    staleTime: 10 * 60_000,
+  });
+
+  const mediaId = data?.mangadexId ?? data?.id ?? id;
+
+  const chaptersQuery = useQuery({
+    queryKey: ["detail-chapters", "manga", mediaId],
+    queryFn: () => fetchMangaChapters(mediaId),
+    enabled: Boolean(data),
     staleTime: 10 * 60_000,
   });
 
@@ -51,16 +62,41 @@ export function MediaDetailView({ id }: { id: string }) {
 
   if (!data) return <DetailNotFound kind="manga" />;
 
-  // The canonical id the reader routes address by; falls back to the local id
-  // when the backend has not yet bridged the title to a MangaDex catalogue row.
-  const mediaId = data.mangadexId ?? data.id;
+  const chapters = chaptersQuery.data?.items ?? [];
   const shownUnits = Math.min(data.totalChapters ?? 0, MAX_CHAPTER_BUTTONS);
 
   return (
     <DetailLayout data={data as unknown as import("@/lib/media").DetailData} kind="manga">
-      {shownUnits > 0 ? (
-        <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight">Chapters</h2>
+          {chapters.length > 0 && (
+            <span className="text-xs text-muted-foreground">{chapters.length} available</span>
+          )}
+        </div>
+
+        {chaptersQuery.isLoading ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+            {Array.from({ length: 12 }, (_, i) => (
+              <Skeleton key={i} className="h-10 rounded-xl" />
+            ))}
+          </div>
+        ) : chapters.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+            {chapters.slice(0, MAX_CHAPTER_BUTTONS).map((ch) => (
+              <Button
+                key={ch.id}
+                variant="outline"
+                className="glass justify-start rounded-xl truncate"
+                asChild
+              >
+                <Link href={readHref(id, ch.chapterNumber)} title={ch.title ? `Chapter ${ch.chapterNumber}: ${ch.title}` : `Chapter ${ch.chapterNumber}`}>
+                  <span className="truncate">CH {ch.chapterNumber}{ch.title ? ` - ${ch.title}` : ""}</span>
+                </Link>
+              </Button>
+            ))}
+          </div>
+        ) : shownUnits > 0 ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
             {Array.from({ length: shownUnits }, (_, index) => index + 1).map((unit) => (
               <Button
@@ -69,12 +105,14 @@ export function MediaDetailView({ id }: { id: string }) {
                 className="glass justify-start rounded-xl"
                 asChild
               >
-                <Link href={readHref(mediaId, unit)}>CH {unit}</Link>
+                <Link href={readHref(id, unit)}>CH {unit}</Link>
               </Button>
             ))}
           </div>
-        </section>
-      ) : null}
+        ) : (
+          <p className="text-sm text-muted-foreground">No chapters available for this title yet.</p>
+        )}
+      </section>
     </DetailLayout>
   );
 }

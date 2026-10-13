@@ -36,6 +36,8 @@ import { registerAnimeRoutes } from "./modules/anime/routes.js";
 import { MangaRepository } from "./modules/manga/repository.js";
 import { MangaService } from "./modules/manga/service.js";
 import { registerMangaRoutes } from "./modules/manga/routes.js";
+import { NovelService } from "./modules/novel/service.js";
+import { registerNovelRoutes } from "./modules/novel/routes.js";
 import { ScheduleService } from "./modules/schedule/service.js";
 import { registerScheduleRoutes } from "./modules/schedule/routes.js";
 import { PlaybackResolver } from "./modules/playback/service.js";
@@ -155,6 +157,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
   const mangaRepo = new MangaRepository(deps.db);
   const mangaService = new MangaService(mangaRepo);
+  const novelService = new NovelService();
   const providers =
     deps.providers ??
     (await loadProvidersFromDb(deps.db));
@@ -250,6 +253,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
 
   registerAnimeRoutes(app, animeService, discoveryService, episodeService);
   registerMangaRoutes(app, mangaService);
+  registerNovelRoutes(app, novelService);
   registerScheduleRoutes(app, scheduleService);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo);
 

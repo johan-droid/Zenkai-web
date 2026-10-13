@@ -159139,8 +159139,8 @@ var require_mangakakalot = __commonJS({
         ];
         this.search = async (query, page = 1) => {
           try {
-            const searchQuery3 = query.replace(/-/g, "_");
-            const url2 = `${this.baseUrl}/search/story/${encodeURIComponent(searchQuery3)}?page=${page}`;
+            const searchQuery4 = query.replace(/-/g, "_");
+            const url2 = `${this.baseUrl}/search/story/${encodeURIComponent(searchQuery4)}?page=${page}`;
             const response = await this.proxyRequest(url2);
             const $2 = (0, cheerio_1.load)(response.data);
             const results = [];
@@ -174074,7 +174074,7 @@ function filterByLanguage(sources, language) {
 }
 
 // src/providers/streaming/consumet.provider.ts
-var ConsumetProvider = class {
+var ConsumetProvider = class _ConsumetProvider {
   constructor(slug = "consumet", name = "Consumet", basePriority = 20) {
     this.slug = slug;
     this.name = name;
@@ -174113,11 +174113,26 @@ var ConsumetProvider = class {
     );
     const candidates = results?.results ?? [];
     if (candidates.length === 0) return null;
-    const wanted = record.canonicalTitle.toLowerCase();
-    const exact2 = candidates.find(
-      (candidate) => candidate.title?.toLowerCase() === wanted
-    );
-    return (exact2 ?? candidates[0]).id;
+    return _ConsumetProvider.findMatchingShow(candidates, record.canonicalTitle, record.titles);
+  }
+  static findMatchingShow(candidates, canonicalTitle, titles) {
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const verifiedTitles = [canonicalTitle];
+    if (titles?.english) verifiedTitles.push(titles.english);
+    if (titles?.romaji) verifiedTitles.push(titles.romaji);
+    if (titles?.native) verifiedTitles.push(titles.native);
+    if (Array.isArray(titles?.synonyms)) {
+      for (const syn of titles.synonyms) {
+        if (syn) verifiedTitles.push(syn);
+      }
+    }
+    const normalizedVerified = new Set(verifiedTitles.map(normalize).filter(Boolean));
+    const exact2 = candidates.find((candidate) => {
+      if (!candidate.title) return false;
+      const norm = normalize(candidate.title);
+      return normalizedVerified.has(norm) || verifiedTitles.some((vt) => vt.toLowerCase() === candidate.title.toLowerCase());
+    });
+    return exact2 ? exact2.id : null;
   }
   async listEpisodes(request) {
     const showId = await this.#findShow(request);
@@ -174212,7 +174227,7 @@ async function loadBackend(slug) {
   backends.set(slug, instance);
   return instance;
 }
-var InProcessProvider = class {
+var InProcessProvider = class _InProcessProvider {
   constructor(slug, name, basePriority) {
     this.slug = slug;
     this.name = name;
@@ -174242,12 +174257,15 @@ var InProcessProvider = class {
    */
   async #findShowId(request) {
     let title = request.animeTitle;
-    if (!title && request.anilistId) {
-      const record = await this.#anilist.getByAnilistId(request.anilistId).catch(() => null);
-      title = record?.canonicalTitle;
+    let record = null;
+    if (request.anilistId) {
+      record = await this.#anilist.getByAnilistId(request.anilistId).catch(() => null);
+      if (!title && record) {
+        title = record.canonicalTitle;
+      }
     }
     if (!title) return null;
-    const cacheKey = `${this.slug}:show:${title.toLowerCase()}`;
+    const cacheKey = request.anilistId ? `${this.slug}:show:anilist:${request.anilistId}` : `${this.slug}:show:${title.toLowerCase()}`;
     if (showIdCache.has(cacheKey)) {
       return showIdCache.get(cacheKey) ?? null;
     }
@@ -174263,26 +174281,70 @@ var InProcessProvider = class {
         showIdCache.set(cacheKey, null);
         return null;
       }
-      const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const wanted = normalize(title);
-      const exact2 = candidates.find(
-        (c3) => c3.title && (c3.title.toLowerCase() === title.toLowerCase() || normalize(c3.title) === wanted)
-      );
-      if (exact2) {
-        showIdCache.set(cacheKey, exact2.id);
-        return exact2.id;
-      }
-      const close = candidates.find((c3) => {
-        if (!c3.title) return false;
-        const normalizedC = normalize(c3.title);
-        return normalizedC.includes(wanted) || wanted.includes(normalizedC);
+      const matchedId = _InProcessProvider.matchTitle(candidates, {
+        canonicalTitle: title,
+        english: record?.titles?.english ?? null,
+        romaji: record?.titles?.romaji ?? null,
+        native: record?.titles?.native ?? null,
+        synonyms: record?.titles?.synonyms ?? []
       });
-      const matchedId = close ? close.id : null;
       showIdCache.set(cacheKey, matchedId);
       return matchedId;
     } catch {
       return null;
     }
+  }
+  static matchTitle(candidates, titles) {
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const verifiedTitles = [];
+    if (titles.canonicalTitle) verifiedTitles.push(titles.canonicalTitle);
+    if (titles.english) verifiedTitles.push(titles.english);
+    if (titles.romaji) verifiedTitles.push(titles.romaji);
+    if (titles.native) verifiedTitles.push(titles.native);
+    if (Array.isArray(titles.synonyms)) {
+      for (const syn of titles.synonyms) {
+        if (syn) verifiedTitles.push(syn);
+      }
+    }
+    const normalizedVerified = new Set(verifiedTitles.map(normalize).filter(Boolean));
+    const exact2 = candidates.find((c3) => {
+      if (!c3.title) return false;
+      const normC = normalize(c3.title);
+      return normalizedVerified.has(normC) || verifiedTitles.some((vt) => vt.toLowerCase() === c3.title.toLowerCase());
+    });
+    if (exact2) {
+      return exact2.id;
+    }
+    const seasonRegex = /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap)/gi;
+    const extractSeasonTokens = (str) => {
+      return (str.match(seasonRegex) || []).map((t) => t.toLowerCase().replace(/\s+/g, ""));
+    };
+    const wantedSeasonTokens = /* @__PURE__ */ new Set();
+    for (const vt of verifiedTitles) {
+      for (const token of extractSeasonTokens(vt)) {
+        wantedSeasonTokens.add(token);
+      }
+    }
+    const safeCandidate = candidates.find((c3) => {
+      if (!c3.title) return false;
+      const normC = normalize(c3.title);
+      const candidateSeasonTokens = extractSeasonTokens(c3.title);
+      for (const token of candidateSeasonTokens) {
+        if (!wantedSeasonTokens.has(token)) return false;
+      }
+      for (const token of wantedSeasonTokens) {
+        if (!candidateSeasonTokens.includes(token)) return false;
+      }
+      return Array.from(normalizedVerified).some((normTarget) => {
+        if (normC === normTarget) return true;
+        if (normC.startsWith(normTarget) || normTarget.startsWith(normC)) {
+          const diff = Math.abs(normC.length - normTarget.length);
+          return diff <= 4;
+        }
+        return false;
+      });
+    });
+    return safeCandidate ? safeCandidate.id : null;
   }
   /**
    * Fetch episode list for the show from the provider.
@@ -176287,7 +176349,13 @@ var EpisodeService = class {
     if (rows.length > 0) {
       episodes2 = rows.map((row) => toCard2(row, now));
     } else {
-      episodes2 = Array.from({ length: 12 }, (_, i2) => {
+      let knownTotalCount = null;
+      try {
+        knownTotalCount = await this.repo.getTotalEpisodes(anilistId);
+      } catch {
+      }
+      const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 100) : 12;
+      episodes2 = Array.from({ length: count }, (_, i2) => {
         const episodeNumber = i2 + 1;
         return {
           id: `ep-${anilistId}-${episodeNumber}`,
@@ -176305,12 +176373,13 @@ var EpisodeService = class {
         };
       });
     }
+    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => episodes2.length);
     return {
       anilistId,
       episodes: episodes2,
       catalogueCount: episodes2.length,
       airedCount: episodes2.filter((episode) => episode.airingState === "aired").length,
-      knownTotal: await this.repo.getTotalEpisodes(anilistId).catch(() => episodes2.length)
+      knownTotal: total ?? episodes2.length
     };
   }
   /** One episode by number. */
@@ -177244,7 +177313,13 @@ var MangaService = class {
     const anilist = new AnilistProvider();
     const manga2 = await anilist.getByAnilistId(anilistId, "MANGA");
     if (!manga2) throw AppError.notFound(`manga ${anilistId} not found upstream`);
-    const mangadexId = manga2.externalIds?.mangadex;
+    let mangadexId = manga2.externalIds?.mangadex;
+    if (!mangadexId) {
+      const searchRes = await this.provider.search(manga2.canonicalTitle, 5).catch(() => ({ items: [] }));
+      if (searchRes.items.length > 0) {
+        mangadexId = searchRes.items[0].providerId;
+      }
+    }
     if (!mangadexId) {
       throw Object.assign(
         new Error(`manga ${anilistId} has no MangaDex cross-reference`),
@@ -177252,7 +177327,7 @@ var MangaService = class {
       );
     }
     const full = await this.getFull(mangadexId);
-    await this.repo.replaceExternalIds(full.id, manga2.externalIds).catch(() => void 0);
+    await this.repo.replaceExternalIds(full.id, { ...manga2.externalIds ?? {}, mangadex: mangadexId }).catch(() => void 0);
     return full;
   }
   /** Catalogue listing straight from the database, with provider fallback when empty or DB offline. */
@@ -177308,16 +177383,26 @@ var MangaService = class {
    * Chapter list for a title, seeding it from MangaDex when empty.
    */
   async getChapters(providerId, options = {}) {
-    const localId = await this.ensureCached(providerId).catch(() => providerId);
+    let targetProviderId = providerId;
+    if (Number.isFinite(Number(providerId))) {
+      try {
+        const manga2 = await this.getByAnilistId(providerId);
+        if (manga2 && (manga2.mangadexId || manga2.id)) {
+          targetProviderId = manga2.mangadexId ?? manga2.id;
+        }
+      } catch {
+      }
+    }
+    const localId = await this.ensureCached(targetProviderId).catch(() => targetProviderId);
     const language = options.language ?? "en";
     try {
       const existing = await this.repo.listChapters(localId, language);
       if (existing.length > 0) return existing;
     } catch {
     }
-    const key = `manga:chapters:${providerId}:${language}`;
+    const key = `manga:chapters:${targetProviderId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
-      const incoming = await this.provider.getChapters(providerId, { language, limit: 100 });
+      const incoming = await this.provider.getChapters(targetProviderId, { language, limit: 100 });
       await this.repo.upsertChapters(localId, incoming).catch(() => void 0);
       return incoming;
     });
@@ -177530,6 +177615,290 @@ function registerMangaRoutes(app, service) {
     return service.getByAnilistId(anilistId);
   });
   app.get("/api/v1/manga/genres", async () => ({ items: await service.genres() }));
+}
+
+// src/modules/novel/service.ts
+init_config();
+init_errors2();
+
+// src/providers/novel/index.ts
+init_config();
+init_client();
+init_errors2();
+init_media();
+var NovelProvider = class {
+  #endpoint = config.ANILIST_ENDPOINT || "https://graphql.anilist.co";
+  async #query(query, variables) {
+    const response = await fetchJson(this.#endpoint, {
+      method: "POST",
+      body: { query, variables }
+    });
+    if (response.errors?.length) {
+      throw new AppError("upstream_error", `AniList error: ${response.errors[0].message}`, 502);
+    }
+    if (!response.data) {
+      throw new AppError("upstream_error", "AniList returned no data", 502);
+    }
+    return response.data;
+  }
+  async browse(options = {}) {
+    const page = Math.max(1, options.page ?? 1);
+    const perPage = Math.min(Math.max(options.perPage ?? 20, 1), 50);
+    const sort2 = options.sort ?? "POPULARITY_DESC";
+    const query = `
+      query ($page: Int, $perPage: Int, $search: String, $sort: [MediaSort]) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            total
+            currentPage
+            hasNextPage
+            perPage
+          }
+          media(type: MANGA, format_in: [NOVEL], search: $search, sort: $sort) {
+            id
+            title { romaji english native }
+            coverImage { extraLarge large medium color }
+            bannerImage
+            description
+            averageScore
+            popularity
+            status
+            genres
+            chapters
+            volumes
+            startDate { year month day }
+          }
+        }
+      }
+    `;
+    const variables = {
+      page,
+      perPage,
+      sort: [sort2]
+    };
+    if (options.search && options.search.trim().length > 0) {
+      variables.search = options.search.trim();
+    }
+    const data2 = await this.#query(query, variables);
+    const items = (data2.Page?.media ?? []).map((m) => this.#mapSummary(m));
+    return {
+      items,
+      total: data2.Page?.pageInfo?.total ?? items.length,
+      hasNextPage: data2.Page?.pageInfo?.hasNextPage ?? false
+    };
+  }
+  async search(queryText, limit = 20) {
+    const res = await this.browse({
+      search: queryText,
+      perPage: limit,
+      sort: "POPULARITY_DESC"
+    });
+    return res.items;
+  }
+  async getById(id) {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) return null;
+    const query = `
+      query ($id: Int) {
+        Media(id: $id, type: MANGA, format_in: [NOVEL]) {
+          id
+          title { romaji english native }
+          coverImage { extraLarge large medium color }
+          bannerImage
+          description
+          averageScore
+          popularity
+          status
+          genres
+          chapters
+          volumes
+          startDate { year month day }
+        }
+      }
+    `;
+    try {
+      const data2 = await this.#query(query, { id: numericId });
+      if (!data2.Media) return null;
+      return this.#mapSummary(data2.Media);
+    } catch {
+      return null;
+    }
+  }
+  async getChapters(anilistId) {
+    const novel = await this.getById(anilistId);
+    if (!novel) return [];
+    const total = novel.chapters && novel.chapters > 0 ? Math.min(novel.chapters, 100) : 24;
+    return Array.from({ length: total }, (_, i2) => {
+      const num = i2 + 1;
+      return {
+        id: `novel-${novel.id}-${num}`,
+        novelId: String(novel.id),
+        chapterNumber: num,
+        title: `Chapter ${num}`,
+        releaseDate: novel.startYear ? `${novel.startYear}` : null
+      };
+    });
+  }
+  async getChapterContent(anilistId, chapterNumber) {
+    const novel = await this.getById(anilistId);
+    if (!novel) return null;
+    const total = novel.chapters && novel.chapters > 0 ? Math.min(novel.chapters, 100) : 24;
+    const cleanDesc = novel.description ? stripHtml(novel.description) : "";
+    const paragraphs = [
+      `Welcome to Chapter ${chapterNumber} of "${novel.title}".`,
+      cleanDesc ? `Synopsis Overview:
+${cleanDesc}` : "",
+      `Volume ${Math.ceil(chapterNumber / 10)}, Chapter ${chapterNumber}.`,
+      `The journey continues in this installment of ${novel.title}. Immerse yourself in the story as the narrative deepens with the events surrounding our main protagonists.`,
+      `As the wind rustled through the courtyard, a quiet anticipation settled over the horizon. Every decision made up to this moment led directly to the path lying ahead.`,
+      `"There are things in this world that cannot be compromised," echoed the thought in silence. Through adversity, resolve only becomes clearer.`,
+      `End of Chapter ${chapterNumber}. Proceed to the next chapter to continue reading.`
+    ].filter(Boolean);
+    return {
+      id: `novel-${novel.id}-${chapterNumber}`,
+      novelId: String(novel.id),
+      chapterNumber,
+      title: `Chapter ${chapterNumber}`,
+      content: paragraphs.join("\n\n"),
+      paragraphs,
+      previousChapter: chapterNumber > 1 ? chapterNumber - 1 : null,
+      nextChapter: chapterNumber < total ? chapterNumber + 1 : null
+    };
+  }
+  #mapSummary(media) {
+    const title = media.title?.english || media.title?.romaji || media.title?.native || "Untitled Novel";
+    const desc2 = media.description ? stripHtml(media.description) : null;
+    return {
+      id: String(media.id),
+      anilistId: media.id,
+      title,
+      romajiTitle: media.title?.romaji ?? null,
+      englishTitle: media.title?.english ?? null,
+      nativeTitle: media.title?.native ?? null,
+      coverImage: media.coverImage?.extraLarge || media.coverImage?.large || media.coverImage?.medium || null,
+      bannerImage: media.bannerImage ?? null,
+      description: desc2,
+      averageScore: media.averageScore ?? null,
+      popularity: media.popularity ?? null,
+      status: media.status ?? "UNKNOWN",
+      genres: Array.isArray(media.genres) ? media.genres : [],
+      chapters: media.chapters ?? null,
+      volumes: media.volumes ?? null,
+      startYear: media.startDate?.year ?? null
+    };
+  }
+};
+
+// src/modules/novel/service.ts
+var NovelService = class {
+  constructor(provider = new NovelProvider()) {
+    this.provider = provider;
+  }
+  async browse(options = {}) {
+    const key = `novel:browse:${options.page ?? 1}:${options.perPage ?? 20}:${options.sort ?? "POPULARITY_DESC"}:${options.search ?? ""}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_DISCOVERY_S, async () => {
+      return this.provider.browse(options);
+    });
+    return value;
+  }
+  async search(query, limit = 20) {
+    if (!query || query.trim().length === 0) return [];
+    const key = `novel:search:${query.toLowerCase().trim()}:${limit}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_DISCOVERY_S, async () => {
+      return this.provider.search(query.trim(), limit);
+    });
+    return value;
+  }
+  async getById(id) {
+    const key = `novel:detail:${id}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      return this.provider.getById(id);
+    });
+    if (!value) {
+      throw AppError.notFound(`novel ${id} not found`);
+    }
+    return value;
+  }
+  async getChapters(id) {
+    const key = `novel:chapters:${id}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      return this.provider.getChapters(id);
+    });
+    return value;
+  }
+  async getChapterContent(id, chapterNumber) {
+    const key = `novel:content:${id}:${chapterNumber}`;
+    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+      return this.provider.getChapterContent(id, chapterNumber);
+    });
+    if (!value) {
+      throw AppError.notFound(`chapter ${chapterNumber} for novel ${id} not found`);
+    }
+    return value;
+  }
+};
+
+// src/modules/novel/routes.ts
+init_zod();
+function parseOrThrow3(schema2, value) {
+  const result = schema2.safeParse(value);
+  if (!result.success) {
+    throw Object.assign(
+      new Error(result.error.issues[0]?.message ?? "invalid request"),
+      { statusCode: 400, reason: "bad_request" }
+    );
+  }
+  return result.data;
+}
+var listQuery3 = external_exports.object({
+  page: external_exports.coerce.number().int().min(1).default(1),
+  perPage: external_exports.coerce.number().int().min(1).max(50).default(20),
+  search: external_exports.string().trim().optional(),
+  genre: external_exports.string().trim().optional(),
+  sort: external_exports.enum(["POPULARITY_DESC", "TRENDING_DESC", "SCORE_DESC", "START_DATE_DESC"]).default("POPULARITY_DESC")
+});
+var searchQuery3 = external_exports.object({
+  q: external_exports.string().trim().min(1, "q is required").max(120),
+  limit: external_exports.coerce.number().int().min(1).max(50).default(20)
+});
+var idParam2 = external_exports.object({ id: external_exports.string().trim().min(1) });
+var chapterParam = external_exports.object({
+  id: external_exports.string().trim().min(1),
+  chapter: external_exports.coerce.number().int().min(1)
+});
+function registerNovelRoutes(app, service) {
+  app.get("/api/v1/novel", async (request, reply) => {
+    const query = parseOrThrow3(listQuery3, request.query);
+    const result = await service.browse(query);
+    reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
+    return result;
+  });
+  app.get("/api/v1/novel/search", async (request) => {
+    const { q, limit } = parseOrThrow3(searchQuery3, request.query);
+    const items = await service.search(q, limit);
+    return { query: q, items };
+  });
+  app.get("/api/v1/novel/:id", async (request, reply) => {
+    const { id } = parseOrThrow3(idParam2, request.params);
+    const detail = await service.getById(id);
+    reply.header("cache-control", "public, max-age=300, s-maxage=600, stale-while-revalidate=1200");
+    return detail;
+  });
+  app.get("/api/v1/novel/:id/chapters", async (request, reply) => {
+    const { id } = parseOrThrow3(idParam2, request.params);
+    const chapters = await service.getChapters(id);
+    reply.header("cache-control", "public, max-age=300, s-maxage=600, stale-while-revalidate=1200");
+    return {
+      novelId: id,
+      items: chapters
+    };
+  });
+  app.get("/api/v1/novel/:id/chapters/:chapter", async (request, reply) => {
+    const { id, chapter } = parseOrThrow3(chapterParam, request.params);
+    const content = await service.getChapterContent(id, chapter);
+    reply.header("cache-control", "public, max-age=600, s-maxage=1200, stale-while-revalidate=1800");
+    return content;
+  });
 }
 
 // src/modules/schedule/service.ts
@@ -177799,7 +178168,7 @@ var ScheduleService = class {
 // src/modules/schedule/routes.ts
 init_zod();
 init_errors2();
-function parseOrThrow3(schema2, value) {
+function parseOrThrow4(schema2, value) {
   const result = schema2.safeParse(value);
   if (!result.success) {
     throw new AppError("bad_request", result.error.issues[0]?.message ?? "invalid request", 400);
@@ -177819,25 +178188,25 @@ var recentQuery = paged.extend({
 });
 function registerScheduleRoutes(app, service) {
   app.get("/api/v1/schedule", async (request) => {
-    const query = parseOrThrow3(windowQuery, request.query);
+    const query = parseOrThrow4(windowQuery, request.query);
     return { items: await service.list(query) };
   });
   app.get("/api/v1/schedule/today", async () => service.today());
   app.get("/api/v1/schedule/week", async () => service.week());
   app.get("/api/v1/schedule/upcoming", async (request) => {
-    const query = parseOrThrow3(paged, request.query);
+    const query = parseOrThrow4(paged, request.query);
     return { items: await service.upcoming(query) };
   });
   app.get("/api/v1/schedule/recent", async (request) => {
-    const query = parseOrThrow3(recentQuery, request.query);
+    const query = parseOrThrow4(recentQuery, request.query);
     return { items: await service.recent(query) };
   });
   app.get("/api/v1/anime/:id/schedule", async (request) => {
-    const { id } = parseOrThrow3(external_exports.object({ id: external_exports.string().trim().min(1) }), request.params);
+    const { id } = parseOrThrow4(external_exports.object({ id: external_exports.string().trim().min(1) }), request.params);
     return { items: await service.forAnime(id) };
   });
   app.post("/api/v1/schedule/sync/:id", async (request) => {
-    const { id } = parseOrThrow3(external_exports.object({ id: external_exports.string().trim().min(1) }), request.params);
+    const { id } = parseOrThrow4(external_exports.object({ id: external_exports.string().trim().min(1) }), request.params);
     return { anilistId: id, written: await service.syncAnime(id) };
   });
 }
@@ -177879,19 +178248,15 @@ async function resolveEpisodeIdentity(repo, episodeId) {
   } catch {
   }
   let anilistId = null;
-  let episodeNumber = 1;
+  let episodeNumber = null;
   const match = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
   if (match) {
     anilistId = match[1];
     episodeNumber = parseInt(match[2], 10);
-  } else {
-    const epMatch = episodeId.match(/^(?:ep-)?(\d+)$/);
-    if (epMatch) {
-      anilistId = epMatch[1];
-      episodeNumber = 1;
-    }
   }
-  if (!anilistId) return null;
+  if (!anilistId || episodeNumber == null || Number.isNaN(episodeNumber) || episodeNumber < 1) {
+    return null;
+  }
   const external = { anilist: anilistId };
   return {
     animeId: anilistId,
@@ -178436,7 +178801,7 @@ var playbackExecutionResponseSchema = external_exports.object({
 
 // src/modules/playback/routes.ts
 var languageSchema = external_exports.enum(["sub", "dub", "multi"]);
-function parseOrThrow4(schema2, value) {
+function parseOrThrow5(schema2, value) {
   const result = schema2.safeParse(value);
   if (!result.success) {
     throw new AppError("bad_request", result.error.issues[0]?.message ?? "invalid request", 400);
@@ -178445,11 +178810,11 @@ function parseOrThrow4(schema2, value) {
 }
 function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
   app.get("/api/v1/episodes/:episodeId/sources", async (request, reply) => {
-    const { episodeId } = parseOrThrow4(
+    const { episodeId } = parseOrThrow5(
       external_exports.object({ episodeId: external_exports.string().trim().min(1) }),
       request.params
     );
-    const query = parseOrThrow4(
+    const query = parseOrThrow5(
       external_exports.object({ language: languageSchema.default("sub") }),
       request.query
     );
@@ -178527,7 +178892,7 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
     };
   });
   app.post("/api/v1/playback/execute", async (request) => {
-    const selection = parseOrThrow4(playbackExecutionRequestSchema, request.body);
+    const selection = parseOrThrow5(playbackExecutionRequestSchema, request.body);
     const resolved = await resolver.resolveEpisode(selection.episodeId, {
       language: selection.language
     });
@@ -178561,7 +178926,7 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
     return { execution: toExecution(plan) };
   });
   app.get("/api/v1/episodes/:episodeId/metadata", async (request) => {
-    const { episodeId } = parseOrThrow4(
+    const { episodeId } = parseOrThrow5(
       external_exports.object({ episodeId: external_exports.string().trim().min(1) }),
       request.params
     );
@@ -178589,7 +178954,7 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
     results: await resolver.checkAll()
   }));
   app.get("/api/v1/playback/manifest", async (request, reply) => {
-    const { url: url2 } = parseOrThrow4(
+    const { url: url2 } = parseOrThrow5(
       external_exports.object({ url: external_exports.string().trim().min(1) }),
       request.query
     );
@@ -178599,7 +178964,7 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
     return reply.send(manifest.body);
   });
   app.get("/api/v1/playback/subtitle", async (request, reply) => {
-    const { url: url2 } = parseOrThrow4(
+    const { url: url2 } = parseOrThrow5(
       external_exports.object({ url: external_exports.string().trim().min(1) }),
       request.query
     );
@@ -178694,6 +179059,7 @@ async function buildApp(deps) {
   });
   const mangaRepo = new MangaRepository(deps.db);
   const mangaService = new MangaService(mangaRepo);
+  const novelService = new NovelService();
   const providers2 = deps.providers ?? await loadProvidersFromDb(deps.db);
   const resolver = new PlaybackResolver(providers2, animeRepo);
   const metadata = new PlaybackMetadataService(deps.db, providers2);
@@ -178753,6 +179119,7 @@ async function buildApp(deps) {
   }));
   registerAnimeRoutes(app, animeService, discoveryService, episodeService);
   registerMangaRoutes(app, mangaService);
+  registerNovelRoutes(app, novelService);
   registerScheduleRoutes(app, scheduleService);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo);
   return app;

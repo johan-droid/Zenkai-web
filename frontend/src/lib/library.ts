@@ -208,11 +208,14 @@ export async function getLibraryCount(): Promise<number> {
 /* ------------------------------------------------------------------ */
 
 export async function exportLibraryData(): Promise<ExportPayload> {
+  const allProgress = await db.progress.toArray();
+  const allLibrary = await db.library.toArray();
+
   const payload: ExportPayload = {
     version: 1,
     exportedAt: new Date().toISOString(),
-    progress: await db.progress.toArray(),
-    library: await db.library.toArray(),
+    progress: allProgress.filter((p) => p.kind === "anime" || p.kind === "manga") as any,
+    library: allLibrary.filter((l) => l.kind === "anime" || l.kind === "manga") as any,
   };
   return exportPayloadSchema.parse(payload);
 }

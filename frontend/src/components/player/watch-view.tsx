@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CalendarClock, Play, Server } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useThrottledProgressSaver, useUnitProgress, useTitleProgress } from "@/hooks/use-progress";
 import {
@@ -138,10 +138,10 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   // automatic stale-selection retry happens per attempt — never an invisible loop.
   const [retryNonce, setRetryNonce] = useState(0);
 
-  // A new episode or a language change clears the override, falling back to the
+  // A new episode, anime title, or language change clears the override, falling back to the
   // backend's top-ranked plan. Adjusted during render so React can re-render
   // before committing, rather than synchronising state from an effect.
-  const selectionEpoch = `${episodeCard?.id ?? ""}:${language}`;
+  const selectionEpoch = `${id}:${episodeNumber}:${episodeCard?.id ?? ""}:${language}`;
   const [lastSelectionEpoch, setLastSelectionEpoch] = useState(selectionEpoch);
   if (lastSelectionEpoch !== selectionEpoch) {
     setLastSelectionEpoch(selectionEpoch);
@@ -151,27 +151,32 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     setPlaybackFailure(null);
   }
 
+  // Generation counter to ensure asynchronous playback execution cannot overwrite
+  // a subsequent or cancelled selection.
+  const playbackAttemptRef = useRef(0);
+
   // Execute the selected canonical source. The request carries only episodeId,
   // sourceId and language — the backend re-resolves the plan and returns the
   // only playback URL the client ever sees.
   useEffect(() => {
     if (!episodeCard || !selectedSourceId) return;
+    const currentAttempt = ++playbackAttemptRef.current;
     let cancelled = false;
 
     executePlayback({ episodeId: episodeCard.id, sourceId: selectedSourceId, language })
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled || currentAttempt !== playbackAttemptRef.current) return;
         setExecution(result);
         setPlaybackFailure(null);
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || currentAttempt !== playbackAttemptRef.current) return;
         const failure = classifyPlaybackError(error);
         if (failure === "selection_stale" && retryNonce < MAX_STALE_RETRIES) {
           // The ranked list moved under us: refresh once, then retry the new
           // top-ranked plan. The nonce carries the one-automatic-retry bound.
           void refetchSources().then(() => {
-            if (cancelled) return;
+            if (cancelled || currentAttempt !== playbackAttemptRef.current) return;
             setUserSelection(null);
             setRetryNonce(1);
           });
@@ -182,6 +187,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
 
     return () => {
       cancelled = true;
+      playbackAttemptRef.current++;
     };
   }, [episodeCard, selectedSourceId, language, retryNonce, refetchSources]);
 
@@ -365,6 +371,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
       <div className={cn("grid gap-6", theaterMode ? "" : "lg:grid-cols-[1fr_360px]")}>
         <div className={cn("relative flex flex-col gap-4", theaterMode ? "lg:col-span-2" : "")}>
           <PlayerArea
+            key={`${id}-${episodeNumber}`}
             sourcesQuery={sourcesQuery}
             execution={execution}
             playbackFailure={playbackFailure}

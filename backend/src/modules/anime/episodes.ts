@@ -105,8 +105,15 @@ export class EpisodeService {
     if (rows.length > 0) {
       episodes = rows.map((row) => toCard(row, now));
     } else {
-      // Synthetic fallback for degraded DB mode
-      episodes = Array.from({ length: 12 }, (_, i) => {
+      let knownTotalCount: number | null = null;
+      try {
+        knownTotalCount = await this.repo.getTotalEpisodes(anilistId);
+      } catch {
+        // DB offline
+      }
+
+      const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 100) : 12;
+      episodes = Array.from({ length: count }, (_, i) => {
         const episodeNumber = i + 1;
         return {
           id: `ep-${anilistId}-${episodeNumber}`,
@@ -125,12 +132,14 @@ export class EpisodeService {
       });
     }
 
+    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => episodes.length);
+
     return {
       anilistId,
       episodes,
       catalogueCount: episodes.length,
       airedCount: episodes.filter((episode) => episode.airingState === "aired").length,
-      knownTotal: await this.repo.getTotalEpisodes(anilistId).catch(() => episodes.length),
+      knownTotal: total ?? episodes.length,
     };
   }
 
