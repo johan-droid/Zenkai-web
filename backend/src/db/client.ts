@@ -13,7 +13,45 @@ const url =
 
 export interface DbHandle {
   db: ReturnType<typeof createDb>;
+  rawSql: Sql;
   close: () => Promise<void>;
+}
+
+let dbOnline = true;
+
+export function isDatabaseOnline(): boolean {
+  return dbOnline;
+}
+
+export function setDatabaseOnline(online: boolean): void {
+  dbOnline = online;
+}
+
+/**
+ * Wraps a Postgres client with an offline circuit-breaker.
+ * When the database has been proven unreachable, query attempts immediately
+ * fail without blocking the event loop or waiting for socket timeouts.
+ */
+function createGuardedClient(client: Sql): Sql {
+  return new Proxy(client, {
+    apply(target, thisArg, argArray) {
+      if (!dbOnline) {
+        throw new Error("Database offline (circuit breaker active)");
+      }
+      return Reflect.apply(target, thisArg, argArray);
+    },
+    get(target, prop, receiver) {
+      if (prop === "unsafe") {
+        return (...args: unknown[]) => {
+          if (!dbOnline) {
+            throw new Error("Database offline (circuit breaker active)");
+          }
+          return (target as any).unsafe(...args);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 }
 
 /**
@@ -28,9 +66,12 @@ export function createDb(connectionUrl = url) {
     // so a large pool just holds Postgres connections open for no benefit.
     max: config.DATABASE_POOL_MAX,
     idle_timeout: 20,
-    connect_timeout: 10,
+    connect_timeout: 2,
   });
-  return drizzle(client, { schema });
+  const guarded = createGuardedClient(client);
+  const db = drizzle(guarded, { schema });
+  (db as any).rawClient = client;
+  return db;
 }
 
 export type Db = ReturnType<typeof createDb>;
@@ -41,17 +82,37 @@ export type Db = ReturnType<typeof createDb>;
  * Lets the server start in environments where Postgres is not up yet rather
  * than crashing at import time.
  */
-export async function waitForDatabase(db: Db, timeoutMs = 30_000): Promise<boolean> {
+export async function waitForDatabase(target: Db | Sql, timeoutMs = 30_000): Promise<boolean> {
+  const rawSql: Sql = (target as any).rawClient ?? target;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      await db.execute(rawSql`select 1`);
+      await rawSql`select 1`;
+      setDatabaseOnline(true);
       return true;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
+  setDatabaseOnline(false);
   return false;
+}
+
+let probeTimer: NodeJS.Timeout | null = null;
+export function startPeriodicProbe(rawSql: Sql, intervalMs = 15_000): void {
+  if (probeTimer) return;
+  probeTimer = setInterval(async () => {
+    if (!dbOnline) {
+      try {
+        await rawSql`select 1`;
+        setDatabaseOnline(true);
+        console.log("[zenkai] database reconnected; exiting degraded mode");
+      } catch {
+        // Still down
+      }
+    }
+  }, intervalMs);
+  probeTimer.unref();
 }
 
 /**
@@ -64,9 +125,11 @@ export async function createResources(): Promise<DbHandle> {
   const sql: Sql = postgres(url, {
     max: config.DATABASE_POOL_MAX,
     idle_timeout: 20,
-    connect_timeout: 10,
+    connect_timeout: 2,
   });
-  const db = drizzle(sql, { schema });
+  const guarded = createGuardedClient(sql);
+  const db = drizzle(guarded, { schema });
+  (db as any).rawClient = sql;
 
   if (config.REDIS_URL) {
     // `lazyConnect` plus a short retry ceiling: a dead Redis degrades the cache
@@ -94,7 +157,12 @@ export async function createResources(): Promise<DbHandle> {
 
   return {
     db,
+    rawSql: sql,
     close: async () => {
+      if (probeTimer) {
+        clearInterval(probeTimer);
+        probeTimer = null;
+      }
       await sql.end({ timeout: 5 });
     },
   };

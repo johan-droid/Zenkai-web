@@ -534,11 +534,10 @@ init_config();
 var import_fastify = __toESM(require("fastify"), 1);
 var import_cors = __toESM(require("@fastify/cors"), 1);
 var import_rate_limit = __toESM(require("@fastify/rate-limit"), 1);
-var import_drizzle_orm7 = require("drizzle-orm");
+var import_drizzle_orm6 = require("drizzle-orm");
 init_config();
 
 // src/db/client.ts
-var import_drizzle_orm = require("drizzle-orm");
 var import_postgres_js = require("drizzle-orm/postgres-js");
 var import_postgres = __toESM(require("postgres"), 1);
 var import_ioredis = require("ioredis");
@@ -1120,25 +1119,70 @@ var airingSchedule = (0, import_pg_core6.pgTable)(
 
 // src/db/client.ts
 var url = config.DATABASE_URL ?? "postgresql://zenkai:zenkai_password@localhost:5432/zenkai_db?sslmode=disable";
-async function waitForDatabase(db, timeoutMs = 3e4) {
+var dbOnline = true;
+function setDatabaseOnline(online) {
+  dbOnline = online;
+}
+function createGuardedClient(client) {
+  return new Proxy(client, {
+    apply(target, thisArg, argArray) {
+      if (!dbOnline) {
+        throw new Error("Database offline (circuit breaker active)");
+      }
+      return Reflect.apply(target, thisArg, argArray);
+    },
+    get(target, prop, receiver) {
+      if (prop === "unsafe") {
+        return (...args) => {
+          if (!dbOnline) {
+            throw new Error("Database offline (circuit breaker active)");
+          }
+          return target.unsafe(...args);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    }
+  });
+}
+async function waitForDatabase(target, timeoutMs = 3e4) {
+  const rawSql = target.rawClient ?? target;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      await db.execute(import_drizzle_orm.sql`select 1`);
+      await rawSql`select 1`;
+      setDatabaseOnline(true);
       return true;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 1e3));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
+  setDatabaseOnline(false);
   return false;
+}
+var probeTimer = null;
+function startPeriodicProbe(rawSql, intervalMs = 15e3) {
+  if (probeTimer) return;
+  probeTimer = setInterval(async () => {
+    if (!dbOnline) {
+      try {
+        await rawSql`select 1`;
+        setDatabaseOnline(true);
+        console.log("[zenkai] database reconnected; exiting degraded mode");
+      } catch {
+      }
+    }
+  }, intervalMs);
+  probeTimer.unref();
 }
 async function createResources() {
   const sql4 = (0, import_postgres.default)(url, {
     max: config.DATABASE_POOL_MAX,
     idle_timeout: 20,
-    connect_timeout: 10
+    connect_timeout: 2
   });
-  const db = (0, import_postgres_js.drizzle)(sql4, { schema: schema_exports });
+  const guarded = createGuardedClient(sql4);
+  const db = (0, import_postgres_js.drizzle)(guarded, { schema: schema_exports });
+  db.rawClient = sql4;
   if (config.REDIS_URL) {
     const redis = new import_ioredis.Redis(config.REDIS_URL, {
       lazyConnect: true,
@@ -1157,7 +1201,12 @@ async function createResources() {
   }
   return {
     db,
+    rawSql: sql4,
     close: async () => {
+      if (probeTimer) {
+        clearInterval(probeTimer);
+        probeTimer = null;
+      }
       await sql4.end({ timeout: 5 });
     }
   };
@@ -1473,7 +1522,7 @@ var AnilistProvider = class {
 };
 
 // src/providers/streaming/registry.ts
-var import_drizzle_orm2 = require("drizzle-orm");
+var import_drizzle_orm = require("drizzle-orm");
 init_config();
 
 // src/providers/streaming/consumet.provider.ts
@@ -2038,13 +2087,13 @@ async function loadProvidersFromDb(db) {
     return config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders();
   }
   try {
-    const dbProviders = await db.select().from(providers).where((0, import_drizzle_orm2.eq)(providers.active, true)).orderBy((0, import_drizzle_orm2.asc)(providers.priority));
+    const dbProviders = await db.select().from(providers).where((0, import_drizzle_orm.eq)(providers.active, true)).orderBy((0, import_drizzle_orm.asc)(providers.priority));
     if (!dbProviders || dbProviders.length === 0) {
       return config.ENABLE_DEMO_STREAMS ? buildProvidersWithDemos() : buildProviders();
     }
     const loaded = [];
     for (const p of dbProviders) {
-      const endpoints = await db.select().from(providerEndpoints).where((0, import_drizzle_orm2.and)((0, import_drizzle_orm2.eq)(providerEndpoints.providerId, p.id), (0, import_drizzle_orm2.eq)(providerEndpoints.active, true))).orderBy((0, import_drizzle_orm2.asc)(providerEndpoints.priority));
+      const endpoints = await db.select().from(providerEndpoints).where((0, import_drizzle_orm.and)((0, import_drizzle_orm.eq)(providerEndpoints.providerId, p.id), (0, import_drizzle_orm.eq)(providerEndpoints.active, true))).orderBy((0, import_drizzle_orm.asc)(providerEndpoints.priority));
       for (const ep of endpoints) {
         if (ep.urlTemplate) {
           loaded.push(
@@ -2556,7 +2605,7 @@ var PlaybackGateway = class {
 var playbackGateway = new PlaybackGateway();
 
 // src/modules/anime/repository.ts
-var import_drizzle_orm3 = require("drizzle-orm");
+var import_drizzle_orm2 = require("drizzle-orm");
 init_media();
 function rowToCard(row, genres) {
   return {
@@ -2587,7 +2636,7 @@ function rowToCard(row, genres) {
 async function genresFor(db, ids) {
   const byAnime = /* @__PURE__ */ new Map();
   if (ids.length === 0) return byAnime;
-  const rows = await db.select({ animeId: animeGenres.animeId, genre: animeGenres.genre }).from(animeGenres).where((0, import_drizzle_orm3.inArray)(animeGenres.animeId, ids));
+  const rows = await db.select({ animeId: animeGenres.animeId, genre: animeGenres.genre }).from(animeGenres).where((0, import_drizzle_orm2.inArray)(animeGenres.animeId, ids));
   for (const row of rows) {
     const list = byAnime.get(row.animeId) ?? [];
     list.push(row.genre);
@@ -2788,7 +2837,7 @@ var AnimeRepository = class {
    */
   async #replaceGenres(animeId, genres) {
     if (genres === void 0) return;
-    await this.db.delete(animeGenres).where((0, import_drizzle_orm3.eq)(animeGenres.animeId, animeId));
+    await this.db.delete(animeGenres).where((0, import_drizzle_orm2.eq)(animeGenres.animeId, animeId));
     if (genres.length === 0) return;
     const unique7 = dedupePreservingSpelling(genres);
     await this.db.insert(animeGenres).values(unique7.map((genre) => ({ animeId, genre }))).onConflictDoNothing();
@@ -2796,7 +2845,7 @@ var AnimeRepository = class {
   /** Studios follow the same omitted-versus-empty rule as genres. */
   async #replaceStudios(animeId, studios) {
     if (studios === void 0) return;
-    await this.db.delete(animeStudios).where((0, import_drizzle_orm3.eq)(animeStudios.animeId, animeId));
+    await this.db.delete(animeStudios).where((0, import_drizzle_orm2.eq)(animeStudios.animeId, animeId));
     if (studios.length === 0) return;
     await this.db.insert(animeStudios).values(studios.map((name) => ({ animeId, studioName: name, isMain: false }))).onConflictDoNothing();
   }
@@ -2807,7 +2856,7 @@ var AnimeRepository = class {
     if (entries.length === 0) return;
     await this.db.insert(animeExternalIds).values(entries.map(([idType, externalId]) => ({ animeId, idType, externalId }))).onConflictDoUpdate({
       target: [animeExternalIds.animeId, animeExternalIds.idType],
-      set: { externalId: import_drizzle_orm3.sql`excluded.external_id` }
+      set: { externalId: import_drizzle_orm2.sql`excluded.external_id` }
     });
   }
   /**
@@ -2841,12 +2890,12 @@ var AnimeRepository = class {
     const numericId = Number(anilistId);
     let record = null;
     if (Number.isFinite(numericId)) {
-      const [found] = await this.db.select().from(anime).where((0, import_drizzle_orm3.eq)(anime.anilistId, numericId)).limit(1);
+      const [found] = await this.db.select().from(anime).where((0, import_drizzle_orm2.eq)(anime.anilistId, numericId)).limit(1);
       record = found;
     }
     if (!record) {
       try {
-        const [found] = await this.db.select().from(anime).where((0, import_drizzle_orm3.eq)(anime.id, anilistId)).limit(1);
+        const [found] = await this.db.select().from(anime).where((0, import_drizzle_orm2.eq)(anime.id, anilistId)).limit(1);
         record = found;
       } catch {
         record = null;
@@ -2854,10 +2903,10 @@ var AnimeRepository = class {
     }
     if (!record) return null;
     const [genres, studios, relations, externalIds] = await Promise.all([
-      this.db.select({ genre: animeGenres.genre }).from(animeGenres).where((0, import_drizzle_orm3.eq)(animeGenres.animeId, record.id)),
-      this.db.select({ studioName: animeStudios.studioName }).from(animeStudios).where((0, import_drizzle_orm3.eq)(animeStudios.animeId, record.id)),
-      this.db.select().from(animeRelations).where((0, import_drizzle_orm3.eq)(animeRelations.animeId, record.id)),
-      this.db.select({ idType: animeExternalIds.idType, externalId: animeExternalIds.externalId }).from(animeExternalIds).where((0, import_drizzle_orm3.eq)(animeExternalIds.animeId, record.id))
+      this.db.select({ genre: animeGenres.genre }).from(animeGenres).where((0, import_drizzle_orm2.eq)(animeGenres.animeId, record.id)),
+      this.db.select({ studioName: animeStudios.studioName }).from(animeStudios).where((0, import_drizzle_orm2.eq)(animeStudios.animeId, record.id)),
+      this.db.select().from(animeRelations).where((0, import_drizzle_orm2.eq)(animeRelations.animeId, record.id)),
+      this.db.select({ idType: animeExternalIds.idType, externalId: animeExternalIds.externalId }).from(animeExternalIds).where((0, import_drizzle_orm2.eq)(animeExternalIds.animeId, record.id))
     ]);
     return {
       ...record,
@@ -2877,11 +2926,11 @@ var AnimeRepository = class {
   async getTotalEpisodes(anilistId) {
     const numericId = Number(anilistId);
     if (Number.isFinite(numericId)) {
-      const [row] = await this.db.select({ totalEpisodes: anime.totalEpisodes }).from(anime).where((0, import_drizzle_orm3.eq)(anime.anilistId, numericId)).limit(1);
+      const [row] = await this.db.select({ totalEpisodes: anime.totalEpisodes }).from(anime).where((0, import_drizzle_orm2.eq)(anime.anilistId, numericId)).limit(1);
       if (row?.totalEpisodes !== void 0) return row.totalEpisodes;
     }
     try {
-      const [row] = await this.db.select({ totalEpisodes: anime.totalEpisodes }).from(anime).where((0, import_drizzle_orm3.eq)(anime.id, anilistId)).limit(1);
+      const [row] = await this.db.select({ totalEpisodes: anime.totalEpisodes }).from(anime).where((0, import_drizzle_orm2.eq)(anime.id, anilistId)).limit(1);
       return row?.totalEpisodes ?? null;
     } catch {
       return null;
@@ -2890,11 +2939,11 @@ var AnimeRepository = class {
   async getLocalIdByAnilistId(anilistId) {
     const numericId = Number(anilistId);
     if (Number.isFinite(numericId)) {
-      const [record] = await this.db.select({ id: anime.id }).from(anime).where((0, import_drizzle_orm3.eq)(anime.anilistId, numericId)).limit(1);
+      const [record] = await this.db.select({ id: anime.id }).from(anime).where((0, import_drizzle_orm2.eq)(anime.anilistId, numericId)).limit(1);
       if (record?.id) return record.id;
     }
     try {
-      const [record] = await this.db.select({ id: anime.id }).from(anime).where((0, import_drizzle_orm3.eq)(anime.id, anilistId)).limit(1);
+      const [record] = await this.db.select({ id: anime.id }).from(anime).where((0, import_drizzle_orm2.eq)(anime.id, anilistId)).limit(1);
       return record?.id ?? null;
     } catch {
       return null;
@@ -2911,25 +2960,25 @@ var AnimeRepository = class {
     const conditions = [];
     if (options.season && options.seasonYear) {
       conditions.push(
-        (0, import_drizzle_orm3.and)((0, import_drizzle_orm3.eq)(anime.season, options.season), (0, import_drizzle_orm3.eq)(anime.seasonYear, options.seasonYear))
+        (0, import_drizzle_orm2.and)((0, import_drizzle_orm2.eq)(anime.season, options.season), (0, import_drizzle_orm2.eq)(anime.seasonYear, options.seasonYear))
       );
     }
-    if (options.status) conditions.push((0, import_drizzle_orm3.eq)(anime.status, options.status));
-    if (options.format) conditions.push((0, import_drizzle_orm3.eq)(anime.format, options.format));
-    const base = conditions.length > 0 ? (0, import_drizzle_orm3.and)(...conditions) : void 0;
+    if (options.status) conditions.push((0, import_drizzle_orm2.eq)(anime.status, options.status));
+    if (options.format) conditions.push((0, import_drizzle_orm2.eq)(anime.format, options.format));
+    const base = conditions.length > 0 ? (0, import_drizzle_orm2.and)(...conditions) : void 0;
     const order = {
-      popularity: [(0, import_drizzle_orm3.desc)(anime.popularity), (0, import_drizzle_orm3.desc)(anime.averageScore)],
-      score: [(0, import_drizzle_orm3.desc)(anime.averageScore), (0, import_drizzle_orm3.desc)(anime.popularity)],
+      popularity: [(0, import_drizzle_orm2.desc)(anime.popularity), (0, import_drizzle_orm2.desc)(anime.averageScore)],
+      score: [(0, import_drizzle_orm2.desc)(anime.averageScore), (0, import_drizzle_orm2.desc)(anime.popularity)],
       // `source_updated_at` is the provider's own updatedAt, so this is "what
       // changed upstream", not "what a background job last touched".
-      "recently-updated": [(0, import_drizzle_orm3.desc)(anime.sourceUpdatedAt), (0, import_drizzle_orm3.desc)(anime.popularity)],
-      "recently-added": [(0, import_drizzle_orm3.desc)(anime.createdAt), (0, import_drizzle_orm3.desc)(anime.popularity)],
-      title: [(0, import_drizzle_orm3.asc)(anime.canonicalTitle)],
-      newest: [(0, import_drizzle_orm3.desc)(anime.year), (0, import_drizzle_orm3.desc)(anime.seasonYear), (0, import_drizzle_orm3.desc)(anime.popularity)]
+      "recently-updated": [(0, import_drizzle_orm2.desc)(anime.sourceUpdatedAt), (0, import_drizzle_orm2.desc)(anime.popularity)],
+      "recently-added": [(0, import_drizzle_orm2.desc)(anime.createdAt), (0, import_drizzle_orm2.desc)(anime.popularity)],
+      title: [(0, import_drizzle_orm2.asc)(anime.canonicalTitle)],
+      newest: [(0, import_drizzle_orm2.desc)(anime.year), (0, import_drizzle_orm2.desc)(anime.seasonYear), (0, import_drizzle_orm2.desc)(anime.popularity)]
     };
     const orderBy = order[options.sort ?? "popularity"];
-    const rows = options.genre ? await this.db.select({ record: anime }).from(anime).innerJoin(animeGenres, (0, import_drizzle_orm3.eq)(animeGenres.animeId, anime.id)).where((0, import_drizzle_orm3.and)(base, import_drizzle_orm3.sql`lower(${animeGenres.genre}) = lower(${options.genre})`)).orderBy(...orderBy).limit(options.limit).offset(options.offset) : await this.db.select().from(anime).where(base).orderBy(...orderBy).limit(options.limit).offset(options.offset);
-    const [{ count }] = options.genre ? await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(anime).innerJoin(animeGenres, (0, import_drizzle_orm3.eq)(animeGenres.animeId, anime.id)).where((0, import_drizzle_orm3.and)(base, import_drizzle_orm3.sql`lower(${animeGenres.genre}) = lower(${options.genre})`)) : await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(anime).where(base);
+    const rows = options.genre ? await this.db.select({ record: anime }).from(anime).innerJoin(animeGenres, (0, import_drizzle_orm2.eq)(animeGenres.animeId, anime.id)).where((0, import_drizzle_orm2.and)(base, import_drizzle_orm2.sql`lower(${animeGenres.genre}) = lower(${options.genre})`)).orderBy(...orderBy).limit(options.limit).offset(options.offset) : await this.db.select().from(anime).where(base).orderBy(...orderBy).limit(options.limit).offset(options.offset);
+    const [{ count }] = options.genre ? await this.db.select({ count: import_drizzle_orm2.sql`count(*)::int` }).from(anime).innerJoin(animeGenres, (0, import_drizzle_orm2.eq)(animeGenres.animeId, anime.id)).where((0, import_drizzle_orm2.and)(base, import_drizzle_orm2.sql`lower(${animeGenres.genre}) = lower(${options.genre})`)) : await this.db.select({ count: import_drizzle_orm2.sql`count(*)::int` }).from(anime).where(base);
     const genresByAnime = await genresFor(
       this.db,
       rows.map((row) => row.record ? row.record.id : row.id)
@@ -2953,14 +3002,14 @@ var AnimeRepository = class {
   async search(query, limit) {
     const normalized = normalizeTitle(query);
     if (!normalized) return [];
-    const rows = await this.db.select({ record: anime }).from(anime).innerJoin(animeSearchIndex, (0, import_drizzle_orm3.eq)(animeSearchIndex.animeId, anime.id)).where(
-      (0, import_drizzle_orm3.or)(
-        (0, import_drizzle_orm3.ilike)(animeSearchIndex.normalized, `%${normalized}%`),
+    const rows = await this.db.select({ record: anime }).from(anime).innerJoin(animeSearchIndex, (0, import_drizzle_orm2.eq)(animeSearchIndex.animeId, anime.id)).where(
+      (0, import_drizzle_orm2.or)(
+        (0, import_drizzle_orm2.ilike)(animeSearchIndex.normalized, `%${normalized}%`),
         // Raw predicate kept as a fallback for exact substrings the
         // normaliser would mangle (punctuation-heavy titles).
-        (0, import_drizzle_orm3.ilike)(anime.canonicalTitle, `%${query}%`)
+        (0, import_drizzle_orm2.ilike)(anime.canonicalTitle, `%${query}%`)
       )
-    ).orderBy((0, import_drizzle_orm3.desc)(anime.popularity)).limit(limit);
+    ).orderBy((0, import_drizzle_orm2.desc)(anime.popularity)).limit(limit);
     const genresByAnime = await genresFor(
       this.db,
       rows.map((row) => row.record.id)
@@ -2971,7 +3020,7 @@ var AnimeRepository = class {
   }
   /** Persist relation edges, replacing whatever was there before. */
   async replaceRelations(animeId, detail) {
-    await this.db.delete(animeRelations).where((0, import_drizzle_orm3.eq)(animeRelations.animeId, animeId));
+    await this.db.delete(animeRelations).where((0, import_drizzle_orm2.eq)(animeRelations.animeId, animeId));
     if (detail.relations.length === 0) return;
     await this.db.insert(animeRelations).values(
       detail.relations.map((relation) => ({
@@ -2997,11 +3046,11 @@ var AnimeRepository = class {
     for (const episode of existing) {
       const patch = episodePatch(episode);
       if (Object.keys(patch).length === 0) continue;
-      await this.db.update(episodes).set(patch).where((0, import_drizzle_orm3.and)((0, import_drizzle_orm3.eq)(episodes.animeId, animeId), (0, import_drizzle_orm3.eq)(episodes.episodeNumber, episode.episodeNumber)));
+      await this.db.update(episodes).set(patch).where((0, import_drizzle_orm2.and)((0, import_drizzle_orm2.eq)(episodes.animeId, animeId), (0, import_drizzle_orm2.eq)(episodes.episodeNumber, episode.episodeNumber)));
     }
     const byNumber = new Map(inserted.map((row) => [row.episodeNumber, row.id]));
     for (const episode of existing) {
-      const [row] = await this.db.select({ id: episodes.id }).from(episodes).where((0, import_drizzle_orm3.and)((0, import_drizzle_orm3.eq)(episodes.animeId, animeId), (0, import_drizzle_orm3.eq)(episodes.episodeNumber, episode.episodeNumber))).limit(1);
+      const [row] = await this.db.select({ id: episodes.id }).from(episodes).where((0, import_drizzle_orm2.and)((0, import_drizzle_orm2.eq)(episodes.animeId, animeId), (0, import_drizzle_orm2.eq)(episodes.episodeNumber, episode.episodeNumber))).limit(1);
       if (row) byNumber.set(episode.episodeNumber, row.id);
     }
     const withExternal = incoming.filter((episode) => episode.externalId);
@@ -3044,23 +3093,23 @@ var AnimeRepository = class {
       slotSource: airingSchedule.source
     }).from(episodes).leftJoin(
       airingSchedule,
-      (0, import_drizzle_orm3.and)(
-        (0, import_drizzle_orm3.eq)(airingSchedule.animeId, episodes.animeId),
-        (0, import_drizzle_orm3.eq)(airingSchedule.episodeNumber, episodes.episodeNumber)
+      (0, import_drizzle_orm2.and)(
+        (0, import_drizzle_orm2.eq)(airingSchedule.animeId, episodes.animeId),
+        (0, import_drizzle_orm2.eq)(airingSchedule.episodeNumber, episodes.episodeNumber)
       )
-    ).where((0, import_drizzle_orm3.eq)(episodes.animeId, animeId)).orderBy(episodes.episodeNumber);
+    ).where((0, import_drizzle_orm2.eq)(episodes.animeId, animeId)).orderBy(episodes.episodeNumber);
   }
   /** One episode by number within a title. */
   async getEpisodeByNumber(animeId, episodeNumber) {
-    const [row] = await this.db.select().from(episodes).where((0, import_drizzle_orm3.and)((0, import_drizzle_orm3.eq)(episodes.animeId, animeId), (0, import_drizzle_orm3.eq)(episodes.episodeNumber, episodeNumber))).limit(1);
+    const [row] = await this.db.select().from(episodes).where((0, import_drizzle_orm2.and)((0, import_drizzle_orm2.eq)(episodes.animeId, animeId), (0, import_drizzle_orm2.eq)(episodes.episodeNumber, episodeNumber))).limit(1);
     return row ?? null;
   }
   async listEpisodes(animeId) {
-    return this.db.select().from(episodes).where((0, import_drizzle_orm3.eq)(episodes.animeId, animeId)).orderBy(episodes.episodeNumber);
+    return this.db.select().from(episodes).where((0, import_drizzle_orm2.eq)(episodes.animeId, animeId)).orderBy(episodes.episodeNumber);
   }
   /** One episode row by local id, used by the playback resolver. */
   async getEpisode(episodeId) {
-    const [record] = await this.db.select().from(episodes).where((0, import_drizzle_orm3.eq)(episodes.id, episodeId)).limit(1);
+    const [record] = await this.db.select().from(episodes).where((0, import_drizzle_orm2.eq)(episodes.id, episodeId)).limit(1);
     return record ?? null;
   }
   /**
@@ -3072,12 +3121,12 @@ var AnimeRepository = class {
    */
   async listParentTitles(animeIds) {
     if (animeIds.length === 0) return [];
-    const records = await this.db.select().from(anime).where((0, import_drizzle_orm3.inArray)(anime.id, animeIds));
+    const records = await this.db.select().from(anime).where((0, import_drizzle_orm2.inArray)(anime.id, animeIds));
     if (records.length === 0) return [];
     const ids = records.map((record) => record.id);
     const [genres, externalIds] = await Promise.all([
-      this.db.select().from(animeGenres).where((0, import_drizzle_orm3.inArray)(animeGenres.animeId, ids)),
-      this.db.select().from(animeExternalIds).where((0, import_drizzle_orm3.inArray)(animeExternalIds.animeId, ids))
+      this.db.select().from(animeGenres).where((0, import_drizzle_orm2.inArray)(animeGenres.animeId, ids)),
+      this.db.select().from(animeExternalIds).where((0, import_drizzle_orm2.inArray)(animeExternalIds.animeId, ids))
     ]);
     const genresByAnime = /* @__PURE__ */ new Map();
     for (const row of genres) {
@@ -3102,17 +3151,17 @@ var AnimeRepository = class {
     return this.db.select({
       providerSlug: episodeExternalIds.providerSlug,
       externalId: episodeExternalIds.externalId
-    }).from(episodeExternalIds).where((0, import_drizzle_orm3.eq)(episodeExternalIds.episodeId, episodeId));
+    }).from(episodeExternalIds).where((0, import_drizzle_orm2.eq)(episodeExternalIds.episodeId, episodeId));
   }
   /** Titles the sync jobs should refresh: never-synced ones plus stale ones. */
   async listForSync(limit, staleAfterSeconds) {
     const cutoff = Math.floor(Date.now() / 1e3) - staleAfterSeconds;
-    const rows = await this.db.select({ id: anime.id, anilistId: anime.anilistId }).from(anime).where((0, import_drizzle_orm3.or)(import_drizzle_orm3.sql`${anime.sourceUpdatedAt} is null`, import_drizzle_orm3.sql`${anime.sourceUpdatedAt} < ${cutoff}`)).orderBy(anime.sourceUpdatedAt).limit(limit);
+    const rows = await this.db.select({ id: anime.id, anilistId: anime.anilistId }).from(anime).where((0, import_drizzle_orm2.or)(import_drizzle_orm2.sql`${anime.sourceUpdatedAt} is null`, import_drizzle_orm2.sql`${anime.sourceUpdatedAt} < ${cutoff}`)).orderBy(anime.sourceUpdatedAt).limit(limit);
     return rows.filter((row) => row.anilistId != null).map((row) => ({ id: row.id, anilistId: String(row.anilistId) }));
   }
   /** Row count, used by the health check. */
   async count() {
-    const [{ count }] = await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(anime);
+    const [{ count }] = await this.db.select({ count: import_drizzle_orm2.sql`count(*)::int` }).from(anime);
     return Number(count ?? 0);
   }
   /**
@@ -3123,9 +3172,9 @@ var AnimeRepository = class {
    * "recently added" and "recently updated" keep working when AniList is down.
    */
   async listCards(options) {
-    const orderColumn = options.order === "recent" ? (0, import_drizzle_orm3.desc)(anime.createdAt) : (0, import_drizzle_orm3.desc)(anime.sourceUpdatedAt);
+    const orderColumn = options.order === "recent" ? (0, import_drizzle_orm2.desc)(anime.createdAt) : (0, import_drizzle_orm2.desc)(anime.sourceUpdatedAt);
     const rows = await this.db.select().from(anime).orderBy(orderColumn).limit(options.limit).offset(options.offset);
-    const [total] = await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(anime);
+    const [total] = await this.db.select({ count: import_drizzle_orm2.sql`count(*)::int` }).from(anime);
     if (rows.length === 0) return { items: [], total: Number(total?.count ?? 0) };
     const genresByAnime = await genresFor(
       this.db,
@@ -4054,7 +4103,7 @@ function registerAnimeRoutes(app, service, discovery, episodes2) {
 }
 
 // src/modules/manga/repository.ts
-var import_drizzle_orm4 = require("drizzle-orm");
+var import_drizzle_orm3 = require("drizzle-orm");
 init_media();
 var MANGA_SORTS = [
   "followed",
@@ -4133,12 +4182,12 @@ var MangaRepository = class {
   }
   /** Genres are replaced, not appended, so upstream renames do not accumulate. */
   async #replaceGenres(mangaId, genres) {
-    await this.db.delete(mangaGenres).where((0, import_drizzle_orm4.eq)(mangaGenres.mangaId, mangaId));
+    await this.db.delete(mangaGenres).where((0, import_drizzle_orm3.eq)(mangaGenres.mangaId, mangaId));
     if (genres.length === 0) return;
     await this.db.insert(mangaGenres).values(genres.map((genre) => ({ mangaId, genre }))).onConflictDoNothing();
   }
   async #replaceCredits(mangaId, credits) {
-    await this.db.delete(mangaCredits).where((0, import_drizzle_orm4.eq)(mangaCredits.mangaId, mangaId));
+    await this.db.delete(mangaCredits).where((0, import_drizzle_orm3.eq)(mangaCredits.mangaId, mangaId));
     if (credits.length === 0) return;
     await this.db.insert(mangaCredits).values(credits.map((credit) => ({ mangaId, role: credit.role, name: credit.name }))).onConflictDoNothing();
   }
@@ -4149,7 +4198,7 @@ var MangaRepository = class {
     if (entries.length === 0) return;
     await this.db.insert(mangaExternalIds).values(entries.map(([idType, externalId]) => ({ mangaId, idType, externalId }))).onConflictDoUpdate({
       target: [mangaExternalIds.mangaId, mangaExternalIds.idType],
-      set: { externalId: import_drizzle_orm4.sql`excluded.external_id` }
+      set: { externalId: import_drizzle_orm3.sql`excluded.external_id` }
     });
   }
   /** Fold every known title spelling into one searchable token blob. */
@@ -4164,18 +4213,18 @@ var MangaRepository = class {
   }
   async getByProviderId(providerId) {
     if (!providerId) return null;
-    const [record] = await this.db.select().from(manga).where((0, import_drizzle_orm4.eq)(manga.mangadexId, providerId)).limit(1);
+    const [record] = await this.db.select().from(manga).where((0, import_drizzle_orm3.eq)(manga.mangadexId, providerId)).limit(1);
     if (!record) return null;
     return { ...record, ...await this.#fanOut(record.id) };
   }
   async getById(localId) {
-    const [record] = await this.db.select().from(manga).where((0, import_drizzle_orm4.eq)(manga.id, localId)).limit(1);
+    const [record] = await this.db.select().from(manga).where((0, import_drizzle_orm3.eq)(manga.id, localId)).limit(1);
     if (!record) return null;
     return { ...record, ...await this.#fanOut(record.id) };
   }
   async getLocalIdByProviderId(providerId) {
     if (!providerId) return null;
-    const [record] = await this.db.select({ id: manga.id }).from(manga).where((0, import_drizzle_orm4.eq)(manga.mangadexId, providerId)).limit(1);
+    const [record] = await this.db.select({ id: manga.id }).from(manga).where((0, import_drizzle_orm3.eq)(manga.mangadexId, providerId)).limit(1);
     return record?.id ?? null;
   }
   /**
@@ -4187,17 +4236,17 @@ var MangaRepository = class {
    */
   async getByExternalId(idType, externalId) {
     if (!externalId) return null;
-    const [record] = await this.db.select({ id: manga.id, mangadexId: manga.mangadexId }).from(mangaExternalIds).innerJoin(manga, (0, import_drizzle_orm4.eq)(manga.id, mangaExternalIds.mangaId)).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(mangaExternalIds.idType, idType), (0, import_drizzle_orm4.eq)(mangaExternalIds.externalId, externalId))).limit(1);
+    const [record] = await this.db.select({ id: manga.id, mangadexId: manga.mangadexId }).from(mangaExternalIds).innerJoin(manga, (0, import_drizzle_orm3.eq)(manga.id, mangaExternalIds.mangaId)).where((0, import_drizzle_orm3.and)((0, import_drizzle_orm3.eq)(mangaExternalIds.idType, idType), (0, import_drizzle_orm3.eq)(mangaExternalIds.externalId, externalId))).limit(1);
     if (!record || !record.mangadexId) return null;
     return this.getByProviderId(record.mangadexId);
   }
   /** Genres, credits, relations and external ids for one title. */
   async #fanOut(mangaId) {
     const [genres, credits, relations, externalIds] = await Promise.all([
-      this.db.select({ genre: mangaGenres.genre, group: mangaGenres.group }).from(mangaGenres).where((0, import_drizzle_orm4.eq)(mangaGenres.mangaId, mangaId)),
-      this.db.select().from(mangaCredits).where((0, import_drizzle_orm4.eq)(mangaCredits.mangaId, mangaId)),
-      this.db.select().from(mangaRelations).where((0, import_drizzle_orm4.eq)(mangaRelations.mangaId, mangaId)),
-      this.db.select({ idType: mangaExternalIds.idType, externalId: mangaExternalIds.externalId }).from(mangaExternalIds).where((0, import_drizzle_orm4.eq)(mangaExternalIds.mangaId, mangaId))
+      this.db.select({ genre: mangaGenres.genre, group: mangaGenres.group }).from(mangaGenres).where((0, import_drizzle_orm3.eq)(mangaGenres.mangaId, mangaId)),
+      this.db.select().from(mangaCredits).where((0, import_drizzle_orm3.eq)(mangaCredits.mangaId, mangaId)),
+      this.db.select().from(mangaRelations).where((0, import_drizzle_orm3.eq)(mangaRelations.mangaId, mangaId)),
+      this.db.select({ idType: mangaExternalIds.idType, externalId: mangaExternalIds.externalId }).from(mangaExternalIds).where((0, import_drizzle_orm3.eq)(mangaExternalIds.mangaId, mangaId))
     ]);
     return {
       genres: genres.map((row) => row.genre),
@@ -4209,22 +4258,22 @@ var MangaRepository = class {
   }
   async list(options) {
     const conditions = [];
-    if (options.status) conditions.push((0, import_drizzle_orm4.eq)(manga.status, options.status));
-    if (!options.includeAdult) conditions.push((0, import_drizzle_orm4.eq)(manga.isAdult, false));
-    const base = conditions.length > 0 ? (0, import_drizzle_orm4.and)(...conditions) : void 0;
+    if (options.status) conditions.push((0, import_drizzle_orm3.eq)(manga.status, options.status));
+    if (!options.includeAdult) conditions.push((0, import_drizzle_orm3.eq)(manga.isAdult, false));
+    const base = conditions.length > 0 ? (0, import_drizzle_orm3.and)(...conditions) : void 0;
     const order = {
-      followed: [(0, import_drizzle_orm4.desc)(manga.followedCount)],
+      followed: [(0, import_drizzle_orm3.desc)(manga.followedCount)],
       // `rating` is a short string grade, so it is ordered as text. That is the
       // provider's own ordering of the column and is what the manga detail
       // shows; mixing it with a numeric sort would be meaningless.
-      rating: [(0, import_drizzle_orm4.desc)(manga.rating), (0, import_drizzle_orm4.desc)(manga.followedCount)],
-      newest: [(0, import_drizzle_orm4.desc)(manga.year), (0, import_drizzle_orm4.desc)(manga.followedCount)],
-      "recently-updated": [(0, import_drizzle_orm4.desc)(manga.updatedAt), (0, import_drizzle_orm4.desc)(manga.followedCount)],
-      title: [(0, import_drizzle_orm4.asc)(manga.canonicalTitle)]
+      rating: [(0, import_drizzle_orm3.desc)(manga.rating), (0, import_drizzle_orm3.desc)(manga.followedCount)],
+      newest: [(0, import_drizzle_orm3.desc)(manga.year), (0, import_drizzle_orm3.desc)(manga.followedCount)],
+      "recently-updated": [(0, import_drizzle_orm3.desc)(manga.updatedAt), (0, import_drizzle_orm3.desc)(manga.followedCount)],
+      title: [(0, import_drizzle_orm3.asc)(manga.canonicalTitle)]
     };
     const orderBy = order[options.sort ?? "followed"];
-    const rows = options.genre ? await this.db.select({ record: manga }).from(manga).innerJoin(mangaGenres, (0, import_drizzle_orm4.eq)(mangaGenres.mangaId, manga.id)).where((0, import_drizzle_orm4.and)(base, import_drizzle_orm4.sql`lower(${mangaGenres.genre}) = lower(${options.genre})`)).orderBy(...orderBy).limit(options.limit).offset(options.offset) : await this.db.select().from(manga).where(base).orderBy(...orderBy).limit(options.limit).offset(options.offset);
-    const [{ count }] = options.genre ? await this.db.select({ count: import_drizzle_orm4.sql`count(*)::int` }).from(manga).innerJoin(mangaGenres, (0, import_drizzle_orm4.eq)(mangaGenres.mangaId, manga.id)).where((0, import_drizzle_orm4.and)(base, import_drizzle_orm4.sql`lower(${mangaGenres.genre}) = lower(${options.genre})`)) : await this.db.select({ count: import_drizzle_orm4.sql`count(*)::int` }).from(manga).where(base);
+    const rows = options.genre ? await this.db.select({ record: manga }).from(manga).innerJoin(mangaGenres, (0, import_drizzle_orm3.eq)(mangaGenres.mangaId, manga.id)).where((0, import_drizzle_orm3.and)(base, import_drizzle_orm3.sql`lower(${mangaGenres.genre}) = lower(${options.genre})`)).orderBy(...orderBy).limit(options.limit).offset(options.offset) : await this.db.select().from(manga).where(base).orderBy(...orderBy).limit(options.limit).offset(options.offset);
+    const [{ count }] = options.genre ? await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(manga).innerJoin(mangaGenres, (0, import_drizzle_orm3.eq)(mangaGenres.mangaId, manga.id)).where((0, import_drizzle_orm3.and)(base, import_drizzle_orm3.sql`lower(${mangaGenres.genre}) = lower(${options.genre})`)) : await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(manga).where(base);
     return {
       items: rows.map((row) => row.record ? row.record : row),
       total: Number(count ?? 0)
@@ -4233,18 +4282,18 @@ var MangaRepository = class {
   async search(query, limit) {
     const normalized = normalizeTitle(query);
     if (!normalized) return [];
-    const rows = await this.db.select({ record: manga }).from(manga).innerJoin(mangaSearchIndex, (0, import_drizzle_orm4.eq)(mangaSearchIndex.mangaId, manga.id)).where(
-      (0, import_drizzle_orm4.or)(
-        (0, import_drizzle_orm4.ilike)(mangaSearchIndex.normalized, `%${normalized}%`),
+    const rows = await this.db.select({ record: manga }).from(manga).innerJoin(mangaSearchIndex, (0, import_drizzle_orm3.eq)(mangaSearchIndex.mangaId, manga.id)).where(
+      (0, import_drizzle_orm3.or)(
+        (0, import_drizzle_orm3.ilike)(mangaSearchIndex.normalized, `%${normalized}%`),
         // Raw predicate as a fallback: the normaliser strips punctuation that
         // some titles are legitimately searched by.
-        (0, import_drizzle_orm4.ilike)(manga.canonicalTitle, `%${query}%`)
+        (0, import_drizzle_orm3.ilike)(manga.canonicalTitle, `%${query}%`)
       )
-    ).orderBy((0, import_drizzle_orm4.desc)(manga.followedCount)).limit(limit);
+    ).orderBy((0, import_drizzle_orm3.desc)(manga.followedCount)).limit(limit);
     return rows.map((row) => row.record);
   }
   async replaceRelations(mangaId, detail) {
-    await this.db.delete(mangaRelations).where((0, import_drizzle_orm4.eq)(mangaRelations.mangaId, mangaId));
+    await this.db.delete(mangaRelations).where((0, import_drizzle_orm3.eq)(mangaRelations.mangaId, mangaId));
     if (detail.relations.length === 0) return;
     await this.db.insert(mangaRelations).values(
       detail.relations.map((relation) => ({
@@ -4302,12 +4351,12 @@ var MangaRepository = class {
     ).onConflictDoUpdate({
       target: [mangaChapters.mangaId, mangaChapters.language, mangaChapters.chapterNumber],
       set: {
-        mangadexChapterId: import_drizzle_orm4.sql`excluded.mangadex_chapter_id`,
-        volume: import_drizzle_orm4.sql`excluded.volume`,
-        title: import_drizzle_orm4.sql`excluded.title`,
-        pages: import_drizzle_orm4.sql`excluded.pages`,
-        scanlationGroup: import_drizzle_orm4.sql`excluded.scanlation_group`,
-        publishedAt: import_drizzle_orm4.sql`excluded.published_at`,
+        mangadexChapterId: import_drizzle_orm3.sql`excluded.mangadex_chapter_id`,
+        volume: import_drizzle_orm3.sql`excluded.volume`,
+        title: import_drizzle_orm3.sql`excluded.title`,
+        pages: import_drizzle_orm3.sql`excluded.pages`,
+        scanlationGroup: import_drizzle_orm3.sql`excluded.scanlation_group`,
+        publishedAt: import_drizzle_orm3.sql`excluded.published_at`,
         updatedAt: /* @__PURE__ */ new Date()
       }
     }).then((rows) => rows.length);
@@ -4320,18 +4369,18 @@ var MangaRepository = class {
    * this parses defensively and falls back to text for non-numeric values.
    */
   async listChapters(mangaId, language) {
-    const conditions = [(0, import_drizzle_orm4.eq)(mangaChapters.mangaId, mangaId)];
-    if (language) conditions.push((0, import_drizzle_orm4.eq)(mangaChapters.language, language));
-    return this.db.select().from(mangaChapters).where((0, import_drizzle_orm4.and)(...conditions)).orderBy(
-      import_drizzle_orm4.sql`nullif(regexp_replace(${mangaChapters.chapterNumber}, '[^0-9.]', '', 'g'), '')::numeric nulls last`,
+    const conditions = [(0, import_drizzle_orm3.eq)(mangaChapters.mangaId, mangaId)];
+    if (language) conditions.push((0, import_drizzle_orm3.eq)(mangaChapters.language, language));
+    return this.db.select().from(mangaChapters).where((0, import_drizzle_orm3.and)(...conditions)).orderBy(
+      import_drizzle_orm3.sql`nullif(regexp_replace(${mangaChapters.chapterNumber}, '[^0-9.]', '', 'g'), '')::numeric nulls last`,
       mangaChapters.chapterNumber
     );
   }
   async getChapter(localIdOrProviderId) {
     const [record] = await this.db.select().from(mangaChapters).where(
-      (0, import_drizzle_orm4.or)(
-        (0, import_drizzle_orm4.eq)(mangaChapters.id, localIdOrProviderId),
-        (0, import_drizzle_orm4.eq)(mangaChapters.mangadexChapterId, localIdOrProviderId)
+      (0, import_drizzle_orm3.or)(
+        (0, import_drizzle_orm3.eq)(mangaChapters.id, localIdOrProviderId),
+        (0, import_drizzle_orm3.eq)(mangaChapters.mangadexChapterId, localIdOrProviderId)
       )
     ).limit(1);
     return record ?? null;
@@ -4348,7 +4397,7 @@ var MangaRepository = class {
    * so a stale row would hand the reader a broken image rather than a cheap hit.
    */
   async getChapterPages(chapterId) {
-    const rows = await this.db.select().from(mangaChapterPages).where((0, import_drizzle_orm4.eq)(mangaChapterPages.chapterId, chapterId)).orderBy(mangaChapterPages.pageNumber);
+    const rows = await this.db.select().from(mangaChapterPages).where((0, import_drizzle_orm3.eq)(mangaChapterPages.chapterId, chapterId)).orderBy(mangaChapterPages.pageNumber);
     if (rows.length === 0) return null;
     if (rows[0].expiresAt.getTime() <= Date.now()) return null;
     const first = rows[0];
@@ -4361,9 +4410,9 @@ var MangaRepository = class {
   /** Replace a chapter's cached pages, dropping any that no longer exist. */
   async replaceChapterPages(chapterId, pages) {
     await this.db.delete(mangaChapterPages).where(
-      (0, import_drizzle_orm4.and)(
-        (0, import_drizzle_orm4.eq)(mangaChapterPages.chapterId, chapterId),
-        import_drizzle_orm4.sql`${mangaChapterPages.pageNumber} > ${pages.pages.length}`
+      (0, import_drizzle_orm3.and)(
+        (0, import_drizzle_orm3.eq)(mangaChapterPages.chapterId, chapterId),
+        import_drizzle_orm3.sql`${mangaChapterPages.pageNumber} > ${pages.pages.length}`
       )
     );
     const expiresAt = new Date(Date.now() + 10 * 6e4);
@@ -4383,7 +4432,7 @@ var MangaRepository = class {
   }
   /** Row count, for the health check. */
   async count() {
-    const [{ count }] = await this.db.select({ count: import_drizzle_orm4.sql`count(*)::int` }).from(manga);
+    const [{ count }] = await this.db.select({ count: import_drizzle_orm3.sql`count(*)::int` }).from(manga);
     return Number(count ?? 0);
   }
   /** All distinct genres across the catalogue, alphabetically. */
@@ -4993,7 +5042,7 @@ function registerMangaRoutes(app, service) {
 }
 
 // src/modules/schedule/service.ts
-var import_drizzle_orm5 = require("drizzle-orm");
+var import_drizzle_orm4 = require("drizzle-orm");
 init_config();
 init_errors();
 init_jikan();
@@ -5111,7 +5160,7 @@ var ScheduleService = class {
       coverUrl: anime.coverUrl,
       totalEpisodes: anime.totalEpisodes,
       slug: anime.slug
-    }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm5.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm5.and)((0, import_drizzle_orm5.gte)(airingSchedule.airingAt, from), (0, import_drizzle_orm5.lte)(airingSchedule.airingAt, to))).orderBy((0, import_drizzle_orm5.asc)(airingSchedule.airingAt)).limit(options.limit ?? 200);
+    }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm4.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.gte)(airingSchedule.airingAt, from), (0, import_drizzle_orm4.lte)(airingSchedule.airingAt, to))).orderBy((0, import_drizzle_orm4.asc)(airingSchedule.airingAt)).limit(options.limit ?? 200);
     const readAt = this.now();
     return rows.map((row) => ({
       ...row,
@@ -5149,7 +5198,7 @@ var ScheduleService = class {
       coverUrl: anime.coverUrl,
       totalEpisodes: anime.totalEpisodes,
       slug: anime.slug
-    }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm5.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm5.gt)(airingSchedule.airingAt, now)).orderBy((0, import_drizzle_orm5.asc)(airingSchedule.airingAt)).limit(limit).offset(offset);
+    }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm4.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm4.gt)(airingSchedule.airingAt, now)).orderBy((0, import_drizzle_orm4.asc)(airingSchedule.airingAt)).limit(limit).offset(offset);
     return rows.map((row) => ({
       ...row,
       airingState: airingStateAt(row.airingAt, now),
@@ -5180,7 +5229,7 @@ var ScheduleService = class {
       coverUrl: anime.coverUrl,
       totalEpisodes: anime.totalEpisodes,
       slug: anime.slug
-    }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm5.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm5.and)((0, import_drizzle_orm5.lte)(airingSchedule.airingAt, now), (0, import_drizzle_orm5.gte)(airingSchedule.airingAt, since))).orderBy((0, import_drizzle_orm5.desc)(airingSchedule.airingAt)).limit(limit).offset(offset);
+    }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm4.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.lte)(airingSchedule.airingAt, now), (0, import_drizzle_orm4.gte)(airingSchedule.airingAt, since))).orderBy((0, import_drizzle_orm4.desc)(airingSchedule.airingAt)).limit(limit).offset(offset);
     return rows.map((row) => ({
       ...row,
       airingState: airingStateAt(row.airingAt, now),
@@ -5221,7 +5270,7 @@ var ScheduleService = class {
   async forAnime(anilistId) {
     const localId = await this.animeRepo.getLocalIdByAnilistId(anilistId);
     if (!localId) throw AppError.notFound(`anime ${anilistId} is not cached`);
-    const rows = await this.db.select().from(airingSchedule).where((0, import_drizzle_orm5.eq)(airingSchedule.animeId, localId)).orderBy((0, import_drizzle_orm5.asc)(airingSchedule.episodeNumber));
+    const rows = await this.db.select().from(airingSchedule).where((0, import_drizzle_orm4.eq)(airingSchedule.animeId, localId)).orderBy((0, import_drizzle_orm4.asc)(airingSchedule.episodeNumber));
     const readAt = this.now();
     return rows.map((row) => ({
       ...row,
@@ -5252,7 +5301,7 @@ var ScheduleService = class {
   }
   /** Titles currently marked as releasing, for the sync job to walk. */
   async listAiringAnime(limit) {
-    const rows = await this.db.selectDistinct({ anilistId: anime.anilistId }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm5.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm5.eq)(anime.status, "RELEASING")).limit(limit);
+    const rows = await this.db.selectDistinct({ anilistId: anime.anilistId }).from(airingSchedule).innerJoin(anime, (0, import_drizzle_orm4.eq)(anime.id, airingSchedule.animeId)).where((0, import_drizzle_orm4.eq)(anime.status, "RELEASING")).limit(limit);
     return rows.map((row) => row.anilistId).filter((id) => id != null).map(String);
   }
 };
@@ -5670,7 +5719,7 @@ var PlaybackResolver = class {
 };
 
 // src/modules/playback/metadata.ts
-var import_drizzle_orm6 = require("drizzle-orm");
+var import_drizzle_orm5 = require("drizzle-orm");
 var import_zod5 = require("zod");
 var META_TTL_S = 7 * 86400;
 var persistedEpisodeMetadataSchema = import_zod5.z.object({
@@ -5716,7 +5765,7 @@ var PlaybackMetadataService = class {
     return Date.now() / 1e3 - sourceUpdatedAt < META_TTL_S;
   }
   async #read(episodeId) {
-    const [row] = await this.db.select().from(episodePlaybackMeta).where((0, import_drizzle_orm6.eq)(episodePlaybackMeta.episodeId, episodeId)).limit(1);
+    const [row] = await this.db.select().from(episodePlaybackMeta).where((0, import_drizzle_orm5.eq)(episodePlaybackMeta.episodeId, episodeId)).limit(1);
     if (!row) return null;
     return {
       episodeId,
@@ -6158,9 +6207,16 @@ async function buildApp(deps) {
   app.get("/health", async (_request, reply) => {
     let databaseOk = false;
     try {
-      await deps.db.execute(import_drizzle_orm7.sql`select 1`);
+      const rawSql = deps.db.rawClient;
+      if (rawSql) {
+        await rawSql`select 1`;
+      } else {
+        await deps.db.execute(import_drizzle_orm6.sql`select 1`);
+      }
+      setDatabaseOnline(true);
       databaseOk = true;
     } catch (error) {
+      setDatabaseOnline(false);
       _request.log.error({ err: error }, "database unavailable during health check");
     }
     const countOrNull = async (count) => {
@@ -6213,12 +6269,16 @@ async function getApp() {
   if (!appPromise) {
     appPromise = (async () => {
       const resources = await createResources();
-      const databaseReady = await waitForDatabase(resources.db, 2e3);
+      const databaseReady = await waitForDatabase(resources.rawSql, 2e3);
       if (!databaseReady) {
+        setDatabaseOnline(false);
         console.warn(
           "[zenkai] database not reachable at boot; starting degraded and reporting via /health"
         );
+      } else {
+        setDatabaseOnline(true);
       }
+      startPeriodicProbe(resources.rawSql, 15e3);
       return buildApp({ db: resources.db });
     })();
   }
@@ -6266,3 +6326,4 @@ var index_default = handler;
   getApp,
   handler
 });
+module.exports = Object.assign(index_default, module.exports);

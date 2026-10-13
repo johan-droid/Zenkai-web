@@ -18,7 +18,7 @@ import { sql } from "drizzle-orm";
 
 import { config } from "./config/index.js";
 import { cache } from "./cache/index.js";
-import { createDb, createResources, waitForDatabase, type Db } from "./db/client.js";
+import { createDb, createResources, waitForDatabase, startPeriodicProbe, setDatabaseOnline, type Db } from "./db/client.js";
 import { AppError, errorMessage } from "./http/errors.js";
 import { AnilistProvider } from "./providers/metadata/anilist.js";
 import {
@@ -180,9 +180,16 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   app.get("/health", async (_request, reply) => {
     let databaseOk = false;
     try {
-      await deps.db.execute(sql`select 1`);
+      const rawSql = (deps.db as any).rawClient;
+      if (rawSql) {
+        await rawSql`select 1`;
+      } else {
+        await deps.db.execute(sql`select 1`);
+      }
+      setDatabaseOnline(true);
       databaseOk = true;
     } catch (error) {
+      setDatabaseOnline(false);
       // Logged rather than rethrown: /health must answer even when the database
       // is the thing that is broken, and that is precisely when it is most
       // useful to see a 503.
@@ -255,13 +262,18 @@ export async function getApp(): Promise<FastifyInstance> {
   if (!appPromise) {
     appPromise = (async () => {
       const resources = await createResources();
-      const databaseReady = await waitForDatabase(resources.db, 2_000);
+      const databaseReady = await waitForDatabase(resources.rawSql, 2_000);
 
       if (!databaseReady) {
+        setDatabaseOnline(false);
         console.warn(
           "[zenkai] database not reachable at boot; starting degraded and reporting via /health",
         );
+      } else {
+        setDatabaseOnline(true);
       }
+
+      startPeriodicProbe(resources.rawSql, 15_000);
 
       return buildApp({ db: resources.db });
     })();
