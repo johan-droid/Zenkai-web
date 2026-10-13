@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node ../scripts/free-port.js 4000",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && esbuild src/app.ts --bundle --platform=node --target=node20 --format=cjs --footer:js=\"module.exports = Object.assign(handler, module.exports); module.exports.handler = handler; module.exports.default = handler;\" --outfile=dist/app.js && node -e \"fs.writeFileSync('dist/package.json', JSON.stringify({type:'commonjs'}))\" && cp dist/app.js dist/index.js && cp dist/app.js app.js && cp dist/app.js app.cjs",
+    "build": "tsc && esbuild src/app.ts --bundle --platform=node --conditions=import --target=node20 --format=cjs --footer:js=\"module.exports = Object.assign(handler, module.exports); module.exports.handler = handler; module.exports.default = handler;\" --outfile=dist/app.js && node -e \"fs.writeFileSync('dist/package.json', JSON.stringify({type:'commonjs'}))\" && cp dist/app.js dist/index.js && cp dist/app.js app.js && cp dist/app.js app.cjs",
     "prestart": "node ../scripts/free-port.js 4000",
     "start": "node dist/app.js",
     "db:generate": "node --import tsx ./node_modules/drizzle-kit/bin.cjs generate",
