@@ -13,29 +13,10 @@
 import type { FastifyInstance } from "fastify";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { config } from "./config/index.js";
-import { buildApp } from "./app.js";
-import { createResources, waitForDatabase } from "./db/client.js";
+import { getApp, default as appHandler } from "./app.js";
 import { errorMessage } from "./http/errors.js";
 
-let appPromise: Promise<FastifyInstance> | null = null;
-
-export async function getApp(): Promise<FastifyInstance> {
-  if (!appPromise) {
-    appPromise = (async () => {
-      const resources = await createResources();
-      const databaseReady = await waitForDatabase(resources.db, 2_000);
-
-      if (!databaseReady) {
-        console.warn(
-          "[zenkai] database not reachable at boot; starting degraded and reporting via /health",
-        );
-      }
-
-      return buildApp({ db: resources.db });
-    })();
-  }
-  return appPromise;
-}
+export { getApp };
 
 async function main(): Promise<void> {
   const app = await getApp();
@@ -70,9 +51,6 @@ if (!process.env.VERCEL) {
   });
 }
 
-// In Vercel serverless environments, export a handler
-export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const app = await getApp();
-  await app.ready();
-  app.server.emit("request", req, res);
-}
+// In Vercel serverless environments, export handler
+export const handler = appHandler;
+export default appHandler;

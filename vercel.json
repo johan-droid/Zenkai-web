@@ -4,7 +4,12 @@
     "backend": {
       "root": "backend",
       "framework": "fastify",
-      "entrypoint": "src/index.ts"
+      "entrypoint": "src/index.ts",
+      "functions": {
+        "**": {
+          "includeFiles": "package.json"
+        }
+      }
     },
     "frontend": {
       "root": "frontend",

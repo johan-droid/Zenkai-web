@@ -10,6 +10,7 @@
  * through `inject()` without binding a port.
  */
 
+import type { IncomingMessage, ServerResponse } from "node:http";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -17,7 +18,7 @@ import { sql } from "drizzle-orm";
 
 import { config } from "./config/index.js";
 import { cache } from "./cache/index.js";
-import { createDb, waitForDatabase, type Db } from "./db/client.js";
+import { createDb, createResources, waitForDatabase, type Db } from "./db/client.js";
 import { AppError, errorMessage } from "./http/errors.js";
 import { AnilistProvider } from "./providers/metadata/anilist.js";
 import {
@@ -248,8 +249,29 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   return app;
 }
 
-// Fallback export if a serverless runner loads app.ts directly
-export default async function handler(req: any, res: any) {
-  const { default: indexHandler } = await import("./index.js");
-  return indexHandler(req, res);
+let appPromise: Promise<FastifyInstance> | null = null;
+
+export async function getApp(): Promise<FastifyInstance> {
+  if (!appPromise) {
+    appPromise = (async () => {
+      const resources = await createResources();
+      const databaseReady = await waitForDatabase(resources.db, 2_000);
+
+      if (!databaseReady) {
+        console.warn(
+          "[zenkai] database not reachable at boot; starting degraded and reporting via /health",
+        );
+      }
+
+      return buildApp({ db: resources.db });
+    })();
+  }
+  return appPromise;
+}
+
+// Serverless HTTP handler for Vercel
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const app = await getApp();
+  await app.ready();
+  app.server.emit("request", req, res);
 }
