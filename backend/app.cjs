@@ -56,7 +56,7 @@ var import_dotenv, import_zod, booleanish, schema, config, isProduction;
 var init_config = __esm({
   "src/config/index.ts"() {
     "use strict";
-    import_dotenv = __toESM(require("dotenv"), 1);
+    import_dotenv = __toESM(require("dotenv"));
     import_zod = require("zod");
     import_dotenv.default.config();
     booleanish = import_zod.z.union([import_zod.z.boolean(), import_zod.z.string()]).transform(
@@ -520,26 +520,23 @@ var init_jikan = __esm({
   }
 });
 
-// src/index.ts
-var index_exports = {};
-__export(index_exports, {
-  default: () => index_default,
-  getApp: () => getApp,
-  handler: () => handler2
-});
-module.exports = __toCommonJS(index_exports);
-init_config();
-
 // src/app.ts
-var import_fastify = __toESM(require("fastify"), 1);
-var import_cors = __toESM(require("@fastify/cors"), 1);
-var import_rate_limit = __toESM(require("@fastify/rate-limit"), 1);
+var app_exports = {};
+__export(app_exports, {
+  buildApp: () => buildApp,
+  default: () => handler,
+  getApp: () => getApp
+});
+module.exports = __toCommonJS(app_exports);
+var import_fastify = __toESM(require("fastify"));
+var import_cors = __toESM(require("@fastify/cors"));
+var import_rate_limit = __toESM(require("@fastify/rate-limit"));
 var import_drizzle_orm6 = require("drizzle-orm");
 init_config();
 
 // src/db/client.ts
 var import_postgres_js = require("drizzle-orm/postgres-js");
-var import_postgres = __toESM(require("postgres"), 1);
+var import_postgres = __toESM(require("postgres"));
 var import_ioredis = require("ioredis");
 init_config();
 
@@ -6289,41 +6286,9 @@ async function handler(req, res) {
   await app.ready();
   app.server.emit("request", req, res);
 }
-
-// src/index.ts
-init_errors();
-async function main() {
-  const app = await getApp();
-  await app.listen({ port: config.PORT, host: config.HOST });
-  console.log(`\u{1F680} Zenkai Backend API running at http://${config.HOST}:${config.PORT}`);
-  const shutdown = async (signal) => {
-    app.log.info({ signal }, "shutting down");
-    try {
-      await app.close();
-      process.exit(0);
-    } catch (error) {
-      console.error("[zenkai] shutdown failed:", errorMessage(error));
-      process.exit(1);
-    }
-  };
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("unhandledRejection", (reason) => {
-    app.log.error({ err: reason }, "unhandled rejection");
-  });
-}
-if (!process.env.VERCEL) {
-  main().catch((error) => {
-    console.error("[zenkai] failed to start:", errorMessage(error));
-    process.exit(1);
-  });
-}
-Object.assign(handler, { default: handler, handler, getApp });
-var handler2 = handler;
-var index_default = handler;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  getApp,
-  handler
+  buildApp,
+  getApp
 });
-module.exports = Object.assign(index_default, module.exports);
+module.exports = Object.assign(handler, module.exports); module.exports.handler = handler; module.exports.default = handler;

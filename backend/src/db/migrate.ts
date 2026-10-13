@@ -17,7 +17,7 @@ const url =
   "postgresql://zenkai:zenkai_password@localhost:5432/zenkai_db?sslmode=disable";
 
 // One level up from src/db/ to reach the backend root, where migrations/ lives.
-const MIGRATIONS_DIR = fileURLToPath(new URL("../../migrations", import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, "../../migrations");
 
 async function main() {
   const sql = postgres(url, { max: 1 });

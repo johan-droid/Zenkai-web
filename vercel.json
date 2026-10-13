@@ -4,7 +4,7 @@
     "backend": {
       "root": "backend",
       "framework": "fastify",
-      "entrypoint": "app.cjs",
+      "entrypoint": "app.js",
       "buildCommand": "npm run build"
     },
     "frontend": {
