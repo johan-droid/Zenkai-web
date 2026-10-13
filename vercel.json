@@ -4,12 +4,8 @@
     "backend": {
       "root": "backend",
       "framework": "fastify",
-      "entrypoint": "src/index.ts",
-      "functions": {
-        "**": {
-          "includeFiles": "package.json"
-        }
-      }
+      "entrypoint": "app.cjs",
+      "buildCommand": "npm run build"
     },
     "frontend": {
       "root": "frontend",

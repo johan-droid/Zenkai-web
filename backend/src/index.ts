@@ -52,5 +52,6 @@ if (!process.env.VERCEL) {
 }
 
 // In Vercel serverless environments, export handler
+Object.assign(appHandler, { default: appHandler, handler: appHandler, getApp });
 export const handler = appHandler;
 export default appHandler;
