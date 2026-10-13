@@ -52,6 +52,13 @@ const searchQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+const animeIdParam = z.object({
+  id: z.string().trim().refine(
+    (val) => /^[1-9]\d*$/.test(val) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val),
+    { message: "id must be a positive integer or valid UUID" },
+  ),
+});
+
 /** Turn a Zod failure into a Fastify-shaped 400. */
 function parseOrThrow<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
@@ -128,13 +135,13 @@ export function registerAnimeRoutes(
 
   /** Full detail including relations, from the provider. */
   app.get("/api/v1/anime/:id", async (request) => {
-    const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
+    const { id } = parseOrThrow(animeIdParam, request.params);
     return service.getFull(id);
   });
 
   /** Relations for one title. */
   app.get("/api/v1/anime/:id/relations", async (request) => {
-    const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
+    const { id } = parseOrThrow(animeIdParam, request.params);
     const detail = await service.getByAnilistId(id);
     return { relations: detail.relations ?? [] };
   });
@@ -152,7 +159,7 @@ export function registerAnimeRoutes(
    * empty list, so a client can tell "no episodes" from "we could not check".
    */
   app.get("/api/v1/anime/:id/episodes", async (request) => {
-    const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
+    const { id } = parseOrThrow(animeIdParam, request.params);
 
     await service.getEpisodes(id);
 
@@ -170,8 +177,7 @@ export function registerAnimeRoutes(
    */
   app.get("/api/v1/anime/:id/episodes/:number", async (request) => {
     const { id, number } = parseOrThrow(
-      z.object({
-        id: z.string().trim().min(1),
+      animeIdParam.extend({
         number: z.coerce.number().int().positive(),
       }),
       request.params,
@@ -192,15 +198,14 @@ export function registerAnimeRoutes(
    * episode airs, which is the same staleness P3 removed from airing state.
    */
   app.get("/api/v1/anime/:id/episodes-next", async (request) => {
-    const { id } = parseOrThrow(z.object({ id: z.string().trim().min(1) }), request.params);
+    const { id } = parseOrThrow(animeIdParam, request.params);
     return { episode: await episodes.nextEpisode(id) };
   });
 
   /** Deterministic previous/next episode numbers, honouring gaps. */
   app.get("/api/v1/anime/:id/episodes/:number/navigation", async (request) => {
     const { id, number } = parseOrThrow(
-      z.object({
-        id: z.string().trim().min(1),
+      animeIdParam.extend({
         number: z.coerce.number().int().positive(),
       }),
       request.params,

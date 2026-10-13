@@ -80,8 +80,13 @@ export class AnimeService {
     const detail = await this.#anilist.getByAnilistId(anilistId);
     if (!detail) throw AppError.notFound(`anime ${anilistId} not found upstream`);
 
-    const localId = await this.repo.upsert(detail);
-    await this.repo.replaceRelations(localId, detail);
+    let localId: string = anilistId;
+    try {
+      localId = await this.repo.upsert(detail);
+      await this.repo.replaceRelations(localId, detail);
+    } catch {
+      // Database offline/unreachable fallback
+    }
 
     return { ...detail, id: localId };
   }

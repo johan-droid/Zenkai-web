@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { useMounted } from "@/hooks/use-debounce";
+import { usePWA } from "@/components/providers/pwa-provider";
 import { exportLibraryData, importLibraryData, parseImport } from "@/lib/library";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ type DataStatus = "idle" | "busy" | "ok" | "error";
 export function PreferencesPanel() {
   const { theme, setTheme } = useTheme();
   const mounted = useMounted();
+  const { isInstallable, isStandalone, installPWA } = usePWA();
   const [exportStatus, setExportStatus] = useState<DataStatus>("idle");
   const [importStatus, setImportStatus] = useState<DataStatus>("idle");
 
@@ -156,6 +158,32 @@ export function PreferencesPanel() {
           Export saves all your watch history, reading progress, and library lists as a JSON file.
           Import merges it back — nothing is deleted.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          Application
+        </span>
+
+        {isStandalone ? (
+          <div className="flex items-center gap-2 text-sm text-green-400">
+            <CheckCircle2 className="size-4" />
+            <span>Zenkai is running as an installed PWA.</span>
+          </div>
+        ) : isInstallable ? (
+          <Button
+            variant="outline"
+            className="glass rounded-xl gap-2 w-fit border-brand-400/40 text-brand-400 hover:text-brand-300"
+            onClick={installPWA}
+          >
+            <Download className="size-4" />
+            Install Zenkai App
+          </Button>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Progressive Web App installation is supported on Chromium and WebKit browsers.
+          </p>
+        )}
       </div>
     </section>
   );

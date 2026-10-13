@@ -1,11 +1,12 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import { Download, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Brand } from "@/components/layout/brand";
+import { usePWA } from "@/components/providers/pwa-provider";
 import { SearchCommand } from "@/components/search/search-command";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 export function Navbar() {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
+  const { isInstallable, isStandalone, installPWA } = usePWA();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -51,6 +53,19 @@ export function Navbar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          {isInstallable && !isStandalone ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={installPWA}
+              aria-label="Install Zenkai App"
+              className="glass hidden items-center gap-2 rounded-xl border-brand-400/40 text-brand-400 hover:text-brand-300 md:flex"
+            >
+              <Download className="size-4" />
+              <span>Install App</span>
+            </Button>
+          ) : null}
+
           <SearchCommand>
             <Button
               variant="ghost"
@@ -85,6 +100,7 @@ export function Navbar() {
 
 function MobileMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
+  const { isInstallable, isStandalone, installPWA } = usePWA();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -98,6 +114,20 @@ function MobileMenu({ pathname }: { pathname: string }) {
           <Brand />
         </SheetTitle>
         <nav className="mt-4 flex flex-col gap-6 px-1">
+          {isInstallable && !isStandalone ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setOpen(false);
+                installPWA();
+              }}
+              className="glass flex w-full items-center justify-start gap-3 rounded-xl border-brand-400/40 px-3 py-2.5 text-sm font-medium text-brand-400"
+            >
+              <Download className="size-4" />
+              <span>Install Zenkai App</span>
+            </Button>
+          ) : null}
           {navSections.map((section, index) => (
             <div key={section.title ?? index} className="flex flex-col gap-1">
               {section.title ? (
