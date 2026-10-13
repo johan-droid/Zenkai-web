@@ -173915,6 +173915,89 @@ init_config();
 init_config();
 init_client();
 
+// src/providers/streaming/matching.ts
+function extractEditionFeatures(title) {
+  const t = title.toLowerCase();
+  const seasonMatch = (t.match(
+    /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap|final\s*season|the\s*final)/gi
+  ) || []).map((s) => s.toLowerCase().replace(/\s+/g, ""));
+  const romanMatch = (t.match(/\b(ii|iii|iv|v|vi|vii|viii)\b/gi) || []).map(
+    (r) => "roman_" + r.toLowerCase()
+  );
+  const yearMatch = (t.match(/\b(19\d\d|20\d\d)\b/g) || []).map((y) => "year_" + y);
+  const endNumMatch = (t.match(/\b(\d+)\s*$/g) || []).map((n2) => "endnum_" + n2.trim());
+  const subtitleMatch = (t.match(
+    /\b(shippuden|enchousen|porori|shirogane|brotherhood|thousand[-\s]?year\s*blood\s*war|tybw)\b/gi
+  ) || []).map((s) => "sub_" + s.toLowerCase().replace(/[-\s]/g, ""));
+  const primes = (title.match(/'/g) || []).length;
+  const degrees = (title.match(/°/g) || []).length;
+  const exclamations = (title.match(/!/g) || []).length;
+  const tokens = /* @__PURE__ */ new Set([
+    ...seasonMatch,
+    ...romanMatch,
+    ...yearMatch,
+    ...endNumMatch,
+    ...subtitleMatch
+  ]);
+  if (primes > 0) tokens.add(`prime_${primes}`);
+  if (degrees > 0) tokens.add(`degree_${degrees}`);
+  if (exclamations > 0) tokens.add(`excl_${exclamations}`);
+  return tokens;
+}
+function setsEqual(a2, b2) {
+  if (a2.size !== b2.size) return false;
+  for (const item of a2) {
+    if (!b2.has(item)) return false;
+  }
+  return true;
+}
+function normalizeBase(title) {
+  return title.toLowerCase().replace(
+    /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap|final\s*season|the\s*final)/gi,
+    ""
+  ).replace(/\b(ii|iii|iv|v|vi|vii|viii)\b/gi, "").replace(/\b(19\d\d|20\d\d)\b/g, "").replace(/\b(\d+)\s*$/g, "").replace(/\b(shippuden|enchousen|porori|shirogane|brotherhood|thousand[-\s]?year\s*blood\s*war|tybw)\b/gi, "").replace(/[^a-z0-9]/g, "");
+}
+function matchShowTitle(candidates, target) {
+  const verifiedTitles = [];
+  if (target.canonicalTitle) verifiedTitles.push(target.canonicalTitle);
+  if (target.english) verifiedTitles.push(target.english);
+  if (target.romaji) verifiedTitles.push(target.romaji);
+  if (target.native) verifiedTitles.push(target.native);
+  if (Array.isArray(target.synonyms)) {
+    for (const syn of target.synonyms) {
+      if (syn) verifiedTitles.push(syn);
+    }
+  }
+  if (verifiedTitles.length === 0 || candidates.length === 0) return null;
+  for (const c3 of candidates) {
+    if (!c3.title) continue;
+    const cLower = c3.title.trim().toLowerCase();
+    for (const vt of verifiedTitles) {
+      if (cLower === vt.trim().toLowerCase()) {
+        return c3.id;
+      }
+    }
+  }
+  for (const c3 of candidates) {
+    if (!c3.title) continue;
+    const cFeatures = extractEditionFeatures(c3.title);
+    const cBase = normalizeBase(c3.title);
+    for (const vt of verifiedTitles) {
+      const vtFeatures = extractEditionFeatures(vt);
+      const vtBase = normalizeBase(vt);
+      if (!setsEqual(cFeatures, vtFeatures)) continue;
+      if (cBase === vtBase && cBase.length > 0) {
+        return c3.id;
+      }
+      if (cBase.startsWith(vtBase) || vtBase.startsWith(cBase)) {
+        const diff = Math.abs(cBase.length - vtBase.length);
+        if (diff <= 3) return c3.id;
+      }
+    }
+  }
+  return null;
+}
+
 // src/providers/streaming/health.ts
 var DECAY = 0.7;
 var FAILURE_THRESHOLD = 5;
@@ -174116,23 +174199,13 @@ var ConsumetProvider = class _ConsumetProvider {
     return _ConsumetProvider.findMatchingShow(candidates, record.canonicalTitle, record.titles);
   }
   static findMatchingShow(candidates, canonicalTitle, titles) {
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const verifiedTitles = [canonicalTitle];
-    if (titles?.english) verifiedTitles.push(titles.english);
-    if (titles?.romaji) verifiedTitles.push(titles.romaji);
-    if (titles?.native) verifiedTitles.push(titles.native);
-    if (Array.isArray(titles?.synonyms)) {
-      for (const syn of titles.synonyms) {
-        if (syn) verifiedTitles.push(syn);
-      }
-    }
-    const normalizedVerified = new Set(verifiedTitles.map(normalize).filter(Boolean));
-    const exact2 = candidates.find((candidate) => {
-      if (!candidate.title) return false;
-      const norm = normalize(candidate.title);
-      return normalizedVerified.has(norm) || verifiedTitles.some((vt) => vt.toLowerCase() === candidate.title.toLowerCase());
+    return matchShowTitle(candidates, {
+      canonicalTitle,
+      english: titles?.english,
+      romaji: titles?.romaji,
+      native: titles?.native,
+      synonyms: titles?.synonyms
     });
-    return exact2 ? exact2.id : null;
   }
   async listEpisodes(request) {
     const showId = await this.#findShow(request);
@@ -174295,56 +174368,7 @@ var InProcessProvider = class _InProcessProvider {
     }
   }
   static matchTitle(candidates, titles) {
-    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const verifiedTitles = [];
-    if (titles.canonicalTitle) verifiedTitles.push(titles.canonicalTitle);
-    if (titles.english) verifiedTitles.push(titles.english);
-    if (titles.romaji) verifiedTitles.push(titles.romaji);
-    if (titles.native) verifiedTitles.push(titles.native);
-    if (Array.isArray(titles.synonyms)) {
-      for (const syn of titles.synonyms) {
-        if (syn) verifiedTitles.push(syn);
-      }
-    }
-    const normalizedVerified = new Set(verifiedTitles.map(normalize).filter(Boolean));
-    const exact2 = candidates.find((c3) => {
-      if (!c3.title) return false;
-      const normC = normalize(c3.title);
-      return normalizedVerified.has(normC) || verifiedTitles.some((vt) => vt.toLowerCase() === c3.title.toLowerCase());
-    });
-    if (exact2) {
-      return exact2.id;
-    }
-    const seasonRegex = /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap)/gi;
-    const extractSeasonTokens = (str) => {
-      return (str.match(seasonRegex) || []).map((t) => t.toLowerCase().replace(/\s+/g, ""));
-    };
-    const wantedSeasonTokens = /* @__PURE__ */ new Set();
-    for (const vt of verifiedTitles) {
-      for (const token of extractSeasonTokens(vt)) {
-        wantedSeasonTokens.add(token);
-      }
-    }
-    const safeCandidate = candidates.find((c3) => {
-      if (!c3.title) return false;
-      const normC = normalize(c3.title);
-      const candidateSeasonTokens = extractSeasonTokens(c3.title);
-      for (const token of candidateSeasonTokens) {
-        if (!wantedSeasonTokens.has(token)) return false;
-      }
-      for (const token of wantedSeasonTokens) {
-        if (!candidateSeasonTokens.includes(token)) return false;
-      }
-      return Array.from(normalizedVerified).some((normTarget) => {
-        if (normC === normTarget) return true;
-        if (normC.startsWith(normTarget) || normTarget.startsWith(normC)) {
-          const diff = Math.abs(normC.length - normTarget.length);
-          return diff <= 4;
-        }
-        return false;
-      });
-    });
-    return safeCandidate ? safeCandidate.id : null;
+    return matchShowTitle(candidates, titles);
   }
   /**
    * Fetch episode list for the show from the provider.
@@ -174460,7 +174484,8 @@ function renderTemplate(template, request, requiredIdType) {
   if (/\{(?:tmdb_id|tmdb)\}/i.test(template) && !tmdbId) return null;
   if (/\{(?:mal_id|mal)\}/i.test(template) && !malId) return null;
   if (/\{(?:anilist_id|anilist)\}/i.test(template) && !anilistId) return null;
-  if (!/\{(?:episode|ep|e)\}/i.test(template) && !template.startsWith("http://") && !template.startsWith("https://")) {
+  const isDirectMediaStream = /\.(m3u8|mp4)(?:\?|$)/i.test(template);
+  if (!/\{(?:episode|ep|e)\}/i.test(template) && !isDirectMediaStream) {
     return null;
   }
   const rendered = template.replace(/\{anilist_id\}/gi, anilistId ?? "").replace(/\{anilist\}/gi, anilistId ?? "").replace(/\{mal_id\}/gi, malId ?? "").replace(/\{mal\}/gi, malId ?? "").replace(/\{tmdb_id\}/gi, tmdbId ?? "").replace(/\{tmdb\}/gi, tmdbId ?? "").replace(/\{id\}/gi, anilistId ?? malId ?? "").replace(/\{episode\}/gi, String(request.episodeNumber)).replace(/\{ep\}/gi, String(request.episodeNumber)).replace(/\{e\}/gi, String(request.episodeNumber)).replace(/\{slug\}/gi, slug || anilistId || "").replace(/\{lang\}/gi, request.language ?? "sub");
@@ -175586,10 +175611,9 @@ var AnimeRepository = class {
     }
     const withExternal = incoming.filter((episode) => episode.externalId);
     if (withExternal.length > 0) {
-      const byNumber2 = new Map(inserted.map((row) => [row.episodeNumber, row.id]));
       await this.db.insert(episodeExternalIds).values(
         withExternal.map((episode) => ({
-          episodeId: byNumber2.get(episode.episodeNumber),
+          episodeId: byNumber.get(episode.episodeNumber),
           providerSlug: "anilist",
           externalId: episode.externalId,
           providerEpisodeNumber: episode.episodeNumber

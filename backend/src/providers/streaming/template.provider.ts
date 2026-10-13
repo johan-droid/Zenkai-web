@@ -70,8 +70,9 @@ export function renderTemplate(
   if (/\{(?:mal_id|mal)\}/i.test(template) && !malId) return null;
   if (/\{(?:anilist_id|anilist)\}/i.test(template) && !anilistId) return null;
 
-  // A template without an episode placeholder cannot serve a specific episode unless it is a fixed stream URL
-  if (!/\{(?:episode|ep|e)\}/i.test(template) && !template.startsWith("http://") && !template.startsWith("https://")) {
+  // A template without an episode placeholder cannot serve a specific episode unless it is an explicit media stream (.m3u8, .mp4)
+  const isDirectMediaStream = /\.(m3u8|mp4)(?:\?|$)/i.test(template);
+  if (!/\{(?:episode|ep|e)\}/i.test(template) && !isDirectMediaStream) {
     return null;
   }
 

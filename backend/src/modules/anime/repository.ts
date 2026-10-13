@@ -748,8 +748,6 @@ export class AnimeRepository {
     // Link provider-native episode ids so playback skips a re-lookup per play.
     const withExternal = incoming.filter((episode) => episode.externalId);
     if (withExternal.length > 0) {
-      const byNumber = new Map(inserted.map((row) => [row.episodeNumber, row.id]));
-
       await this.db
         .insert(episodeExternalIds)
         .values(

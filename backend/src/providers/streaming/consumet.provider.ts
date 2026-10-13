@@ -16,6 +16,7 @@
 import { config } from "../../config/index.js";
 import { fetchJson } from "../../http/client.js";
 import { AnilistProvider } from "../metadata/anilist.js";
+import { matchShowTitle } from "./matching.js";
 import { parseResolution } from "./ranking.js";
 import type {
   PlaybackSource,
@@ -78,31 +79,13 @@ export class ConsumetProvider implements StreamingProvider {
     canonicalTitle: string,
     titles?: { english?: string | null; romaji?: string | null; native?: string | null; synonyms?: string[] } | null,
   ): string | null {
-    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-    const verifiedTitles: string[] = [canonicalTitle];
-    if (titles?.english) verifiedTitles.push(titles.english);
-    if (titles?.romaji) verifiedTitles.push(titles.romaji);
-    if (titles?.native) verifiedTitles.push(titles.native);
-    if (Array.isArray(titles?.synonyms)) {
-      for (const syn of titles.synonyms) {
-        if (syn) verifiedTitles.push(syn);
-      }
-    }
-
-    const normalizedVerified = new Set(verifiedTitles.map(normalize).filter(Boolean));
-
-    const exact = candidates.find((candidate) => {
-      if (!candidate.title) return false;
-      const norm = normalize(candidate.title);
-      return (
-        normalizedVerified.has(norm) ||
-        verifiedTitles.some((vt) => vt.toLowerCase() === candidate.title!.toLowerCase())
-      );
+    return matchShowTitle(candidates, {
+      canonicalTitle,
+      english: titles?.english,
+      romaji: titles?.romaji,
+      native: titles?.native,
+      synonyms: titles?.synonyms,
     });
-
-    // P0 Invariant: NEVER blindly fall back to candidates[0]. If identity cannot be established reliably, return null.
-    return exact ? exact.id : null;
   }
 
   async listEpisodes(

@@ -12,6 +12,7 @@
 
 import { config } from "../../config/index.js";
 import { AnilistProvider } from "../metadata/anilist.js";
+import { matchShowTitle } from "./matching.js";
 import { parseResolution } from "./ranking.js";
 import type {
   PlaybackSource,
@@ -179,78 +180,7 @@ export class InProcessProvider implements StreamingProvider {
       synonyms?: string[];
     },
   ): string | null {
-    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-    const verifiedTitles: string[] = [];
-    if (titles.canonicalTitle) verifiedTitles.push(titles.canonicalTitle);
-    if (titles.english) verifiedTitles.push(titles.english);
-    if (titles.romaji) verifiedTitles.push(titles.romaji);
-    if (titles.native) verifiedTitles.push(titles.native);
-    if (Array.isArray(titles.synonyms)) {
-      for (const syn of titles.synonyms) {
-        if (syn) verifiedTitles.push(syn);
-      }
-    }
-
-    const normalizedVerified = new Set(verifiedTitles.map(normalize).filter(Boolean));
-
-    // 1. Exact match against any verified title:
-    const exact = candidates.find((c) => {
-      if (!c.title) return false;
-      const normC = normalize(c.title);
-      return (
-        normalizedVerified.has(normC) ||
-        verifiedTitles.some((vt) => vt.toLowerCase() === c.title!.toLowerCase())
-      );
-    });
-
-    if (exact) {
-      return exact.id;
-    }
-
-    // 2. Strict constrained matching: candidate must share the core title tokens
-    // and must NOT introduce contradictory sequel, season, or format indicators.
-    const seasonRegex = /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap)/gi;
-
-    const extractSeasonTokens = (str: string) => {
-      return (str.match(seasonRegex) || []).map((t) => t.toLowerCase().replace(/\s+/g, ""));
-    };
-
-    const wantedSeasonTokens = new Set<string>();
-    for (const vt of verifiedTitles) {
-      for (const token of extractSeasonTokens(vt)) {
-        wantedSeasonTokens.add(token);
-      }
-    }
-
-    const safeCandidate = candidates.find((c) => {
-      if (!c.title) return false;
-      const normC = normalize(c.title);
-      const candidateSeasonTokens = extractSeasonTokens(c.title);
-
-      // If candidate has season/part/format tokens that target doesn't have, REJECT (sequel/special confusion)
-      for (const token of candidateSeasonTokens) {
-        if (!wantedSeasonTokens.has(token)) return false;
-      }
-
-      // If target has season tokens that candidate doesn't have, REJECT
-      for (const token of wantedSeasonTokens) {
-        if (!candidateSeasonTokens.includes(token)) return false;
-      }
-
-      // Must match either startsWith or endsWith on one of the verified forms, with word boundary
-      return Array.from(normalizedVerified).some((normTarget) => {
-        if (normC === normTarget) return true;
-        // If length difference is small (e.g. minor punctuation / subtitle), ensure high prefix match
-        if (normC.startsWith(normTarget) || normTarget.startsWith(normC)) {
-          const diff = Math.abs(normC.length - normTarget.length);
-          return diff <= 4; // allow at most 4 chars difference (e.g. punctuation, "tv", "hd")
-        }
-        return false;
-      });
-    });
-
-    return safeCandidate ? safeCandidate.id : null;
+    return matchShowTitle(candidates, titles);
   }
 
   /**
