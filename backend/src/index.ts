@@ -10,25 +10,35 @@
  * on every restart.
  */
 
+import type { FastifyInstance } from "fastify";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { config } from "./config/index.js";
 import { buildApp } from "./app.js";
 import { createResources, waitForDatabase } from "./db/client.js";
 import { errorMessage } from "./http/errors.js";
 
-async function main(): Promise<void> {
-  const resources = await createResources();
-  const databaseReady = await waitForDatabase(resources.db, 2_000);
+let appPromise: Promise<FastifyInstance> | null = null;
 
-  if (!databaseReady) {
-    // Not fatal: the server still starts so /health can report `degraded`, which
-    // is more useful than a crash loop when Postgres is merely slow to boot
-    // alongside this container.
-    console.warn(
-      "[zenkai] database not reachable at boot; starting degraded and reporting via /health",
-    );
+export async function getApp(): Promise<FastifyInstance> {
+  if (!appPromise) {
+    appPromise = (async () => {
+      const resources = await createResources();
+      const databaseReady = await waitForDatabase(resources.db, 2_000);
+
+      if (!databaseReady) {
+        console.warn(
+          "[zenkai] database not reachable at boot; starting degraded and reporting via /health",
+        );
+      }
+
+      return buildApp({ db: resources.db });
+    })();
   }
+  return appPromise;
+}
 
-  const app = await buildApp({ db: resources.db });
+async function main(): Promise<void> {
+  const app = await getApp();
 
   await app.listen({ port: config.PORT, host: config.HOST });
   console.log(`🚀 Zenkai Backend API running at http://${config.HOST}:${config.PORT}`);
@@ -36,9 +46,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, "shutting down");
     try {
-      // Close the listener first so no new request starts mid-teardown.
       await app.close();
-      await resources.close();
       process.exit(0);
     } catch (error) {
       console.error("[zenkai] shutdown failed:", errorMessage(error));
@@ -54,7 +62,17 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error) => {
-  console.error("[zenkai] failed to start:", errorMessage(error));
-  process.exit(1);
-});
+// In local / standalone environments, start listener immediately
+if (!process.env.VERCEL) {
+  main().catch((error) => {
+    console.error("[zenkai] failed to start:", errorMessage(error));
+    process.exit(1);
+  });
+}
+
+// In Vercel serverless environments, export a handler
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const app = await getApp();
+  await app.ready();
+  app.server.emit("request", req, res);
+}

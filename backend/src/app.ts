@@ -247,3 +247,9 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
 
   return app;
 }
+
+// Fallback export if a serverless runner loads app.ts directly
+export default async function handler(req: any, res: any) {
+  const { default: indexHandler } = await import("./index.js");
+  return indexHandler(req, res);
+}
