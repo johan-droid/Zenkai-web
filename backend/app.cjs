@@ -173921,13 +173921,13 @@ function extractEditionFeatures(title) {
   const seasonMatch = (t.match(
     /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap|final\s*season|the\s*final)/gi
   ) || []).map((s) => s.toLowerCase().replace(/\s+/g, ""));
-  const romanMatch = (t.match(/\b(ii|iii|iv|v|vi|vii|viii)\b/gi) || []).map(
+  const romanMatch = (t.match(/\b(ii|iii|iv|v|vi|vii|viii|ix)\b/gi) || []).map(
     (r) => "roman_" + r.toLowerCase()
   );
   const yearMatch = (t.match(/\b(19\d\d|20\d\d)\b/g) || []).map((y) => "year_" + y);
-  const endNumMatch = (t.match(/\b(\d+)\s*$/g) || []).map((n2) => "endnum_" + n2.trim());
+  const endNumMatch = (t.match(/\b([2-9]|1[0-6])\s*$/g) || []).map((n2) => "endnum_" + n2.trim());
   const subtitleMatch = (t.match(
-    /\b(shippuden|enchousen|porori|shirogane|brotherhood|thousand[-\s]?year\s*blood\s*war|tybw)\b/gi
+    /\b(shippuden|enchousen|porori|shirogane|brotherhood|thousand[-\s]?year\s*blood\s*war|tybw|alicization|reloaded|revolution)\b/gi
   ) || []).map((s) => "sub_" + s.toLowerCase().replace(/[-\s]/g, ""));
   const primes = (title.match(/'/g) || []).length;
   const degrees = (title.match(/°/g) || []).length;
@@ -173955,7 +173955,76 @@ function normalizeBase(title) {
   return title.toLowerCase().replace(
     /(?:season\s*\d+|\d+(?:st|nd|rd|th)\s*season|s\d+|part\s*\d+|cour\s*\d+|movie|film|ova|special|recap|final\s*season|the\s*final)/gi,
     ""
-  ).replace(/\b(ii|iii|iv|v|vi|vii|viii)\b/gi, "").replace(/\b(19\d\d|20\d\d)\b/g, "").replace(/\b(\d+)\s*$/g, "").replace(/\b(shippuden|enchousen|porori|shirogane|brotherhood|thousand[-\s]?year\s*blood\s*war|tybw)\b/gi, "").replace(/[^a-z0-9]/g, "");
+  ).replace(/\b(ii|iii|iv|v|vi|vii|viii|ix)\b/gi, "").replace(/\b(19\d\d|20\d\d)\b/g, "").replace(/\b([2-9]|1[0-6])\s*$/g, "").replace(/\b(shippuden|enchousen|porori|shirogane|brotherhood|thousand[-\s]?year\s*blood\s*war|tybw|alicization|reloaded|revolution)\b/gi, "").replace(/[^a-z0-9]/g, "");
+}
+function isValidId(val2) {
+  if (val2 === null || val2 === void 0) return false;
+  const s = String(val2).trim();
+  if (!s || s === "undefined" || s === "null" || s === "[object Object]") return false;
+  return true;
+}
+function buildShowCacheKey(providerSlug, request, record) {
+  const slug = (providerSlug || "unknown").trim().toLowerCase();
+  const rawAnilistId = [
+    request.anilistId,
+    record?.anilistId,
+    request.externalIds?.anilist
+  ].find(isValidId);
+  if (rawAnilistId !== void 0) {
+    return {
+      key: `${slug}:show:anilist:${String(rawAnilistId).trim()}`,
+      isAmbiguous: false,
+      tier: "canonical_id"
+    };
+  }
+  const rawMalId = [
+    request.malId,
+    request.externalIds?.mal
+  ].find(isValidId);
+  if (rawMalId !== void 0) {
+    return {
+      key: `${slug}:show:mal:${String(rawMalId).trim()}`,
+      isAmbiguous: false,
+      tier: "canonical_id"
+    };
+  }
+  const titleCandidates = [];
+  if (record?.canonicalTitle) titleCandidates.push(record.canonicalTitle);
+  if (request.animeTitle) titleCandidates.push(request.animeTitle);
+  if (record?.titles?.english) titleCandidates.push(record.titles.english);
+  if (record?.titles?.romaji) titleCandidates.push(record.titles.romaji);
+  const features = /* @__PURE__ */ new Set();
+  for (const t of titleCandidates) {
+    if (typeof t === "string" && t.trim().length > 0) {
+      for (const f of extractEditionFeatures(t)) {
+        features.add(f);
+      }
+    }
+  }
+  if (record?.year && Number.isFinite(record.year)) {
+    features.add(`year_${record.year}`);
+  }
+  if (record?.format && typeof record.format === "string") {
+    const fmt2 = record.format.trim().toLowerCase();
+    if (["movie", "ova", "ona", "special"].includes(fmt2)) {
+      features.add(`format_${fmt2}`);
+    }
+  }
+  const primaryTitle = record?.canonicalTitle || request.animeTitle || "";
+  const base = normalizeBase(primaryTitle);
+  if (features.size > 0 && base.length > 0) {
+    const sortedFeatures = Array.from(features).sort().join(":");
+    return {
+      key: `${slug}:show:features:${base}:${sortedFeatures}`,
+      isAmbiguous: false,
+      tier: "features"
+    };
+  }
+  return {
+    key: `${slug}:show:ambiguous:${base || "unknown"}`,
+    isAmbiguous: true,
+    tier: "ambiguous"
+  };
 }
 function matchShowTitle(candidates, target) {
   const verifiedTitles = [];
@@ -174337,35 +174406,43 @@ var InProcessProvider = class _InProcessProvider {
         title = record.canonicalTitle;
       }
     }
-    if (!title) return null;
-    const cacheKey = request.anilistId ? `${this.slug}:show:anilist:${request.anilistId}` : `${this.slug}:show:${title.toLowerCase()}`;
-    if (showIdCache.has(cacheKey)) {
+    if (!title && !record?.canonicalTitle) return null;
+    const { key: cacheKey, isAmbiguous } = buildShowCacheKey(this.slug, request, record);
+    if (!isAmbiguous && showIdCache.has(cacheKey)) {
       return showIdCache.get(cacheKey) ?? null;
     }
     try {
       const backend = await loadBackend(this.slug);
+      const searchQuery4 = title || record?.canonicalTitle;
       const results = await withTimeout(
-        backend.search(title, 1),
+        backend.search(searchQuery4, 1),
         2500,
         `${this.slug}.search`
       );
       const candidates = results?.results ?? [];
       if (candidates.length === 0) {
-        showIdCache.set(cacheKey, null);
+        if (!isAmbiguous) {
+          showIdCache.set(cacheKey, null);
+        }
         return null;
       }
       const matchedId = _InProcessProvider.matchTitle(candidates, {
-        canonicalTitle: title,
+        canonicalTitle: record?.canonicalTitle || title,
         english: record?.titles?.english ?? null,
         romaji: record?.titles?.romaji ?? null,
         native: record?.titles?.native ?? null,
         synonyms: record?.titles?.synonyms ?? []
       });
-      showIdCache.set(cacheKey, matchedId);
+      if (!isAmbiguous) {
+        showIdCache.set(cacheKey, matchedId);
+      }
       return matchedId;
     } catch {
       return null;
     }
+  }
+  static buildCacheKey(providerSlug, request, record) {
+    return buildShowCacheKey(providerSlug, request, record);
   }
   static matchTitle(candidates, titles) {
     return matchShowTitle(candidates, titles);
@@ -176397,13 +176474,13 @@ var EpisodeService = class {
         };
       });
     }
-    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => episodes2.length);
+    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => null);
     return {
       anilistId,
       episodes: episodes2,
       catalogueCount: episodes2.length,
       airedCount: episodes2.filter((episode) => episode.airingState === "aired").length,
-      knownTotal: total ?? episodes2.length
+      knownTotal: total ?? null
     };
   }
   /** One episode by number. */

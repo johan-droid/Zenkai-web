@@ -132,14 +132,14 @@ export class EpisodeService {
       });
     }
 
-    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => episodes.length);
+    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => null);
 
     return {
       anilistId,
       episodes,
       catalogueCount: episodes.length,
       airedCount: episodes.filter((episode) => episode.airingState === "aired").length,
-      knownTotal: total ?? episodes.length,
+      knownTotal: total ?? null,
     };
   }
 

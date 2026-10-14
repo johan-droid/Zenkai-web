@@ -78,12 +78,28 @@ Thumbs.db
 .mimocode/
 .gemini/
 .agents/
+.playwright/
+.playwright-mcp/
 tmp/
 tmp-*/
 /tmp
 /tmp-*
 .temp/
 .cache/
+
+# Cache & Timestamps
+.eslintcache
+.prettiercache
+vite.config.*.timestamp*
+vitest.config.*.timestamp*
+
+# Package & Archive Artifacts
+*.tar.gz
+*.tgz
+*.zip
+*.pid
+*.seed
+*.pid.lock
 
 # Deployment
 .vercel

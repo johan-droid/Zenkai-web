@@ -12,7 +12,7 @@
 
 import { config } from "../../config/index.js";
 import { AnilistProvider } from "../metadata/anilist.js";
-import { matchShowTitle } from "./matching.js";
+import { matchShowTitle, buildShowCacheKey } from "./matching.js";
 import { parseResolution } from "./ranking.js";
 import type {
   PlaybackSource,
@@ -132,42 +132,53 @@ export class InProcessProvider implements StreamingProvider {
         title = record.canonicalTitle;
       }
     }
-    if (!title) return null;
+    if (!title && !record?.canonicalTitle) return null;
 
-    const cacheKey = request.anilistId
-      ? `${this.slug}:show:anilist:${request.anilistId}`
-      : `${this.slug}:show:${title.toLowerCase()}`;
+    const { key: cacheKey, isAmbiguous } = buildShowCacheKey(this.slug, request, record);
 
-    if (showIdCache.has(cacheKey)) {
+    if (!isAmbiguous && showIdCache.has(cacheKey)) {
       return showIdCache.get(cacheKey) ?? null;
     }
 
     try {
       const backend = await loadBackend(this.slug);
+      const searchQuery = title || record?.canonicalTitle;
       const results = await withTimeout(
-        backend.search(title, 1),
+        backend.search(searchQuery, 1),
         2500,
         `${this.slug}.search`,
       );
       const candidates = results?.results ?? [];
       if (candidates.length === 0) {
-        showIdCache.set(cacheKey, null);
+        if (!isAmbiguous) {
+          showIdCache.set(cacheKey, null);
+        }
         return null;
       }
 
       const matchedId = InProcessProvider.matchTitle(candidates, {
-        canonicalTitle: title,
+        canonicalTitle: record?.canonicalTitle || title,
         english: record?.titles?.english ?? null,
         romaji: record?.titles?.romaji ?? null,
         native: record?.titles?.native ?? null,
         synonyms: record?.titles?.synonyms ?? [],
       });
 
-      showIdCache.set(cacheKey, matchedId);
+      if (!isAmbiguous) {
+        showIdCache.set(cacheKey, matchedId);
+      }
       return matchedId;
     } catch {
       return null;
     }
+  }
+
+  static buildCacheKey(
+    providerSlug: string,
+    request: ResolveRequest,
+    record?: any,
+  ) {
+    return buildShowCacheKey(providerSlug, request, record);
   }
 
   static matchTitle(

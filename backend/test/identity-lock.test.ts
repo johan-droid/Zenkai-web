@@ -6,6 +6,7 @@ import { ConsumetProvider } from "../src/providers/streaming/consumet.provider.j
 import { renderTemplate } from "../src/providers/streaming/template.provider.js";
 import { resolveEpisodeIdentity } from "../src/modules/playback/identity.js";
 import { EpisodeService } from "../src/modules/anime/episodes.js";
+import { buildShowCacheKey } from "../src/providers/streaming/matching.js";
 import type { AnimeRepository } from "../src/modules/anime/repository.js";
 
 describe("ZENKAI-P0-IDENTITY-LOCK: identity integrity verification", () => {
@@ -360,6 +361,196 @@ describe("ZENKAI-P0-IDENTITY-LOCK: identity integrity verification", () => {
       assert.ok(catalogue);
       assert.equal(catalogue.episodes.length, 1, "Movie must generate 1 episode, not 12");
       assert.equal(catalogue.knownTotal, 1);
+    });
+  });
+
+  describe("generalized provider cache identity isolation (buildShowCacheKey)", () => {
+    it("ensures canonical AniList IDs isolate multi-season franchise entries deterministically", () => {
+      const franchises = [
+        {
+          name: "Gintama",
+          seasons: [
+            { id: "918", title: "Gintama" },
+            { id: "9969", title: "Gintama'" },
+            { id: "15417", title: "Gintama': Enchousen" },
+            { id: "20996", title: "Gintama°" },
+            { id: "97889", title: "Gintama." },
+            { id: "99714", title: "Gintama. Porori-hen" },
+            { id: "100784", title: "Gintama. Shirogane no Tamashii-hen" },
+          ],
+        },
+        {
+          name: "Attack on Titan",
+          seasons: [
+            { id: "16498", title: "Attack on Titan" },
+            { id: "20958", title: "Attack on Titan Season 2" },
+            { id: "99147", title: "Attack on Titan Season 3" },
+            { id: "104578", title: "Attack on Titan Season 3 Part 2" },
+            { id: "110277", title: "Attack on Titan The Final Season" },
+            { id: "131681", title: "Attack on Titan The Final Season Part 2" },
+          ],
+        },
+        {
+          name: "Mob Psycho 100",
+          seasons: [
+            { id: "21507", title: "Mob Psycho 100" },
+            { id: "101338", title: "Mob Psycho 100 II" },
+            { id: "140439", title: "Mob Psycho 100 III" },
+          ],
+        },
+        {
+          name: "Bleach",
+          seasons: [
+            { id: "269", title: "Bleach" },
+            { id: "114446", title: "Bleach: Thousand-Year Blood War" },
+          ],
+        },
+        {
+          name: "That Time I Got Reincarnated as a Slime",
+          seasons: [
+            { id: "101280", title: "That Time I Got Reincarnated as a Slime" },
+            { id: "108511", title: "That Time I Got Reincarnated as a Slime Season 2" },
+            { id: "142320", title: "That Time I Got Reincarnated as a Slime Season 3" },
+          ],
+        },
+      ];
+
+      for (const franchise of franchises) {
+        const seenKeys = new Set<string>();
+        for (const entry of franchise.seasons) {
+          const req = {
+            animeId: entry.id,
+            anilistId: entry.id,
+            episodeNumber: 1,
+            language: "sub" as const,
+            animeTitle: entry.title,
+          };
+          const res = buildShowCacheKey("hianime", req);
+          assert.equal(res.isAmbiguous, false, `${franchise.name} ${entry.title} must not be marked ambiguous`);
+          assert.equal(res.tier, "canonical_id");
+          assert.equal(res.key, `hianime:show:anilist:${entry.id}`);
+          assert.ok(!seenKeys.has(res.key), `Duplicate cache key found for ${entry.title}: ${res.key}`);
+          seenKeys.add(res.key);
+        }
+      }
+    });
+
+    it("isolates remakes, reboots, and alternate editions with distinct canonical IDs", () => {
+      const editions = [
+        { orig: { id: "121", title: "Fullmetal Alchemist (2003)" }, remake: { id: "5114", title: "Fullmetal Alchemist: Brotherhood (2009)" } },
+        { orig: { id: "136", title: "Hunter x Hunter (1999)" }, remake: { id: "11061", title: "Hunter x Hunter (2011)" } },
+        { orig: { id: "120", title: "Fruits Basket (2001)" }, remake: { id: "105334", title: "Fruits Basket (2019)" } },
+        { orig: { id: "45", title: "Rurouni Kenshin (1996)" }, remake: { id: "145893", title: "Rurouni Kenshin (2023)" } },
+        { orig: { id: "154", title: "Shaman King (2001)" }, remake: { id: "119675", title: "Shaman King (2021)" } },
+      ];
+
+      for (const pair of editions) {
+        const resOrig = buildShowCacheKey("hianime", { anilistId: pair.orig.id, animeTitle: pair.orig.title });
+        const resRemake = buildShowCacheKey("hianime", { anilistId: pair.remake.id, animeTitle: pair.remake.title });
+
+        assert.equal(resOrig.isAmbiguous, false);
+        assert.equal(resRemake.isAmbiguous, false);
+        assert.notEqual(resOrig.key, resRemake.key, `Orig ${pair.orig.title} and remake ${pair.remake.title} must have distinct keys`);
+      }
+    });
+
+    it("disambiguates title-only requests using edition features when AniList ID is absent", () => {
+      // 1. Season numbers
+      const aotS2 = buildShowCacheKey("hianime", { animeTitle: "Attack on Titan Season 2" });
+      const aotS3 = buildShowCacheKey("hianime", { animeTitle: "Attack on Titan Season 3" });
+      assert.equal(aotS2.isAmbiguous, false);
+      assert.equal(aotS3.isAmbiguous, false);
+      assert.notEqual(aotS2.key, aotS3.key);
+      assert.match(aotS2.key, /season2/);
+      assert.match(aotS3.key, /season3/);
+
+      // 2. Roman numerals
+      const mob2 = buildShowCacheKey("hianime", { animeTitle: "Mob Psycho 100 II" });
+      const mob3 = buildShowCacheKey("hianime", { animeTitle: "Mob Psycho 100 III" });
+      assert.equal(mob2.isAmbiguous, false);
+      assert.equal(mob3.isAmbiguous, false);
+      assert.notEqual(mob2.key, mob3.key);
+      assert.match(mob2.key, /roman_ii/);
+      assert.match(mob3.key, /roman_iii/);
+
+      // 3. Release years
+      const hxh99 = buildShowCacheKey("hianime", { animeTitle: "Hunter x Hunter (1999)" });
+      const hxh11 = buildShowCacheKey("hianime", { animeTitle: "Hunter x Hunter (2011)" });
+      assert.equal(hxh99.isAmbiguous, false);
+      assert.equal(hxh11.isAmbiguous, false);
+      assert.notEqual(hxh99.key, hxh11.key);
+      assert.match(hxh99.key, /year_1999/);
+      assert.match(hxh11.key, /year_2011/);
+
+      // 4. Punctuation indicators (K-ON!, Working!!, Gintama', Gintama°)
+      const kon1 = buildShowCacheKey("hianime", { animeTitle: "K-ON!" });
+      const kon2 = buildShowCacheKey("hianime", { animeTitle: "K-ON!!" });
+      assert.equal(kon1.isAmbiguous, false);
+      assert.equal(kon2.isAmbiguous, false);
+      assert.notEqual(kon1.key, kon2.key);
+      assert.match(kon1.key, /excl_1/);
+      assert.match(kon2.key, /excl_2/);
+
+      const gintamaPrime = buildShowCacheKey("hianime", { animeTitle: "Gintama'" });
+      const gintamaDegree = buildShowCacheKey("hianime", { animeTitle: "Gintama°" });
+      assert.equal(gintamaPrime.isAmbiguous, false);
+      assert.equal(gintamaDegree.isAmbiguous, false);
+      assert.notEqual(gintamaPrime.key, gintamaDegree.key);
+      assert.match(gintamaPrime.key, /prime_1/);
+      assert.match(gintamaDegree.key, /degree_1/);
+
+      // 5. Franchise subtitles
+      const fmaBro = buildShowCacheKey("hianime", { animeTitle: "Fullmetal Alchemist: Brotherhood" });
+      assert.equal(fmaBro.isAmbiguous, false);
+      assert.match(fmaBro.key, /sub_brotherhood/);
+    });
+
+    it("marks bare unadorned titles without canonical ID as ambiguous to prevent cache poisoning", () => {
+      const ambiguousTitles = [
+        "Gintama",
+        "Attack on Titan",
+        "Hunter x Hunter",
+        "Bleach",
+        "Naruto",
+        "Mob Psycho 100",
+      ];
+
+      for (const title of ambiguousTitles) {
+        const res = buildShowCacheKey("hianime", { animeTitle: title });
+        assert.equal(
+          res.isAmbiguous,
+          true,
+          `Bare title '${title}' without ID or edition features must be flagged ambiguous`,
+        );
+        assert.equal(res.tier, "ambiguous");
+        assert.match(res.key, /^hianime:show:ambiguous:/);
+      }
+    });
+
+    it("isolates provider namespaces and falls back to MAL ID when AniList ID is absent", () => {
+      const req = {
+        animeId: "918",
+        malId: "918",
+        episodeNumber: 1,
+        language: "sub" as const,
+        animeTitle: "Gintama",
+      };
+
+      // Provider slug isolation
+      const hianimeKey = buildShowCacheKey("hianime", req);
+      const zoroKey = buildShowCacheKey("zoro", req);
+      assert.notEqual(hianimeKey.key, zoroKey.key);
+      assert.match(hianimeKey.key, /^hianime:/);
+      assert.match(zoroKey.key, /^zoro:/);
+
+      // MAL ID fallback
+      assert.equal(hianimeKey.tier, "canonical_id");
+      assert.equal(hianimeKey.key, "hianime:show:mal:918");
+      assert.equal(hianimeKey.isAmbiguous, false);
+
+      // InProcessProvider static delegator
+      const delegated = InProcessProvider.buildCacheKey("hianime", req as any);
+      assert.deepEqual(delegated, hianimeKey);
     });
   });
 });
