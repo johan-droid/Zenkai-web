@@ -77,6 +77,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+/** One-line server log for a failed resolve step. No headers, tokens or cookies — only the canonical episode key and the failure label. */
+function warn(request: ResolveRequest, reason: string): void {
+  console.warn(
+    `[hianime-embed] anilistId=${request.anilistId || "?"} ep=${request.episodeNumber} lang=${request.language} ${reason}`,
+  );
+}
+
 async function fetchText(url: string, headers: Record<string, string>, signal?: AbortSignal): Promise<{ body: string; cookie: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -283,8 +290,8 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
       });
       if (!isAmbiguous) showIdCache.set(cacheKey, matched);
       return matched;
-    } catch {
-      return null;
+    } catch (error) {
+      throw new Error(`search:${error instanceof Error ? error.message.slice(0, 100) : "failed"}`);
     }
   }
 
@@ -304,8 +311,8 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
       if (!token) return null;
       sessionCache.set(showId, { token, cookie: watch.cookie, at: Date.now() });
       return { token, cookie: watch.cookie };
-    } catch {
-      return null;
+    } catch (error) {
+      throw new Error(`session:${error instanceof Error ? error.message.slice(0, 100) : "failed"}`);
     }
   }
 
@@ -349,8 +356,8 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
 
       if (episodes.length > 0) episodesCache.set(showId, episodes);
       return episodes;
-    } catch {
-      return [];
+    } catch (error) {
+      throw new Error(`episodes:${error instanceof Error ? error.message.slice(0, 100) : "failed"}`);
     }
   }
 
@@ -359,18 +366,30 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
 
     try {
       const showId = await this.#findShowId(request);
-      if (!showId) return [];
+      if (!showId) {
+        warn(request, "no-show-match");
+        return [];
+      }
 
       const episodes = await this.#fetchEpisodes(showId);
       const target = episodes.find((ep) => ep.number === request.episodeNumber);
-      if (!target) return [];
+      if (!target) {
+        warn(request, episodes.length === 0 ? "no-episodes" : "episode-missing");
+        return [];
+      }
 
       const numericId = numericShowId(showId);
-      if (!numericId) return [];
+      if (!numericId) {
+        warn(request, "bad-show-id");
+        return [];
+      }
 
       // Reuse the episodes session (token rotates per page load, cached 60s).
       const session = await this.#session(showId);
-      if (!session) return [];
+      if (!session) {
+        warn(request, "no-session");
+        return [];
+      }
 
       const headers: Record<string, string> = {
         Referer: `${this.baseUrl}/watch/${showId}`,
@@ -392,7 +411,13 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
         ),
         FETCH_TIMEOUT_MS + 2_000,
         `${this.slug}.servers`,
-      ).catch(() => null);
+      ).catch((error: unknown) => {
+        warn(
+          request,
+          `servers:${error instanceof Error ? error.message.slice(0, 100) : "failed"}`,
+        );
+        return null;
+      });
       if (!availability) return [];
 
       const byName = new Map<string, ServerAvailability>();
@@ -428,8 +453,7 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
         setCachedServerAvailability(request.anilistId, request.episodeNumber, servers);
       }
 
-      const sources: PlaybackSource[] = [];
-      for (const language of wanted) {
+      const sources: PlaybackSource[] = [];      for (const language of wanted) {
         if (language === "sub" && !target.sub) continue;
         if (language === "dub" && !target.dub) continue;
         const list = servers.filter((server) =>
@@ -450,8 +474,10 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
         }
       }
 
+      if (sources.length === 0) warn(request, "no-servers-for-language");
       return sources;
-    } catch {
+    } catch (error) {
+      warn(request, error instanceof Error ? error.message.slice(0, 120) : "unknown");
       return [];
     }
   }

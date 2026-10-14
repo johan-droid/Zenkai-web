@@ -71,6 +71,18 @@ export function registerPlaybackRoutes(
     if (result.sources.length === 0) {
       // Every provider errored: 503, because this may well be playable.
       if (result.emptyReason === "all_failed") {
+        request.log.warn(
+          {
+            episodeId,
+            attempts: result.attempts.map((attempt) => ({
+              provider: attempt.providerSlug,
+              outcome: attempt.outcome,
+              error: attempt.error?.slice(0, 160),
+            })),
+            skipped: result.skipped ?? [],
+          },
+          "playback resolution failed on every provider",
+        );
         throw AppError.noSources("every playback provider failed", {
           attempts: result.attempts,
           skipped: result.skipped ?? [],
