@@ -64,9 +64,12 @@ export function createDb(connectionUrl = url) {
   const client = postgres(connectionUrl, {
     // Cap the pool: this service is a thin API in front of upstream providers,
     // so a large pool just holds Postgres connections open for no benefit.
+    // (On serverless, every instance holds its own pool — keep this small.)
     max: config.DATABASE_POOL_MAX,
     idle_timeout: 20,
-    connect_timeout: 2,
+    // Remote hosts (Neon/Supabase) need headroom for TLS + SCRAM auth on cold
+    // starts; 2s declared healthy hosts degraded.
+    connect_timeout: 10,
   });
   const guarded = createGuardedClient(client);
   const db = drizzle(guarded, { schema });
@@ -125,14 +128,13 @@ export async function createResources(): Promise<DbHandle> {
   const sql: Sql = postgres(url, {
     max: config.DATABASE_POOL_MAX,
     idle_timeout: 20,
-    connect_timeout: 2,
+    connect_timeout: 10,
   });
   const guarded = createGuardedClient(sql);
   const db = drizzle(guarded, { schema });
   (db as any).rawClient = sql;
 
-  if (config.REDIS_URL) {
-    // `lazyConnect` plus a short retry ceiling: a dead Redis degrades the cache
+  if (config.REDIS_URL) {    // `lazyConnect` plus a short retry ceiling: a dead Redis degrades the cache
     // to memory rather than stalling boot.
     const redis = new Redis(config.REDIS_URL, {
       lazyConnect: true,

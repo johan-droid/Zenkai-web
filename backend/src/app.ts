@@ -266,12 +266,22 @@ export async function getApp(): Promise<FastifyInstance> {
   if (!appPromise) {
     appPromise = (async () => {
       const resources = await createResources();
-      const databaseReady = await waitForDatabase(resources.rawSql, 2_000);
+      const databaseReady = await waitForDatabase(resources.rawSql, 10_000);
 
       if (!databaseReady) {
         setDatabaseOnline(false);
+        // Host only — never credentials. Tells the next reader whether the
+        // URL points at localhost (copied from local .env, unreachable from
+        // serverless), an SSL-requiring host with sslmode=disable, or a host
+        // that is genuinely down.
+        let host = "unparseable";
+        try {
+          host = new URL(config.DATABASE_URL).hostname || "unparseable";
+        } catch {
+          // keep default
+        }
         console.warn(
-          "[zenkai] database not reachable at boot; starting degraded and reporting via /health",
+          `[zenkai] database not reachable at boot (host=${host}); starting degraded and reporting via /health`,
         );
       } else {
         setDatabaseOnline(true);
