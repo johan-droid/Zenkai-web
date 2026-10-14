@@ -72,6 +72,17 @@ const schema = z.object({
   SELF_HOSTED_BASE_URL: z.string().url().optional(),
 
   /**
+   * HiAnime embed provider (zangetsu.cc mirror).
+   *
+   * Returns ready-to-play iframe embeds; the browser plays them, so the
+   * backend never resolves an m3u8 and stays inside serverless timeouts.
+   * On by default: the mirror is reachable without a VPN and the adapter
+   * fails fast (empty list) when it is not.
+   */
+  HIANIME_BASE_URL: z.string().url().default("https://zangetsu.cc"),
+  HIANIME_EMBED_ENABLED: booleanish.default(true),
+
+  /**
    * Scrape providers host unlicensed copies. Enabling one is a licensing
    * decision for whoever operates this service, so they are opt-in.
    */

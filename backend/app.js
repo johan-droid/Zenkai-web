@@ -42768,6 +42768,16 @@ var init_config = __esm({
       /** Self-hosted / licensed endpoints. These need no scraping. */
       SELF_HOSTED_BASE_URL: external_exports.string().url().optional(),
       /**
+       * HiAnime embed provider (zangetsu.cc mirror).
+       *
+       * Returns ready-to-play iframe embeds; the browser plays them, so the
+       * backend never resolves an m3u8 and stays inside serverless timeouts.
+       * On by default: the mirror is reachable without a VPN and the adapter
+       * fails fast (empty list) when it is not.
+       */
+      HIANIME_BASE_URL: external_exports.string().url().default("https://zangetsu.cc"),
+      HIANIME_EMBED_ENABLED: booleanish.default(true),
+      /**
        * Scrape providers host unlicensed copies. Enabling one is a licensing
        * decision for whoever operates this service, so they are opt-in.
        */
@@ -76153,7 +76163,7 @@ var require_connect = __commonJS({
         throw new InvalidArgumentError("maxCachedSessions must be a positive integer or zero");
       }
       const options = { path: socketPath, ...opts };
-      const sessionCache = new SessionCache(maxCachedSessions == null ? 100 : maxCachedSessions);
+      const sessionCache2 = new SessionCache(maxCachedSessions == null ? 100 : maxCachedSessions);
       timeout = timeout == null ? 1e4 : timeout;
       allowH2 = allowH2 != null ? allowH2 : false;
       return function connect2({ hostname, host, protocol, port, servername, localAddress, httpSocket }, callback) {
@@ -76165,7 +76175,7 @@ var require_connect = __commonJS({
           servername = servername || options.servername || util2.getServerName(host) || null;
           const sessionKey = servername || hostname;
           assert3(sessionKey);
-          const session = customSession || sessionCache.get(sessionKey) || null;
+          const session = customSession || sessionCache2.get(sessionKey) || null;
           port = port || 443;
           socket = tls4.connect({
             highWaterMark: 16384,
@@ -76181,7 +76191,7 @@ var require_connect = __commonJS({
             host: hostname
           });
           socket.on("session", function(session2) {
-            sessionCache.set(sessionKey, session2);
+            sessionCache2.set(sessionKey, session2);
           });
         } else {
           assert3(!httpSocket, "httpSocket can only be sent on TLS update");
@@ -174336,12 +174346,290 @@ var ConsumetProvider = class _ConsumetProvider {
   }
 };
 
+// src/providers/streaming/hianime-embed.provider.ts
+init_config();
+var UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+var FETCH_TIMEOUT_MS = 8e3;
+var showIdCache = /* @__PURE__ */ new Map();
+var episodesCache = /* @__PURE__ */ new Map();
+var sessionCache = /* @__PURE__ */ new Map();
+var SESSION_TTL_MS = 6e4;
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer3 = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer3);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer3);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    );
+  });
+}
+async function fetchText(url2, headers, signal) {
+  const controller = new AbortController();
+  const timer3 = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url2, {
+      headers: { "User-Agent": UA, ...headers },
+      signal: signal ?? controller.signal
+    });
+    if (!response.ok) throw new Error(`GET ${url2} -> ${response.status}`);
+    return {
+      body: await response.text(),
+      cookie: (response.headers.get("set-cookie") ?? "").split(";")[0] ?? ""
+    };
+  } finally {
+    clearTimeout(timer3);
+  }
+}
+async function fetchJson2(url2, headers) {
+  const controller = new AbortController();
+  const timer3 = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url2, {
+      headers: { "User-Agent": UA, ...headers }
+    });
+    if (!response.ok) throw new Error(`GET ${url2} -> ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer3);
+  }
+}
+function parseSearchResults(html3) {
+  const seen = /* @__PURE__ */ new Map();
+  const anchorPattern = /<a[^>]+class="film-poster-ahref"[^>]+href="\/([a-z0-9-]+)"[^>]+title="([^"]{1,160})"/gi;
+  let match;
+  while ((match = anchorPattern.exec(html3)) !== null) {
+    const id = match[1];
+    if (!seen.has(id)) seen.set(id, match[2]);
+  }
+  if (seen.size === 0) {
+    const fallback = /<a[^>]+href="\/([a-z0-9-]+)"[^>]+data-title="([^"]{1,160})"/gi;
+    while ((match = fallback.exec(html3)) !== null) {
+      const id = match[1];
+      if (!seen.has(id)) seen.set(id, match[2]);
+    }
+  }
+  return [...seen.entries()].map(([id, title]) => ({ id, title }));
+}
+function parseAjaxToken(html3) {
+  return (html3.match(/AJAX_TOKEN\s*=\s*"([^"]+)"/) ?? [])[1] ?? null;
+}
+function numericShowId(showId) {
+  const tail = showId.split("-").pop();
+  return tail && /^\d+$/.test(tail) ? tail : null;
+}
+function iframeUrl(serverName, type, episodeNumericId, ani, mal) {
+  const query = "?k=1&autoPlay=0&skipIntro=0&skipOutro=0";
+  if (serverName === "s-1") {
+    if (ani) return `https://flixera.co/embed/ani/${ani}/${type}${query}`;
+    if (mal) return `https://flixera.co/embed/mal/${mal}/${type}${query}`;
+    return `https://flixera.co/embed/ani/${episodeNumericId}/${type}${query}`;
+  }
+  if (serverName === "s-3") {
+    if (ani) return `https://cdn.4animo.xyz/embed/hd-2/ani/${ani}/${type}${query}`;
+    if (mal) return `https://cdn.4animo.xyz/embed/hd-2/mal/${mal}/${type}${query}`;
+    return `https://cdn.4animo.xyz/embed/hd-2/${episodeNumericId}/${type}${query}`;
+  }
+  return `https://cdn.4animo.xyz/embed/hd-1/${episodeNumericId}/${type}${query}`;
+}
+var HiAnimeEmbedProvider = class {
+  constructor(slug = "hianime-embed", name = "HiAnime", basePriority = 10, baseUrl = config.HIANIME_BASE_URL) {
+    this.slug = slug;
+    this.name = name;
+    this.basePriority = basePriority;
+    this.baseUrl = baseUrl;
+  }
+  kind = "scrape";
+  version = "1.0.0";
+  enabled = true;
+  capabilities = {
+    languages: ["sub", "dub"],
+    accessTypes: ["embed"],
+    supportsSubtitles: false,
+    supportsSkipMarkers: false,
+    requiresMalId: false
+  };
+  /**
+   * Four sequential fetches (search → watch → episodes → servers) on a slow
+   * mirror: needs headroom the single-call 3s default does not give. Embeds
+   * skip m3u8 probing, so this is the whole cost of the provider per request.
+   */
+  timeoutMs = 12e3;
+  #anilist = new AnilistProvider();
+  get isEnabled() {
+    return config.HIANIME_EMBED_ENABLED;
+  }
+  async #findShowId(request) {
+    let title = request.animeTitle;
+    let record = null;
+    if (!title && request.anilistId) {
+      const fetched = await this.#anilist.getByAnilistId(request.anilistId).catch(() => null);
+      record = fetched ?? null;
+      if (record?.canonicalTitle) title = record.canonicalTitle;
+    }
+    const query = title || record?.canonicalTitle;
+    if (!query) return null;
+    const { key: cacheKey, isAmbiguous } = buildShowCacheKey(this.slug, request, record);
+    if (!isAmbiguous && showIdCache.has(cacheKey)) return showIdCache.get(cacheKey) ?? null;
+    try {
+      const { body } = await withTimeout(
+        fetchText(`${this.baseUrl}/search?keyword=${encodeURIComponent(query)}`, {}),
+        FETCH_TIMEOUT_MS + 2e3,
+        `${this.slug}.search`
+      );
+      const matched = matchShowTitle(parseSearchResults(body), {
+        canonicalTitle: record?.canonicalTitle || title,
+        english: record?.titles?.english ?? null,
+        romaji: record?.titles?.romaji ?? null,
+        native: record?.titles?.native ?? null,
+        synonyms: record?.titles?.synonyms ?? []
+      });
+      if (!isAmbiguous) showIdCache.set(cacheKey, matched);
+      return matched;
+    } catch {
+      return null;
+    }
+  }
+  /** Live session for a show: token + cookie, reused within its TTL. */
+  async #session(showId) {
+    const cached = sessionCache.get(showId);
+    if (cached && Date.now() - cached.at < SESSION_TTL_MS) {
+      return { token: cached.token, cookie: cached.cookie };
+    }
+    try {
+      const watch = await withTimeout(
+        fetchText(`${this.baseUrl}/watch/${showId}`, { Referer: `${this.baseUrl}/` }),
+        FETCH_TIMEOUT_MS + 2e3,
+        `${this.slug}.watch`
+      );
+      const token = parseAjaxToken(watch.body);
+      if (!token) return null;
+      sessionCache.set(showId, { token, cookie: watch.cookie, at: Date.now() });
+      return { token, cookie: watch.cookie };
+    } catch {
+      return null;
+    }
+  }
+  async #fetchEpisodes(showId) {
+    const cached = episodesCache.get(showId);
+    if (cached) return cached;
+    const numericId = numericShowId(showId);
+    if (!numericId) return [];
+    try {
+      const session = await this.#session(showId);
+      if (!session) return [];
+      const headers = {
+        Referer: `${this.baseUrl}/watch/${showId}`,
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Page-Token": session.token
+      };
+      if (session.cookie) headers.Cookie = session.cookie;
+      const data2 = await withTimeout(
+        fetchJson2(
+          `${this.baseUrl}/ajax/episodes?animeId=${numericId}`,
+          headers
+        ),
+        FETCH_TIMEOUT_MS + 2e3,
+        `${this.slug}.episodes`
+      );
+      const rows = Array.isArray(data2.episodes) ? data2.episodes : [];
+      const episodes2 = rows.map((row) => ({
+        id: String(row.id ?? ""),
+        number: Number(row.number),
+        sub: Boolean(row.sub),
+        dub: Boolean(row.dub),
+        ani: typeof row.ani === "string" ? row.ani || null : null,
+        mal: typeof row.mal === "string" ? row.mal || null : null
+      })).filter((ep) => ep.id && Number.isFinite(ep.number));
+      if (episodes2.length > 0) episodesCache.set(showId, episodes2);
+      return episodes2;
+    } catch {
+      return [];
+    }
+  }
+  async resolve(request) {
+    if (!this.enabled || !this.isEnabled) return [];
+    try {
+      const showId = await this.#findShowId(request);
+      if (!showId) return [];
+      const episodes2 = await this.#fetchEpisodes(showId);
+      const target = episodes2.find((ep) => ep.number === request.episodeNumber);
+      if (!target) return [];
+      const numericId = numericShowId(showId);
+      if (!numericId) return [];
+      const session = await this.#session(showId);
+      if (!session) return [];
+      const headers = {
+        Referer: `${this.baseUrl}/watch/${showId}`,
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Page-Token": session.token
+      };
+      if (session.cookie) headers.Cookie = session.cookie;
+      const wanted = request.language === "multi" ? ["sub", "dub"] : [request.language];
+      const sources = [];
+      for (const language of wanted) {
+        if (language === "sub" && !target.sub) continue;
+        if (language === "dub" && !target.dub) continue;
+        const data2 = await withTimeout(
+          fetchJson2(
+            `${this.baseUrl}/ajax/server?episodeId=${target.id}&sub=${target.sub ? 1 : 0}&dub=${target.dub ? 1 : 0}`,
+            headers
+          ),
+          FETCH_TIMEOUT_MS + 2e3,
+          `${this.slug}.servers`
+        );
+        const servers = language === "dub" ? data2.dub ?? [] : data2.sub ?? [];
+        for (const server of servers) {
+          if (!server?.serverName) continue;
+          sources.push({
+            id: `${this.slug}:${target.id}:${server.serverName}:${language}`,
+            providerSlug: this.slug,
+            providerName: this.name,
+            endpointSlug: server.serverName,
+            accessType: "embed",
+            playbackUrl: iframeUrl(server.serverName, language, target.id, target.ani, target.mal),
+            language,
+            referer: `${this.baseUrl}/`,
+            priority: this.basePriority
+          });
+        }
+      }
+      return sources;
+    } catch {
+      return [];
+    }
+  }
+  async healthCheck() {
+    if (!this.enabled || !this.isEnabled) return false;
+    try {
+      const controller = new AbortController();
+      const timer3 = setTimeout(() => controller.abort(), 5e3);
+      try {
+        const response = await fetch(`${this.baseUrl}/`, {
+          headers: { "User-Agent": UA },
+          signal: controller.signal
+        });
+        return response.ok;
+      } finally {
+        clearTimeout(timer3);
+      }
+    } catch {
+      return false;
+    }
+  }
+};
+
 // src/providers/streaming/inprocess.provider.ts
 init_config();
 var backends = /* @__PURE__ */ new Map();
-var showIdCache = /* @__PURE__ */ new Map();
-var episodesCache = /* @__PURE__ */ new Map();
-function withTimeout(promise, ms, label) {
+var showIdCache2 = /* @__PURE__ */ new Map();
+var episodesCache2 = /* @__PURE__ */ new Map();
+function withTimeout2(promise, ms, label) {
   return new Promise((resolve, reject) => {
     const timer3 = setTimeout(() => {
       reject(new Error(`${label} timed out after ${ms}ms`));
@@ -174408,13 +174696,13 @@ var InProcessProvider = class _InProcessProvider {
     }
     if (!title && !record?.canonicalTitle) return null;
     const { key: cacheKey, isAmbiguous } = buildShowCacheKey(this.slug, request, record);
-    if (!isAmbiguous && showIdCache.has(cacheKey)) {
-      return showIdCache.get(cacheKey) ?? null;
+    if (!isAmbiguous && showIdCache2.has(cacheKey)) {
+      return showIdCache2.get(cacheKey) ?? null;
     }
     try {
       const backend = await loadBackend(this.slug);
       const searchQuery4 = title || record?.canonicalTitle;
-      const results = await withTimeout(
+      const results = await withTimeout2(
         backend.search(searchQuery4, 1),
         2500,
         `${this.slug}.search`
@@ -174422,7 +174710,7 @@ var InProcessProvider = class _InProcessProvider {
       const candidates = results?.results ?? [];
       if (candidates.length === 0) {
         if (!isAmbiguous) {
-          showIdCache.set(cacheKey, null);
+          showIdCache2.set(cacheKey, null);
         }
         return null;
       }
@@ -174434,7 +174722,7 @@ var InProcessProvider = class _InProcessProvider {
         synonyms: record?.titles?.synonyms ?? []
       });
       if (!isAmbiguous) {
-        showIdCache.set(cacheKey, matchedId);
+        showIdCache2.set(cacheKey, matchedId);
       }
       return matchedId;
     } catch {
@@ -174452,11 +174740,11 @@ var InProcessProvider = class _InProcessProvider {
    */
   async #fetchEpisodes(showId) {
     const cacheKey = `${this.slug}:episodes:${showId}`;
-    const cached = episodesCache.get(cacheKey);
+    const cached = episodesCache2.get(cacheKey);
     if (cached) return cached;
     try {
       const backend = await loadBackend(this.slug);
-      const info = await withTimeout(
+      const info = await withTimeout2(
         backend.fetchAnimeInfo(showId),
         2500,
         `${this.slug}.fetchAnimeInfo`
@@ -174469,7 +174757,7 @@ var InProcessProvider = class _InProcessProvider {
         isFiller: Boolean(ep.isFiller)
       })).filter((ep) => Number.isFinite(ep.number));
       if (episodes2.length > 0) {
-        episodesCache.set(cacheKey, episodes2);
+        episodesCache2.set(cacheKey, episodes2);
       }
       return episodes2;
     } catch {
@@ -174500,7 +174788,7 @@ var InProcessProvider = class _InProcessProvider {
       const targetEpisode = request.providerEpisodeId ? episodes2.find((ep) => ep.id === request.providerEpisodeId) : episodes2.find((ep) => ep.number === request.episodeNumber);
       if (!targetEpisode) return [];
       const backend = await loadBackend(this.slug);
-      const raw = await withTimeout(
+      const raw = await withTimeout2(
         backend.fetchEpisodeSources(targetEpisode.id),
         2500,
         `${this.slug}.fetchEpisodeSources`
@@ -174690,6 +174978,9 @@ function buildProviders() {
       );
     }
   }
+  if (config.HIANIME_EMBED_ENABLED) {
+    providers2.push(new HiAnimeEmbedProvider());
+  }
   if (config.CONSUMET_INPROCESS) {
     for (const backend of INPROCESS_BACKENDS) {
       providers2.push(new InProcessProvider(backend.slug, backend.name, backend.priority));
@@ -174754,7 +175045,12 @@ async function loadProvidersFromDb(db) {
         loaded.push(new InProcessProvider("Hianime", p.name, p.priority));
       } else if (p.isCustomAdapter && p.slug === "AnimePahe" && config.CONSUMET_INPROCESS) {
         loaded.push(new InProcessProvider("AnimePahe", p.name, p.priority));
+      } else if (p.isCustomAdapter && p.slug === "hianime-embed" && config.HIANIME_EMBED_ENABLED) {
+        loaded.push(new HiAnimeEmbedProvider("hianime-embed", p.name, p.priority));
       }
+    }
+    if (config.HIANIME_EMBED_ENABLED && !loaded.some((p) => p.slug === "hianime-embed")) {
+      loaded.push(new HiAnimeEmbedProvider());
     }
     if (config.ENABLE_DEMO_STREAMS) {
       for (const endpoint of DEMO_ENDPOINTS) {
@@ -178534,7 +178830,7 @@ var PlaybackResolver = class {
           };
           const sources = await withDeadline(
             provider.resolve(providerReq),
-            PROVIDER_DEADLINE_MS,
+            provider.timeoutMs ?? PROVIDER_DEADLINE_MS,
             provider.slug
           );
           const latencyMs = Date.now() - providerStarted;

@@ -16,6 +16,7 @@ import { providers as providersTable, providerEndpoints } from "../../db/schema/
 import type { Db } from "../../db/client.js";
 import { ConsumetProvider } from "./consumet.provider.js";
 import { healthRegistry } from "./health.js";
+import { HiAnimeEmbedProvider } from "./hianime-embed.provider.js";
 import { InProcessProvider } from "./inprocess.provider.js";
 import { TemplateProvider, type TemplateEndpoint } from "./template.provider.js";
 import type { AudioTrack, StreamingProvider } from "./types.js";
@@ -99,6 +100,13 @@ export function buildProviders(): StreamingProvider[] {
         new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
       );
     }
+  }
+
+  // HiAnime embeds are the primary path: the mirror is reachable without a
+  // VPN, each call is a plain fetch well inside serverless timeouts, and the
+  // browser plays the iframe so the backend never resolves an m3u8.
+  if (config.HIANIME_EMBED_ENABLED) {
+    providers.push(new HiAnimeEmbedProvider());
   }
 
   // In-process scrapers are the primary path: they remove a network hop and a
@@ -195,7 +203,13 @@ export async function loadProvidersFromDb(db?: Db): Promise<StreamingProvider[]>
         loaded.push(new InProcessProvider("Hianime", p.name, p.priority));
       } else if (p.isCustomAdapter && p.slug === "AnimePahe" && config.CONSUMET_INPROCESS) {
         loaded.push(new InProcessProvider("AnimePahe", p.name, p.priority));
+      } else if (p.isCustomAdapter && p.slug === "hianime-embed" && config.HIANIME_EMBED_ENABLED) {
+        loaded.push(new HiAnimeEmbedProvider("hianime-embed", p.name, p.priority));
       }
+    }
+
+    if (config.HIANIME_EMBED_ENABLED && !loaded.some((p) => p.slug === "hianime-embed")) {
+      loaded.push(new HiAnimeEmbedProvider());
     }
 
     if (config.ENABLE_DEMO_STREAMS) {

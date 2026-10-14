@@ -203,6 +203,13 @@ export interface StreamingProvider {
   /** Whether the provider is currently enabled. */
   enabled: boolean;
   readonly capabilities: ProviderCapabilities;
+  /**
+   * Resolve budget override in ms.
+   *
+   * Multi-step adapters (search → session → episodes → servers) need more
+   * than the single-call default. Absent means the resolver default.
+   */
+  readonly timeoutMs?: number;
 
   /** Search for anime by title, returning provider-native ids. */
   search?(query: string, limit?: number): Promise<Array<{ id: string; title: string }>>;

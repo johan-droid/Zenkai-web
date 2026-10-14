@@ -250,7 +250,7 @@ export class PlaybackResolver {
           };
           const sources = await withDeadline(
             provider.resolve(providerReq),
-            PROVIDER_DEADLINE_MS,
+            provider.timeoutMs ?? PROVIDER_DEADLINE_MS,
             provider.slug,
           );
           const latencyMs = Date.now() - providerStarted;
