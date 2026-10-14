@@ -109,12 +109,15 @@ export function rankSources(sources: PlaybackSource[]): RankedSource[] {
  * `multi` is kept unconditionally: a dual-audio track is strictly more useful
  * than no source at all, so dropping it would turn a playable episode into a
  * dead end.
+ *
+ * A `multi` request keeps everything: it asks for both tracks, so filtering
+ * to either one would discard playable sources the user explicitly asked for.
  */
 export function filterByLanguage(
   sources: PlaybackSource[],
   language?: string,
 ): PlaybackSource[] {
-  if (!language) return sources;
+  if (!language || language === "multi") return sources;
   return sources.filter(
     (source) => source.language === language || source.language === "multi",
   );

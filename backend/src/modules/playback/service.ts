@@ -139,15 +139,24 @@ export class PlaybackResolver {
     };
 
     const parentTitles = await this.animeRepo.listParentTitles([resolved.animeId]).catch(() => []);
-    const title = parentTitles[0];
+    let title = parentTitles[0];
+    if (!title && resolved.anilistId) {
+      // Synthetic episodes (ep-<anilist>-<n>) address the title by AniList id,
+      // not local uuid, so the parent lookup above misses. Look the title up
+      // in its own id space. Never fabricate one ("Anime 21" poisons provider
+      // search and can match the WRONG show); an absent title lets providers
+      // bridge via their own AniList lookup instead.
+      const byAnilist = await this.animeRepo.getByAnilistId(resolved.anilistId).catch(() => null);
+      if (byAnilist) title = byAnilist;
+    }
     const externalIds: Record<string, string | undefined> = { ...(title?.externalIds ?? {}) };
     if (resolved.anilistId) externalIds.anilist = resolved.anilistId;
 
     const titleString =
       title?.canonicalTitle ??
-      (title as any)?.titleEnglish ??
-      (title as any)?.titleRomaji ??
-      `Anime ${resolved.anilistId}`;
+      title?.englishTitle ??
+      title?.romajiTitle ??
+      null;
 
     const result = await this.resolve(
       {
@@ -156,7 +165,7 @@ export class PlaybackResolver {
         malId: externalIds.mal,
         episodeNumber: resolved.episodeNumber,
         language,
-        animeTitle: titleString,
+        ...(titleString ? { animeTitle: titleString } : {}),
         episodeExternalIds: resolved.identity.episode,
         externalIds: externalIds as Record<string, string>,
       },

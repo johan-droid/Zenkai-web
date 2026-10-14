@@ -174,8 +174,19 @@ export function partitionProviders(
     }
 
     if (!provider.capabilities.languages.includes(options.language)) {
-      skipped.push({ providerSlug: provider.slug, reason: "unsupported_language" });
-      continue;
+      // A `multi` request asks for both tracks: any provider serving at least
+      // one of them is eligible. Without this every multi request skips every
+      // provider (none declares a literal "multi" capability) and resolves to
+      // a false "no sources".
+      const multiSatisfied =
+        options.language === "multi" &&
+        provider.capabilities.languages.some(
+          (language) => language === "sub" || language === "dub" || language === "multi",
+        );
+      if (!multiSatisfied) {
+        skipped.push({ providerSlug: provider.slug, reason: "unsupported_language" });
+        continue;
+      }
     }
 
     const required = requiredIdTypeOf(provider);
