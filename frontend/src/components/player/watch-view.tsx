@@ -549,7 +549,19 @@ function PlayerArea({
   }
 
   // A 200 with an empty plan list is a fact about the episode, not an outage.
+  // The emptyReason tells the user what actually happened instead of a
+  // generic "no sources" that hides whether providers are down, blocked,
+  // or genuinely have nothing for this episode.
   if (sourcesQuery.data && sourcesQuery.data.plans.length === 0) {
+    const reason = sourcesQuery.data.emptyReason;
+    if (reason === "all_failed" || reason === "quarantined") {
+      return (
+        <ErrorMessage
+          message="Streaming providers could not be reached. Your network may be blocking them — a VPN often helps — or they may be temporarily down."
+          action={<RetryButton onClick={onRetry} />}
+        />
+      );
+    }
     return <ErrorMessage message="No sources are currently available for this episode." />;
   }
 
