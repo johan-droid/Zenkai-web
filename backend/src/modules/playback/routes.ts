@@ -94,6 +94,9 @@ export function registerPlaybackRoutes(
         // an empty list and cannot tell "nothing is hosted" from "we hold no id
         // that lets us ask anybody".
         skipped: result.skipped ?? [],
+        // Per-server availability when a provider reported it: lets the client
+        // grey out dead servers instead of offering them. Absent when unknown.
+        ...(result.servers ? { servers: result.servers } : {}),
         // Always present so the response shape does not change with the shelf.
         resolutionTimeMs: result.resolutionTimeMs,
       };
@@ -152,6 +155,8 @@ export function registerPlaybackRoutes(
       // Providers excluded before any call, with the reason. Exposed so a client
       // can explain an empty shelf rather than guessing at it.
       skipped: result.skipped ?? [],
+      // Per-server availability when a provider reported it.
+      ...(result.servers ? { servers: result.servers } : {}),
       resolutionTimeMs: result.resolutionTimeMs,
     };
   });

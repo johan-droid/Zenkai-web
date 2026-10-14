@@ -174423,6 +174423,27 @@ function numericShowId(showId) {
   const tail = showId.split("-").pop();
   return tail && /^\d+$/.test(tail) ? tail : null;
 }
+var SERVER_LABELS = {
+  "s-1": "Flixera",
+  "s-2": "HD-1",
+  "s-3": "HD-2"
+};
+function serverLabel(name) {
+  return SERVER_LABELS[name] ?? name.toUpperCase();
+}
+var availabilityCache = /* @__PURE__ */ new Map();
+var AVAILABILITY_TTL_MS = 6e4;
+function availabilityKey(anilistId, episodeNumber) {
+  return `${anilistId}:${episodeNumber}`;
+}
+function getCachedServerAvailability(anilistId, episodeNumber) {
+  const cached = availabilityCache.get(availabilityKey(anilistId, episodeNumber));
+  if (!cached || Date.now() - cached.at > AVAILABILITY_TTL_MS) return null;
+  return cached.servers;
+}
+function setCachedServerAvailability(anilistId, episodeNumber, servers) {
+  availabilityCache.set(availabilityKey(anilistId, episodeNumber), { servers, at: Date.now() });
+}
 function iframeUrl(serverName, type, episodeNumericId, ani, mal) {
   const query = "?k=1&autoPlay=0&skipIntro=0&skipOutro=0";
   if (serverName === "s-1") {
@@ -174571,28 +174592,61 @@ var HiAnimeEmbedProvider = class {
       };
       if (session.cookie) headers.Cookie = session.cookie;
       const wanted = request.language === "multi" ? ["sub", "dub"] : [request.language];
+      const availability = await withTimeout(
+        fetchJson2(
+          `${this.baseUrl}/ajax/server?episodeId=${target.id}&sub=${target.sub ? 1 : 0}&dub=${target.dub ? 1 : 0}`,
+          headers
+        ),
+        FETCH_TIMEOUT_MS + 2e3,
+        `${this.slug}.servers`
+      ).catch(() => null);
+      if (!availability) return [];
+      const byName = /* @__PURE__ */ new Map();
+      for (const server of availability.sub ?? []) {
+        if (!server?.serverName) continue;
+        const entry = byName.get(server.serverName) ?? {
+          name: server.serverName,
+          label: serverLabel(server.serverName),
+          sub: false,
+          dub: false
+        };
+        entry.sub = true;
+        byName.set(server.serverName, entry);
+      }
+      for (const server of availability.dub ?? []) {
+        if (!server?.serverName) continue;
+        const entry = byName.get(server.serverName) ?? {
+          name: server.serverName,
+          label: serverLabel(server.serverName),
+          sub: false,
+          dub: false
+        };
+        entry.dub = true;
+        byName.set(server.serverName, entry);
+      }
+      const order = (name) => {
+        const known = ["s-1", "s-2", "s-3"].indexOf(name);
+        return known === -1 ? 99 : known;
+      };
+      const servers = [...byName.values()].sort((a2, b2) => order(a2.name) - order(b2.name));
+      if (request.anilistId) {
+        setCachedServerAvailability(request.anilistId, request.episodeNumber, servers);
+      }
       const sources = [];
       for (const language of wanted) {
         if (language === "sub" && !target.sub) continue;
         if (language === "dub" && !target.dub) continue;
-        const data2 = await withTimeout(
-          fetchJson2(
-            `${this.baseUrl}/ajax/server?episodeId=${target.id}&sub=${target.sub ? 1 : 0}&dub=${target.dub ? 1 : 0}`,
-            headers
-          ),
-          FETCH_TIMEOUT_MS + 2e3,
-          `${this.slug}.servers`
+        const list = servers.filter(
+          (server) => language === "dub" ? server.dub : server.sub
         );
-        const servers = language === "dub" ? data2.dub ?? [] : data2.sub ?? [];
-        for (const server of servers) {
-          if (!server?.serverName) continue;
+        for (const server of list) {
           sources.push({
-            id: `${this.slug}:${target.id}:${server.serverName}:${language}`,
+            id: `${this.slug}:${target.id}:${server.name}:${language}`,
             providerSlug: this.slug,
             providerName: this.name,
-            endpointSlug: server.serverName,
+            endpointSlug: server.name,
             accessType: "embed",
-            playbackUrl: iframeUrl(server.serverName, language, target.id, target.ani, target.mal),
+            playbackUrl: iframeUrl(server.name, language, target.id, target.ani, target.mal),
             language,
             referer: `${this.baseUrl}/`,
             priority: this.basePriority
@@ -178765,6 +178819,10 @@ var PlaybackResolver = class {
       },
       resolved.identity.episode
     );
+    if (resolved.anilistId) {
+      const servers = getCachedServerAvailability(resolved.anilistId, resolved.episodeNumber);
+      if (servers) result.servers = servers;
+    }
     return { result, episode };
   }
   /** Resolve sources for one episode, served from cache when warm. */
@@ -179255,6 +179313,9 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
         // an empty list and cannot tell "nothing is hosted" from "we hold no id
         // that lets us ask anybody".
         skipped: result.skipped ?? [],
+        // Per-server availability when a provider reported it: lets the client
+        // grey out dead servers instead of offering them. Absent when unknown.
+        ...result.servers ? { servers: result.servers } : {},
         // Always present so the response shape does not change with the shelf.
         resolutionTimeMs: result.resolutionTimeMs
       };
@@ -179299,6 +179360,8 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
       // Providers excluded before any call, with the reason. Exposed so a client
       // can explain an empty shelf rather than guessing at it.
       skipped: result.skipped ?? [],
+      // Per-server availability when a provider reported it.
+      ...result.servers ? { servers: result.servers } : {},
       resolutionTimeMs: result.resolutionTimeMs
     };
   });

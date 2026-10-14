@@ -20,7 +20,6 @@ import {
   fetchEpisodeSources,
   initialPlanSelection,
   isUnreleased,
-  planToServerOption,
   type PlaybackExecution,
 } from "@/lib/api/zenkai";
 import { displayTitle } from "@/lib/media";
@@ -341,13 +340,14 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   }
 
   const media = detailQuery.data?.summary ?? null;
-  const serverOptions = plans.map(planToServerOption);
+  const servers = sourcesQuery.data?.servers;
 
   return (
     <div className={cn("flex flex-col gap-6", theaterMode ? "max-w-fit" : "max-w-6xl")}>
       <div className="flex items-center gap-2">
         <SourceSwitcher
-          options={serverOptions}
+          plans={plans}
+          servers={servers}
           selectedSourceId={selectedSourceId}
           loading={sourcesQuery.isLoading}
           language={language}

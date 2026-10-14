@@ -422,12 +422,30 @@ export const playbackSourcesResponseSchema = z.object({
   attempts: z.array(providerAttemptSchema),
   skipped: z.array(skippedProviderSchema),
   emptyReason: z.enum(["no_streams", "all_failed", "quarantined"]).optional(),
+  /**
+   * Per-server language availability for the episode, when a provider reports
+   * it. Optional so older responses still parse; absent means unknown, never
+   * "no server serves this episode".
+   */
+  servers: z
+    .array(
+      z.object({
+        name: z.string(),
+        label: z.string(),
+        sub: z.boolean(),
+        dub: z.boolean(),
+      }),
+    )
+    .optional(),
   resolutionTimeMs: z.number().nonnegative(),
 });
 
 export type PlaybackSource = z.infer<typeof playbackSourceSchema>;
 export type PlaybackPlan = z.infer<typeof playbackPlanSchema>;
 export type PlaybackSourcesResponse = z.infer<typeof playbackSourcesResponseSchema>;
+
+/** Per-server language availability for one episode, as the backend reports it. */
+export type ServerAvailability = NonNullable<PlaybackSourcesResponse["servers"]>[number];
 
 /**
  * What a client is allowed to play (P8 execution).
@@ -485,15 +503,6 @@ export const episodeMetadataSchema = z.object({
 });
 
 export type EpisodeMetadata = z.infer<typeof episodeMetadataSchema>;
-
-/** One server option in the switcher: canonical identity plus display facts. */
-export interface ServerOption {
-  sourceId: string;
-  label: string;
-  quality: string | null;
-  resolution: number | null;
-  language: PlaybackLanguage;
-}
 
 /* ------------------------------------------------------------------ */
 /* Fetchers                                                            */
@@ -1176,23 +1185,6 @@ export function fallbackPlanSelection(
   // An unknown source has no successor: -1 would silently wrap to plans[0].
   if (index < 0) return null;
   return plans[index + 1]?.sourceId ?? null;
-}
-
-/**
- * Map a canonical plan onto a switcher option.
- *
- * Only canonical display facts are exposed — server position, quality,
- * resolution, language. Provider slugs, endpoints and health details stay
- * server-side: the user picks "Server 2", never a provider implementation.
- */
-export function planToServerOption(plan: PlaybackPlan, index: number): ServerOption {
-  return {
-    sourceId: plan.sourceId,
-    label: `Server ${index + 1}`,
-    quality: plan.quality ?? null,
-    resolution: plan.resolution ?? null,
-    language: plan.language,
-  };
 }
 
 /* ------------------------------------------------------------------ */

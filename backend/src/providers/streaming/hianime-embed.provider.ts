@@ -140,6 +140,58 @@ function numericShowId(showId: string): string | null {
   return tail && /^\d+$/.test(tail) ? tail : null;
 }
 
+/** Display names for the site's server ids. Unknown ids fall back to upper-case. */
+export const SERVER_LABELS: Record<string, string> = {
+  "s-1": "Flixera",
+  "s-2": "HD-1",
+  "s-3": "HD-2",
+};
+
+export function serverLabel(name: string): string {
+  return SERVER_LABELS[name] ?? name.toUpperCase();
+}
+
+/** Per-server language availability for one episode, as the servers call reports it. */
+export interface ServerAvailability {
+  name: string;
+  label: string;
+  sub: boolean;
+  dub: boolean;
+}
+
+/**
+ * Availability by canonical episode key (`anilistId:episodeNumber`).
+ *
+ * Written during `resolve()` from the servers call — which reports the FULL
+ * server list for the episode, not just the requested language — and read by
+ * the resolver to answer "which servers serve this episode" without a second
+ * upstream round trip. Short TTL: availability is per-episode fact, cheap to
+ * re-derive, and must not outlive a site change by much.
+ */
+const availabilityCache = new Map<string, { servers: ServerAvailability[]; at: number }>();
+const AVAILABILITY_TTL_MS = 60_000;
+
+export function availabilityKey(anilistId: string, episodeNumber: number): string {
+  return `${anilistId}:${episodeNumber}`;
+}
+
+export function getCachedServerAvailability(
+  anilistId: string,
+  episodeNumber: number,
+): ServerAvailability[] | null {
+  const cached = availabilityCache.get(availabilityKey(anilistId, episodeNumber));
+  if (!cached || Date.now() - cached.at > AVAILABILITY_TTL_MS) return null;
+  return cached.servers;
+}
+
+function setCachedServerAvailability(
+  anilistId: string,
+  episodeNumber: number,
+  servers: ServerAvailability[],
+): void {
+  availabilityCache.set(availabilityKey(anilistId, episodeNumber), { servers, at: Date.now() });
+}
+
 /**
  * Build the player's iframe URL exactly as the site's own `loadPlayer` does.
  * `episodeNumericId` is the AJAX episode id, `ani`/`mal` are the `id/ep`
@@ -330,28 +382,67 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
       const wanted: AudioTrack[] =
         request.language === "multi" ? ["sub", "dub"] : [request.language];
 
+      // One servers call reports BOTH tracks: stash the full availability so
+      // the resolver can answer "which servers serve this episode" without a
+      // second upstream round trip, whatever language was asked for.
+      const availability = await withTimeout(
+        fetchJson<{ sub?: ZangetsuServer[]; dub?: ZangetsuServer[] }>(
+          `${this.baseUrl}/ajax/server?episodeId=${target.id}&sub=${target.sub ? 1 : 0}&dub=${target.dub ? 1 : 0}`,
+          headers,
+        ),
+        FETCH_TIMEOUT_MS + 2_000,
+        `${this.slug}.servers`,
+      ).catch(() => null);
+      if (!availability) return [];
+
+      const byName = new Map<string, ServerAvailability>();
+      for (const server of availability.sub ?? []) {
+        if (!server?.serverName) continue;
+        const entry = byName.get(server.serverName) ?? {
+          name: server.serverName,
+          label: serverLabel(server.serverName),
+          sub: false,
+          dub: false,
+        };
+        entry.sub = true;
+        byName.set(server.serverName, entry);
+      }
+      for (const server of availability.dub ?? []) {
+        if (!server?.serverName) continue;
+        const entry = byName.get(server.serverName) ?? {
+          name: server.serverName,
+          label: serverLabel(server.serverName),
+          sub: false,
+          dub: false,
+        };
+        entry.dub = true;
+        byName.set(server.serverName, entry);
+      }
+      // Ranked site order first (s-1, s-2, s-3), unknown ids after.
+      const order = (name: string): number => {
+        const known = ["s-1", "s-2", "s-3"].indexOf(name);
+        return known === -1 ? 99 : known;
+      };
+      const servers = [...byName.values()].sort((a, b) => order(a.name) - order(b.name));
+      if (request.anilistId) {
+        setCachedServerAvailability(request.anilistId, request.episodeNumber, servers);
+      }
+
       const sources: PlaybackSource[] = [];
       for (const language of wanted) {
         if (language === "sub" && !target.sub) continue;
         if (language === "dub" && !target.dub) continue;
-        const data = await withTimeout(
-          fetchJson<{ sub?: ZangetsuServer[]; dub?: ZangetsuServer[] }>(
-            `${this.baseUrl}/ajax/server?episodeId=${target.id}&sub=${target.sub ? 1 : 0}&dub=${target.dub ? 1 : 0}`,
-            headers,
-          ),
-          FETCH_TIMEOUT_MS + 2_000,
-          `${this.slug}.servers`,
+        const list = servers.filter((server) =>
+          language === "dub" ? server.dub : server.sub,
         );
-        const servers = language === "dub" ? (data.dub ?? []) : (data.sub ?? []);
-        for (const server of servers) {
-          if (!server?.serverName) continue;
+        for (const server of list) {
           sources.push({
-            id: `${this.slug}:${target.id}:${server.serverName}:${language}`,
+            id: `${this.slug}:${target.id}:${server.name}:${language}`,
             providerSlug: this.slug,
             providerName: this.name,
-            endpointSlug: server.serverName,
+            endpointSlug: server.name,
             accessType: "embed",
-            playbackUrl: iframeUrl(server.serverName, language, target.id, target.ani, target.mal),
+            playbackUrl: iframeUrl(server.name, language, target.id, target.ani, target.mal),
             language,
             referer: `${this.baseUrl}/`,
             priority: this.basePriority,

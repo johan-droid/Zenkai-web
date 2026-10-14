@@ -21,7 +21,6 @@ import {
   fetchEpisodeSources,
   initialPlanSelection,
   isUnreleased,
-  planToServerOption,
   ZenkaiContractError,
   ZENKAI_API_URL,
   type PlaybackExecution,
@@ -370,21 +369,36 @@ describe("watch flow helpers", () => {
     assert.equal(fallbackPlanSelection(plans, "never-tried"), null);
   });
 
-  it("maps a plan to a server option without provider details", () => {
-    const option = planToServerOption(plans[1]!, 1);
+  it("exposes server availability for the picker without provider details", async () => {
+    // The picker matches (server name, language) to a plan's sourceId: the
+    // endpointSlug is the server identity, the sourceId the execute identity.
+    // Display labels come from the backend's availability report, never from
+    // provider vocabulary constructed in the client.
+    stubFetch(() => ({
+      status: 200,
+      body: {
+        ...canonicalSources,
+        servers: [
+          { name: "s-2", label: "HD-1", sub: true, dub: false },
+          { name: "s-1", label: "Flixera", sub: false, dub: false },
+        ],
+      },
+    }));
 
-    // The sourceId is the canonical selection identity the execute boundary
-    // requires — never a display field. What the user sees carries no provider
-    // vocabulary: no slug, endpoint or health detail.
-    assert.equal(option.sourceId, "self-hosted:sub:2");
-    assert.equal(option.label, "Server 2");
-    assert.equal(option.quality, "720p");
-    assert.equal(option.resolution, 720);
-    assert.equal(option.language, "sub");
-    const displayed = JSON.stringify({ label: option.label, quality: option.quality, resolution: option.resolution, language: option.language });
-    assert.ok(!displayed.includes("self-hosted"));
-    assert.ok(!displayed.includes("provider"));
-    assert.ok(!displayed.includes("endpoint"));
+    const payload = await fetchEpisodeSources("4e77b765", "sub");
+
+    assert.deepEqual(payload.servers, [
+      { name: "s-2", label: "HD-1", sub: true, dub: false },
+      { name: "s-1", label: "Flixera", sub: false, dub: false },
+    ]);
+    // A server serving nothing is still reported (dulled), never dropped:
+    // absence of the row would read as "unknown", not "unavailable".
+    assert.equal(payload.servers?.[1]?.sub, false);
+    assert.equal(payload.servers?.[1]?.dub, false);
+    // And a response without the field still parses: unknown, not broken.
+    stubFetch(() => ({ status: 200, body: canonicalSources }));
+    const legacy = await fetchEpisodeSources("4e77b765", "sub");
+    assert.equal(legacy.servers, undefined);
   });
 
   it("keeps the canonical language values to sub/dub/multi only", () => {

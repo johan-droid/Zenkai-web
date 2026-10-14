@@ -18,6 +18,7 @@ import { cache } from "../../cache/index.js";
 import { probeUrl } from "../../http/client.js";
 import { AppError, errorMessage } from "../../http/errors.js";
 import { healthRegistry } from "../../providers/streaming/health.js";
+import { getCachedServerAvailability } from "../../providers/streaming/hianime-embed.provider.js";
 import { dedupeSources } from "../../providers/streaming/dedupe.js";
 import { filterByLanguage, rankSources } from "../../providers/streaming/ranking.js";
 import {
@@ -54,6 +55,13 @@ export interface ResolveResult {
    * read as "that provider had nothing".
    */
   skipped?: Array<{ providerSlug: string; reason: string; detail?: string }>;
+  /**
+   * Per-server language availability for the episode, when a provider reports
+   * it. Lets the client grey out servers that do not serve this episode
+   * instead of letting the user pick a dead one. Absent when no provider
+   * reports availability — never fabricated.
+   */
+  servers?: Array<{ name: string; label: string; sub: boolean; dub: boolean }>;
 }
 
 /** Stream URLs are signed and short-lived, bounding how long one is reused. */
@@ -154,6 +162,14 @@ export class PlaybackResolver {
       },
       resolved.identity.episode,
     );
+
+    // Server availability rides along when a provider reported it during the
+    // resolve above — no second upstream round trip, whatever language was
+    // asked for. Absent stays absent: never invented.
+    if (resolved.anilistId) {
+      const servers = getCachedServerAvailability(resolved.anilistId, resolved.episodeNumber);
+      if (servers) result.servers = servers;
+    }
 
     return { result, episode };
   }

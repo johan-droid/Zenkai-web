@@ -85,7 +85,6 @@ describe("hianime embed provider contract", () => {
     assert.ok(provider.capabilities.languages.includes("sub"));
     assert.ok(provider.capabilities.languages.includes("dub"));
   });
-
   it("stays inert when disabled via config", async () => {
     const provider = new HiAnimeEmbedProvider();
     provider.enabled = false;
@@ -99,5 +98,17 @@ describe("hianime embed provider contract", () => {
       }),
       [],
     );
+  });
+
+  it("labels known servers and upper-cases unknown ones", async () => {
+    const { serverLabel, getCachedServerAvailability } = await import(
+      "../src/providers/streaming/hianime-embed.provider.js"
+    );
+    assert.equal(serverLabel("s-1"), "Flixera");
+    assert.equal(serverLabel("s-2"), "HD-1");
+    assert.equal(serverLabel("s-3"), "HD-2");
+    assert.equal(serverLabel("s-9"), "S-9");
+    // Nothing cached for an episode never resolved: unknown stays unknown.
+    assert.equal(getCachedServerAvailability("21", 99991), null);
   });
 });
