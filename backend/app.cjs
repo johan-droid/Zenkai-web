@@ -42774,7 +42774,7 @@ var init_config = __esm({
       MIRURO_URL: external_exports.string().url().optional(),
       ANIPUB_URL: external_exports.string().url().optional(),
       /** Include the public demo HLS streams so the player can be exercised. */
-      ENABLE_DEMO_STREAMS: booleanish.default(true),
+      ENABLE_DEMO_STREAMS: booleanish.default(false),
       /** Proxy upstream media through this service (needed for CORS/referer walls). */
       ENABLE_PLAYBACK_PROXY: booleanish.default(false),
       /** Hosts the playback gateway is permitted to fetch from. */
@@ -174683,10 +174683,12 @@ var INPROCESS_BACKENDS = [
 ];
 function buildProviders() {
   const providers2 = [];
-  for (const endpoint of TEMPLATE_ENDPOINTS) {
-    providers2.push(
-      new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint)
-    );
+  if (config.SELF_HOSTED_BASE_URL) {
+    for (const endpoint of TEMPLATE_ENDPOINTS) {
+      providers2.push(
+        new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint)
+      );
+    }
   }
   if (config.CONSUMET_INPROCESS) {
     for (const backend of INPROCESS_BACKENDS) {
@@ -175741,8 +175743,12 @@ var AnimeRepository = class {
   }
   /** One episode row by local id, used by the playback resolver. */
   async getEpisode(episodeId) {
-    const [record] = await this.db.select().from(episodes).where(eq(episodes.id, episodeId)).limit(1);
-    return record ?? null;
+    try {
+      const [record] = await this.db.select().from(episodes).where(eq(episodes.id, episodeId)).limit(1);
+      return record ?? null;
+    } catch {
+      return null;
+    }
   }
   /**
    * Parent titles by local uuid, with genres and external ids attached.
@@ -175780,10 +175786,14 @@ var AnimeRepository = class {
   }
   /** Provider-native episode ids already known for an episode. */
   async getEpisodeExternalIds(episodeId) {
-    return this.db.select({
-      providerSlug: episodeExternalIds.providerSlug,
-      externalId: episodeExternalIds.externalId
-    }).from(episodeExternalIds).where(eq(episodeExternalIds.episodeId, episodeId));
+    try {
+      return await this.db.select({
+        providerSlug: episodeExternalIds.providerSlug,
+        externalId: episodeExternalIds.externalId
+      }).from(episodeExternalIds).where(eq(episodeExternalIds.episodeId, episodeId));
+    } catch {
+      return [];
+    }
   }
   /** Titles the sync jobs should refresh: never-synced ones plus stale ones. */
   async listForSync(limit, staleAfterSeconds) {
@@ -178687,6 +178697,7 @@ var persistedEpisodeMetadataSchema = external_exports.object({
   ),
   sourceUpdatedAt: external_exports.number().int().nullable()
 }).strict();
+var UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var PlaybackMetadataService = class {
   constructor(db, providers2) {
     this.db = db;
@@ -178700,6 +178711,9 @@ var PlaybackMetadataService = class {
    * than an error: a missing marker must not block playback.
    */
   async get(episodeId, request) {
+    if (!UUID_PATTERN.test(episodeId)) {
+      return { episodeId, subtitles: [], intro: void 0, outro: void 0, sourceUpdatedAt: null };
+    }
     const stored = await this.#read(episodeId);
     let persisted = stored;
     if (!stored || !this.#isFresh(stored.sourceUpdatedAt)) {
@@ -179032,7 +179046,19 @@ function registerPlaybackRoutes(app, resolver, metadata, animeRepo) {
       request.params
     );
     const episode = await animeRepo.getEpisode(episodeId);
-    if (!episode) throw AppError.notFound(`episode ${episodeId} not found`);
+    if (!episode) {
+      const synthetic = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
+      if (synthetic) {
+        return {
+          episodeId,
+          subtitles: [],
+          intro: void 0,
+          outro: void 0,
+          sourceUpdatedAt: null
+        };
+      }
+      throw AppError.notFound(`episode ${episodeId} not found`);
+    }
     const [title] = await animeRepo.listParentTitles([episode.animeId]);
     if (!title?.anilistId) {
       throw AppError.notFound(`episode ${episodeId} has no resolvable title`);

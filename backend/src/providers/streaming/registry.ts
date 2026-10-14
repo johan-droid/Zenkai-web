@@ -89,10 +89,16 @@ const INPROCESS_BACKENDS: Array<{ slug: string; name: string; priority: number }
 export function buildProviders(): StreamingProvider[] {
   const providers: StreamingProvider[] = [];
 
-  for (const endpoint of TEMPLATE_ENDPOINTS) {
-    providers.push(
-      new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
-    );
+  // Self-hosted only serves real files you placed under /media/. Without
+  // SELF_HOSTED_BASE_URL there is nothing to serve, and the template would
+  // generate localhost URLs that 404 — outranking real providers while
+  // being unplayable. Gate it so a default deploy has no phantom source.
+  if (config.SELF_HOSTED_BASE_URL) {
+    for (const endpoint of TEMPLATE_ENDPOINTS) {
+      providers.push(
+        new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
+      );
+    }
   }
 
   // In-process scrapers are the primary path: they remove a network hop and a

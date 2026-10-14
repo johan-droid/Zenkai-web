@@ -105,6 +105,13 @@ https://cdn.example.com/anime/segment-002.ts`;
     const providers = await loadProvidersFromDb(undefined);
     assert.ok(Array.isArray(providers));
     assert.ok(providers.length > 0);
-    assert.ok(providers.some((p) => p.slug === "self-hosted"));
+    // Self-hosted is gated behind SELF_HOSTED_BASE_URL: without it there is
+    // nothing to serve, and the template would generate unplayable localhost
+    // URLs that outrank real providers. It must not appear by default.
+    if (config.SELF_HOSTED_BASE_URL) {
+      assert.ok(providers.some((p) => p.slug === "self-hosted"));
+    } else {
+      assert.ok(!providers.some((p) => p.slug === "self-hosted"));
+    }
   });
 });

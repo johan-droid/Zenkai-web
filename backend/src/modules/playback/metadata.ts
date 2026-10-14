@@ -57,6 +57,9 @@ export interface EpisodeMetadata {
   sourceUpdatedAt: number | null;
 }
 
+/** Episode IDs that are not valid PostgreSQL UUIDs (e.g. "ep-114129-1") have no stored metadata. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class PlaybackMetadataService {
   constructor(
     private readonly db: Db,
@@ -74,6 +77,12 @@ export class PlaybackMetadataService {
     episodeId: string,
     request: ResolveRequest,
   ): Promise<EpisodeMetadata> {
+    // Non-UUID episode ids (e.g. "ep-114129-1") cannot have stored metadata —
+    // the column is a UUID type. Return an empty result instead of crashing.
+    if (!UUID_PATTERN.test(episodeId)) {
+      return { episodeId, subtitles: [], intro: undefined, outro: undefined, sourceUpdatedAt: null };
+    }
+
     const stored = await this.#read(episodeId);
     let persisted = stored;
 

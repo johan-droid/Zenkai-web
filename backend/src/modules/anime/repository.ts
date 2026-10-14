@@ -824,12 +824,18 @@ export class AnimeRepository {
 
   /** One episode row by local id, used by the playback resolver. */
   async getEpisode(episodeId: string): Promise<Record<string, any> | null> {
-    const [record] = await this.db
-      .select()
-      .from(episodes)
-      .where(eq(episodes.id, episodeId))
-      .limit(1);
-    return record ?? null;
+    try {
+      const [record] = await this.db
+        .select()
+        .from(episodes)
+        .where(eq(episodes.id, episodeId))
+        .limit(1);
+      return record ?? null;
+    } catch {
+      // Invalid UUID syntax (e.g. synthetic "ep-114129-1") or DB offline:
+      // not a stored episode, not a crash.
+      return null;
+    }
   }
 
   /**
@@ -876,13 +882,17 @@ export class AnimeRepository {
   async getEpisodeExternalIds(
     episodeId: string,
   ): Promise<Array<{ providerSlug: string; externalId: string }>> {
-    return this.db
-      .select({
-        providerSlug: episodeExternalIds.providerSlug,
-        externalId: episodeExternalIds.externalId,
-      })
-      .from(episodeExternalIds)
-      .where(eq(episodeExternalIds.episodeId, episodeId));
+    try {
+      return await this.db
+        .select({
+          providerSlug: episodeExternalIds.providerSlug,
+          externalId: episodeExternalIds.externalId,
+        })
+        .from(episodeExternalIds)
+        .where(eq(episodeExternalIds.episodeId, episodeId));
+    } catch {
+      return [];
+    }
   }
 
   /** Titles the sync jobs should refresh: never-synced ones plus stale ones. */

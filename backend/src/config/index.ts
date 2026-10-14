@@ -79,7 +79,7 @@ const schema = z.object({
   ANIPUB_URL: z.string().url().optional(),
 
   /** Include the public demo HLS streams so the player can be exercised. */
-  ENABLE_DEMO_STREAMS: booleanish.default(true),
+  ENABLE_DEMO_STREAMS: booleanish.default(false),
 
   /** Proxy upstream media through this service (needed for CORS/referer walls). */
   ENABLE_PLAYBACK_PROXY: booleanish.default(false),
