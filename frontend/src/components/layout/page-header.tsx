@@ -16,7 +16,7 @@ export function PageHeader({
   return (
     <div
       className={cn(
-        "glass-panel flex flex-col gap-4 rounded-2xl p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6",
+        "flex flex-col gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6",
         className,
       )}
     >

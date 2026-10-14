@@ -35,15 +35,15 @@ export function Navbar() {
       <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 sm:px-6">
         <Brand />
 
-        <nav className="ml-4 hidden items-center gap-1 lg:flex">
+        <nav className="ml-4 hidden items-center gap-1 lg:flex" aria-label="Primary">
           {navSections[0]!.items.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "glass-hover rounded-lg px-3 py-2 text-sm font-medium",
+                "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActivePath(pathname, item.href)
-                  ? "glass text-foreground"
+                  ? "bg-white/10 text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -59,7 +59,7 @@ export function Navbar() {
               size="sm"
               onClick={installPWA}
               aria-label="Install Zenkai App"
-              className="glass hidden items-center gap-2 rounded-xl border-brand-400/40 text-brand-400 hover:text-brand-300 md:flex"
+              className="hidden items-center gap-2 rounded-xl border-brand-400/40 text-brand-400 hover:text-brand-300 md:flex"
             >
               <Download className="size-4" />
               <span>Install App</span>
@@ -70,7 +70,7 @@ export function Navbar() {
             <Button
               variant="ghost"
               size="sm"
-              className="glass hidden h-9 w-56 justify-start gap-2 rounded-xl px-3 text-muted-foreground hover:text-foreground sm:flex"
+              className="hidden h-9 w-56 justify-start gap-2 rounded-xl px-3 text-muted-foreground hover:text-foreground sm:flex"
             >
               <Search className="size-4" />
               <span className="text-sm">Search…</span>
@@ -82,7 +82,7 @@ export function Navbar() {
               variant="ghost"
               size="icon"
               aria-label="Search"
-              className="glass sm:hidden"
+              className="sm:hidden"
               asChild
             >
               <Link href="/search">
@@ -105,7 +105,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Open menu" className="glass lg:hidden">
+        <Button variant="ghost" size="icon" aria-label="Open menu" className="lg:hidden">
           <Menu className="size-4" />
         </Button>
       </SheetTrigger>
@@ -113,7 +113,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
         <SheetTitle className="px-1">
           <Brand />
         </SheetTitle>
-        <nav className="mt-4 flex flex-col gap-6 px-1">
+        <nav className="mt-4 flex flex-col gap-6 px-1" aria-label="Mobile">
           {isInstallable && !isStandalone ? (
             <Button
               variant="outline"
@@ -122,7 +122,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
                 setOpen(false);
                 installPWA();
               }}
-              className="glass flex w-full items-center justify-start gap-3 rounded-xl border-brand-400/40 px-3 py-2.5 text-sm font-medium text-brand-400"
+              className="flex w-full items-center justify-start gap-3 rounded-xl border-brand-400/40 px-3 py-2.5 text-sm font-medium text-brand-400"
             >
               <Download className="size-4" />
               <span>Install Zenkai App</span>
@@ -145,7 +145,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
                     onClick={() => setOpen(false)}
                     className={cn(
                       "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                      active ? "glass text-foreground" : "text-muted-foreground hover:text-foreground",
+                      active ? "bg-white/10 text-foreground" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <Icon className="size-4" />

@@ -14,7 +14,6 @@ import {
 import type { PlaybackLanguage, ServerOption } from "@/lib/api/zenkai";
 import { cn } from "@/lib/utils";
 
-/** The canonical audio shelves — the only language values the watch path sends. */
 const LANGUAGES: { value: PlaybackLanguage; label: string }[] = [
   { value: "sub", label: "Sub" },
   { value: "dub", label: "Dub" },
@@ -41,12 +40,12 @@ export function SourceSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="glass rounded-xl">
+        <Button variant="outline" className="rounded-xl border-white/[0.08] bg-white/[0.03]">
           {loading ? <Loader2 className="animate-spin" /> : <Server />}
           <span className="max-w-40 truncate">{active?.label ?? "Sources"}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="glass-strong w-64">
+      <DropdownMenuContent align="end" className="w-64 rounded-xl border-white/[0.08] bg-[#0e0e14]/95 backdrop-blur-2xl">
         <DropdownMenuLabel>Server</DropdownMenuLabel>
         {options.length === 0 ? (
           <DropdownMenuItem disabled>No sources available</DropdownMenuItem>
@@ -63,7 +62,7 @@ export function SourceSwitcher({
                   {option.quality ?? (option.resolution ? `${option.resolution}p` : "Standard")}
                 </span>
               </span>
-              {option.sourceId === selectedSourceId ? <Check className="size-4 text-brand-400" /> : null}
+              {option.sourceId === selectedSourceId ? <Check className="size-4 text-[#e52545]" /> : null}
             </DropdownMenuItem>
           ))
         )}
@@ -80,7 +79,7 @@ export function SourceSwitcher({
               className={cn(
                 "flex-1 rounded-lg px-3 py-1.5 text-xs font-medium uppercase transition-colors",
                 language === option.value
-                  ? "bg-brand-500/25 text-foreground"
+                  ? "bg-[#c8102e]/25 text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >

@@ -20,8 +20,7 @@ const HOME_PATH_MODULES = [
   "src/components/home/hero-carousel.tsx",
   "src/components/home/genre-chips.tsx",
   "src/components/home/continue-row.tsx",
-  "src/components/home/features-banner.tsx",
-  "src/components/home/cta-banner.tsx",
+
   "src/hooks/use-home.ts",
   "src/lib/api/zenkai.ts",
 ] as const;

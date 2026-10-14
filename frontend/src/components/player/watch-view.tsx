@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useHotkeys } from "react-hotkeys-hook";
-import { CalendarClock, Play, Server } from "lucide-react";
+import { CalendarClock, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useThrottledProgressSaver, useUnitProgress, useTitleProgress } from "@/hooks/use-progress";
@@ -392,77 +392,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
             onRetry={retry}
           />
 
-          {/* Quick Streaming Mirrors & Server Switcher (Zenkai CinePlayer Experience) */}
-          {plans.length > 0 && (
-            <div className="flex flex-col gap-2.5 rounded-2xl border border-white/10 bg-black/40 p-3.5 backdrop-blur-xl shadow-lg ring-1 ring-white/5">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-lg bg-red-600/20 p-1 ring-1 ring-red-500/30">
-                    <Server className="size-3.5 text-red-500" />
-                  </div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-white">
-                    Streaming Mirrors
-                  </span>
-                  <span className="rounded-md bg-white/10 px-2 py-0.5 text-[0.65rem] font-medium text-zinc-400">
-                    {plans.length} available
-                  </span>
-                </div>
 
-                <div className="flex items-center gap-1">
-                  <span className="mr-1 text-[0.68rem] font-semibold text-zinc-400 uppercase tracking-wider">Audio:</span>
-                  {(["sub", "dub", "multi"] as const).map((lang) => (
-                    <button
-                      key={lang}
-                      type="button"
-                      onClick={() => usePlayerStore.getState().setAudio(lang)}
-                      className={cn(
-                        "rounded-lg px-2.5 py-1 text-xs font-bold uppercase transition-all duration-200",
-                        language === lang
-                          ? "bg-red-600 text-white shadow-md shadow-red-700/40 ring-1 ring-white/20"
-                          : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white",
-                      )}
-                    >
-                      {lang}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {plans.map((plan, idx) => {
-                  const isSelected = plan.sourceId === selectedSourceId;
-                  return (
-                    <button
-                      key={plan.sourceId}
-                      type="button"
-                      onClick={() => {
-                        setUserSelection(plan.sourceId);
-                        setRetryNonce(0);
-                      }}
-                      className={cn(
-                        "group flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all duration-200",
-                        isSelected
-                          ? "bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-700/30 ring-1 ring-white/30 scale-102"
-                          : "bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white ring-1 ring-white/10",
-                      )}
-                    >
-                      <span className={cn(
-                        "size-1.5 rounded-full",
-                        isSelected ? "bg-white animate-pulse" : "bg-emerald-400",
-                      )} />
-                      <span>{plan.providerName || `Server ${idx + 1}`}</span>
-                      <span className={cn(
-                        "rounded px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wider",
-                        isSelected ? "bg-black/40 text-white" : "bg-white/5 text-zinc-400",
-                      )}>
-                        {plan.access === "embed" ? "Mirror" : "Direct"}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           <EpisodeList
             id={id}

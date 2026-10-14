@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Search, WifiOff } from "lucide-react";
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Search, WifiOff, SlidersHorizontal } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useCallback } from "react";
 
 import { MediaGrid, MediaGridSkeleton } from "@/components/cards/media-grid";
 import { EmptyState } from "@/components/common/empty-state";
@@ -16,35 +16,52 @@ import {
   SEARCH_MIN_LENGTH,
 } from "@/lib/api/zenkai";
 import { useDebounce } from "@/hooks/use-debounce";
+import { cn } from "@/lib/utils";
 
-/**
- * Anime title search on the canonical backend (P15).
- *
- * The page used to call `browseMedia` in the browser and render AniList rows.
- * It now asks `GET /api/v1/anime/search` for canonical cards and maps them onto
- * the same neutral `MediaSummary` the home shelves use, so a title looks the
- * same wherever it is found and clicking it routes through the existing
- * cross-reference href rather than a provider id.
- *
- * Behaviour deliberately preserved from before the migration: a 350ms debounce,
- * a two-character minimum so typing does not fan out into a request per
- * keystroke, and the same copy for the idle and empty states. This is a
- * migration of the data source, not a redesign of the surface.
- *
- * Manga search is not here yet: its endpoint carries the same two-shape response
- * defect anime search had, and fixing that is P17's job. Until then the Manga
- * tab is absent rather than still calling a provider from this page.
- */
+const GENRES = [
+  "Action", "Adventure", "Comedy", "Drama", "Fantasy",
+  "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life",
+  "Sports", "Supernatural", "Thriller",
+];
+
+const FORMATS = [
+  { label: "TV", value: "TV" },
+  { label: "Movie", value: "MOVIE" },
+  { label: "OVA", value: "OVA" },
+  { label: "ONA", value: "ONA" },
+  { label: "Special", value: "SPECIAL" },
+];
+
+const STATUSES = [
+  { label: "Airing", value: "RELEASING" },
+  { label: "Finished", value: "FINISHED" },
+  { label: "Upcoming", value: "NOT_YET_RELEASED" },
+];
+
 export function SearchView() {
   const params = useSearchParams();
+  const router = useRouter();
   const [term, setTerm] = useState(params.get("q") ?? "");
   const debounced = useDebounce(term, 350);
   const trimmed = debounced.trim();
 
+  const genre = params.get("genre") ?? undefined;
+  const format = params.get("format") ?? undefined;
+  const status = params.get("status") ?? undefined;
+
+  const setFilter = useCallback(
+    (key: string, value: string | undefined) => {
+      const sp = new URLSearchParams(params.toString());
+      if (value === undefined) sp.delete(key);
+      else sp.set(key, value);
+      router.replace(`?${sp.toString()}`, { scroll: false });
+    },
+    [params, router],
+  );
+
   const query = useQuery({
-    queryKey: ["anime-search", trimmed],
+    queryKey: ["anime-search", trimmed, { genre, format, status }],
     queryFn: () => fetchAnimeSearch(trimmed, 30),
-    // Below the minimum length no request is issued at all.
     enabled: trimmed.length >= SEARCH_MIN_LENGTH,
     staleTime: 2 * 60_000,
   });
@@ -55,9 +72,11 @@ export function SearchView() {
     items: query.data?.items.map((card) => discoveryCardToMedia(card, "anime")),
   });
 
+  const hasFilters = Boolean(genre || format || status);
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="glass-panel flex flex-col gap-4 rounded-2xl p-4 sm:p-5">
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 sm:p-5">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -65,9 +84,91 @@ export function SearchView() {
             value={term}
             onChange={(event) => setTerm(event.target.value)}
             placeholder="Search for a title…"
-            className="glass h-11 rounded-xl pl-9 text-base"
+            className="h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 text-base"
             aria-label="Search anime"
           />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <SlidersHorizontal className="size-3.5" /> Genre
+            </span>
+            {GENRES.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter("genre", genre === item ? undefined : item)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  genre === item
+                    ? "border-[#c8102e] bg-[#c8102e] text-white"
+                    : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-[#c8102e]/50 hover:text-foreground",
+                )}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Format
+              </span>
+              {FORMATS.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setFilter("format", format === item.value ? undefined : item.value)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    format === item.value
+                      ? "border-[#c8102e] bg-[#c8102e] text-white"
+                      : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-[#c8102e]/50 hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Status
+              </span>
+              {STATUSES.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setFilter("status", status === item.value ? undefined : item.value)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    status === item.value
+                      ? "border-[#c8102e] bg-[#c8102e] text-white"
+                      : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-[#c8102e]/50 hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start text-muted-foreground"
+              onClick={() => {
+                setFilter("genre", undefined);
+                setFilter("format", undefined);
+                setFilter("status", undefined);
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
         </div>
       </div>
 
@@ -78,18 +179,16 @@ export function SearchView() {
       ) : state.kind === "empty" ? (
         <EmptyState
           icon={Search}
-          title={`No results for “${state.query}”`}
+          title={`No results for "${state.query}"`}
           description="Check the spelling or try a shorter query."
         />
       ) : state.kind === "error" ? (
-        // Never "no results": nothing was able to answer, which is a different
-        // statement from the catalogue having no match.
         <EmptyState
           icon={WifiOff}
           title="Search is temporarily unavailable"
           description={state.message}
           action={
-            <Button variant="outline" className="glass rounded-xl" onClick={() => query.refetch()}>
+            <Button variant="outline" className="rounded-xl" onClick={() => query.refetch()}>
               Try again
             </Button>
           }

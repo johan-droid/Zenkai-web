@@ -14,14 +14,6 @@ import { cn } from "@/lib/utils";
 
 const ROTATE_MS = 7000;
 
-/**
- * Featured hero.
- *
- * Presentational: the page feeds it the trending shelf from the canonical API.
- * Rotation and skeleton behaviour are web choices (P11), not Android facts.
- * An unavailable/empty trending shelf renders nothing here — the featured
- * area is decorative, and the shelves below carry the explicit state copy.
- */
 export function HeroCarousel({
   items,
   isLoading,
@@ -43,8 +35,8 @@ export function HeroCarousel({
   const active = items[Math.min(index, items.length - 1)]!;
 
   return (
-    <section className="glass-panel relative overflow-hidden rounded-3xl border border-white/[0.08] bg-black">
-      <div className="relative min-h-[clamp(22rem,52vh,34rem)] w-full">
+    <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black sm:rounded-3xl">
+      <div className="relative min-h-[clamp(18rem,42vh,26rem)] w-full sm:min-h-[clamp(22rem,52vh,34rem)]">
         <AnimatePresence mode="popLayout">
           <motion.div
             key={active.id}
@@ -75,49 +67,49 @@ export function HeroCarousel({
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/60 to-transparent" />
 
-        <div className="relative flex h-full flex-col justify-end gap-4 p-6 sm:p-10">
+        <div className="relative flex h-full flex-col justify-end gap-3 p-4 sm:gap-4 sm:p-8">
           <motion.div
             key={`${active.id}-copy`}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="flex max-w-2xl flex-col gap-4"
+            className="flex max-w-2xl flex-col gap-3 sm:gap-4"
           >
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-[#c8102e]/30 text-rose-200 border-[#c8102e]/40 rounded-lg px-2.5 py-1 tracking-wider text-xs font-bold">
+              <Badge className="rounded-lg bg-[#c8102e]/30 px-2.5 py-1 text-xs font-bold tracking-wider text-rose-200 border border-[#c8102e]/40">
                 #{(index + 1).toString().padStart(2, "0")} TRENDING
               </Badge>
               {seasonLabel(active.season, active.seasonYear) ? (
-                <Badge className="bg-white/10 text-white border-white/15 rounded-lg px-2.5 py-1">
+                <Badge className="rounded-lg border border-white/15 bg-white/10 px-2.5 py-1">
                   {seasonLabel(active.season, active.seasonYear)}
                 </Badge>
               ) : null}
               {active.averageScore ? (
-                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 gap-1 rounded-lg px-2.5 py-1 font-semibold">
+                <Badge className="gap-1 rounded-lg border border-amber-500/30 bg-amber-500/20 px-2.5 py-1 font-semibold text-amber-300">
                   <Star className="size-3 fill-amber-400 text-amber-400" />
                   {formatScore(active.averageScore)}
                 </Badge>
               ) : null}
             </div>
 
-            <h1 className="text-balance text-3xl font-black leading-tight tracking-tight text-white drop-shadow-md sm:text-5xl md:text-6xl">
+            <h1 className="text-balance text-2xl font-black leading-tight tracking-tight text-white drop-shadow-md sm:text-4xl md:text-5xl">
               {displayTitle(active.title)}
             </h1>
 
             {active.description ? (
-              <p className="line-clamp-3 max-w-xl text-sm leading-relaxed text-zinc-300 sm:text-base font-normal">
+              <p className="line-clamp-2 max-w-xl text-sm leading-relaxed text-zinc-300 sm:line-clamp-3 sm:text-base">
                 {active.description}
               </p>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Button size="lg" className="rounded-xl bg-gradient-to-r from-[#c8102e] via-[#e52545] to-[#c8102e] hover:brightness-110 text-white font-bold shadow-lg shadow-[#c8102e]/35" asChild>
+            <div className="flex flex-wrap items-center gap-2 pt-1 sm:gap-3 sm:pt-2">
+              <Button size="lg" className="rounded-xl bg-[#c8102e] font-bold text-white shadow-lg shadow-[#c8102e]/25 hover:bg-[#a00d25] sm:rounded-xl" asChild>
                 <Link href={`/watch/${active.id}/1`}>
-                  <Play className="fill-current size-4" />
+                  <Play className="size-4 fill-current" />
                   Watch Now
                 </Link>
               </Button>
-              <Button size="lg" variant="outline" className="glass rounded-xl border-white/20 text-white hover:bg-white/10" asChild>
+              <Button size="lg" variant="outline" className="rounded-xl border-white/20 bg-white/5 text-white hover:bg-white/10 sm:rounded-xl" asChild>
                 <Link href={mediaHref(active)}>
                   <Info className="size-4" />
                   Details
@@ -126,7 +118,7 @@ export function HeroCarousel({
             </div>
           </motion.div>
 
-          <div className="mt-4 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2 sm:mt-4">
             {items.map((item, itemIndex) => (
               <button
                 key={item.id}
@@ -151,8 +143,8 @@ export function HeroCarousel({
 
 function HeroSkeleton() {
   return (
-    <div className="glass-panel relative overflow-hidden rounded-3xl">
-      <Skeleton className="h-[clamp(22rem,52vh,34rem)] w-full rounded-none" />
+    <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] sm:rounded-3xl">
+      <Skeleton className="h-[clamp(18rem,42vh,26rem)] w-full rounded-none sm:h-[clamp(22rem,52vh,34rem)]" />
     </div>
   );
 }

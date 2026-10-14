@@ -2,13 +2,14 @@
 
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Tv } from "lucide-react";
+import { Tv, Check, Play } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { DetailLayout, DetailNotFound, DetailSkeleton } from "@/components/detail/detail-layout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useContinueWatching, useUnitProgress, useTitleProgress } from "@/hooks/use-progress";
 import {
   animeDetailToDetailData,
   classifyDetailError,
@@ -18,22 +19,8 @@ import {
 import { watchHref } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
-/** Episodes the grid renders before it stops; presentation limit only. */
 const MAX_EPISODE_BUTTONS = 60;
 
-/**
- * The canonical anime detail surface (P13).
- *
- * Every byte of data comes from the Zenkai backend: detail from
- * `GET /api/v1/anime/:id`, the episode grid from the canonical catalogue at
- * `GET /api/v1/anime/:id/episodes`. The view imports no provider client and
- * constructs no provider URL — `test/detail-boundary.test.ts` is the standing
- * regression gate for that rule.
- *
- * Failures stay distinguishable: 404 is "title not found", a payload outside
- * the contract is "unexpected response" (never rendered as data), and anything
- * else is a loading failure with a retry — an outage is not a missing anime.
- */
 export function AnimeDetailView({ id }: { id: string }) {
   const detailQuery = useQuery({
     queryKey: ["detail", "anime", id],
@@ -92,14 +79,6 @@ export function AnimeDetailView({ id }: { id: string }) {
   );
 }
 
-/**
- * The episode shelf, rendered from canonical catalogue rows.
- *
- * Buttons are keyed and addressed by `episodeNumber` from the backend — never
- * by array index — and an episode without an aired slot is visibly marked as
- * not-yet-aired using the canonical `airingState`, without inventing a date
- * or a status the backend did not assert.
- */
 function EpisodeSection({
   id,
   query,
@@ -108,6 +87,27 @@ function EpisodeSection({
   query: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchAnimeEpisodes>>>>;
 }) {
   const catalogue = query.data;
+  const titleProgress = useTitleProgress("anime", id);
+
+  const watchedSet = React.useMemo(() => {
+    const set = new Set<number>();
+    if (titleProgress) {
+      for (const record of titleProgress) {
+        if (record.completed) set.add(record.unit);
+      }
+    }
+    return set;
+  }, [titleProgress]);
+
+  const inProgressSet = React.useMemo(() => {
+    const set = new Set<number>();
+    if (titleProgress) {
+      for (const record of titleProgress) {
+        if (!record.completed && record.positionSeconds > 10) set.add(record.unit);
+      }
+    }
+    return set;
+  }, [titleProgress]);
 
   if (query.isError) {
     return (
@@ -120,7 +120,6 @@ function EpisodeSection({
     );
   }
 
-  // A loaded, genuinely empty catalogue renders no section at all.
   if (catalogue && catalogue.episodes.length === 0) return null;
 
   return (
@@ -133,26 +132,36 @@ function EpisodeSection({
           </span>
         ) : null}
       </h2>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
         {catalogue ? (
-          catalogue.episodes.slice(0, MAX_EPISODE_BUTTONS).map((episode) => (
-            <Button
-              key={episode.id}
-              variant="outline"
-              className={cn(
-                "glass justify-start rounded-xl",
-                episode.airingState === "upcoming" && "opacity-60",
-              )}
-              asChild
-            >
-              <Link
-                href={watchHref(id, episode.episodeNumber)}
-                title={episode.airingState === "upcoming" ? "Not yet aired" : undefined}
+          catalogue.episodes.slice(0, MAX_EPISODE_BUTTONS).map((episode) => {
+            const watched = watchedSet.has(episode.episodeNumber);
+            const inProgress = inProgressSet.has(episode.episodeNumber);
+            const unreleased = episode.airingState === "upcoming";
+            return (
+              <Button
+                key={episode.id}
+                variant="outline"
+                className={cn(
+                  "relative justify-start rounded-xl",
+                  watched && "border-[#c8102e]/40 bg-[#c8102e]/10",
+                  unreleased && "opacity-60",
+                )}
+                asChild
               >
-                EP {episode.episodeNumber}
-              </Link>
-            </Button>
-          ))
+                <Link
+                  href={watchHref(id, episode.episodeNumber)}
+                  title={unreleased ? "Not yet aired" : undefined}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {watched && <Check className="size-3 text-[#e52545]" />}
+                    {inProgress && !watched && <Play className="size-3 text-amber-400" />}
+                    EP {episode.episodeNumber}
+                  </span>
+                </Link>
+              </Button>
+            );
+          })
         ) : (
           Array.from({ length: 6 }, (_, index) => (
             <Skeleton key={index} className="h-9 w-full rounded-xl" />

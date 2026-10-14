@@ -4,8 +4,6 @@ import { GenreChips } from "@/components/home/genre-chips";
 import { HeroCarousel } from "@/components/home/hero-carousel";
 import { MediaRow } from "@/components/home/media-row";
 import { ContinueRow } from "@/components/home/continue-row";
-import { FeaturesBanner } from "@/components/home/features-banner";
-import { CtaBanner } from "@/components/home/cta-banner";
 import { useHome, useMangaShelf } from "@/hooks/use-home";
 import {
   catalogueToShelfState,
@@ -13,19 +11,6 @@ import {
   mangaCatalogueItemToMedia,
 } from "@/lib/api/zenkai";
 
-/**
- * Home (P12).
- *
- * Every populated shelf here comes from the canonical Zenkai API: one
- * `GET /api/v1/home` request feeds hero/trending/seasonal/top/upcoming (the
- * backend composes and degrades the sections server-side), `/api/v1/genres`
- * feeds the chips, and `/api/v1/manga` feeds the manga shelf. The continue
- * rail stays local on purpose — IndexedDB progress has no backend endpoint
- * and none is proposed (P11).
- *
- * Shelf order preserves the existing page composition; the exact Android
- * shelf order is UNKNOWN (P11), so nothing here claims parity with it.
- */
 export default function HomePage() {
   const home = useHome(10);
   const manga = useMangaShelf(14);
@@ -40,8 +25,7 @@ export default function HomePage() {
     : undefined;
 
   return (
-    <div className="flex flex-col gap-12">
-      {/* Featured Hero Carousel */}
+    <div className="flex flex-col gap-10">
       <div id="hero" className="scroll-mt-28">
         <HeroCarousel
           items={trending.kind === "items" ? trending.items : []}
@@ -49,17 +33,14 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Continue Watching Section (local progress only) */}
       <div id="continue" className="scroll-mt-28">
         <ContinueRow />
       </div>
 
-      {/* Trending Now Section */}
       <div id="trending" className="scroll-mt-28">
         <MediaRow title="Trending Now" href="/anime" state={trending} />
       </div>
 
-      {/* Popular This Season Section */}
       <div id="seasonal" className="scroll-mt-28">
         <MediaRow
           title="Popular This Season"
@@ -71,10 +52,9 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Top Rated Section */}
       <div id="top-rated" className="scroll-mt-28">
         <MediaRow
-          title="All-Time Top Rated Anime"
+          title="All-Time Top Rated"
           href="/anime"
           state={homeSectionToShelfState(home.data?.topRated, {
             isLoading: home.isLoading,
@@ -83,15 +63,13 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Genre Chips Section */}
       <div id="genres" className="scroll-mt-28">
         <GenreChips />
       </div>
 
-      {/* Top Manga Section */}
       <div id="manga" className="scroll-mt-28">
         <MediaRow
-          title="Top Rated Manga & Novels"
+          title="Top Manga & Novels"
           href="/manga"
           state={catalogueToShelfState(mangaItems, {
             isLoading: manga.isLoading,
@@ -100,10 +78,9 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Most Anticipated Section (canonical schedule upcoming) */}
       <div id="upcoming" className="scroll-mt-28">
         <MediaRow
-          title="Most Anticipated Releases"
+          title="Most Anticipated"
           href="/schedule"
           state={homeSectionToShelfState(home.data?.upcoming, {
             isLoading: home.isLoading,
@@ -111,12 +88,6 @@ export default function HomePage() {
           })}
         />
       </div>
-
-      {/* Platform Features Highlight Banner */}
-      <FeaturesBanner />
-
-      {/* Bottom CTA Banner */}
-      <CtaBanner />
     </div>
   );
 }
