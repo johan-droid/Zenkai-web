@@ -390,6 +390,8 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
             }}
             onError={handlePlaybackError}
             onRetry={retry}
+            language={language}
+            onLanguageChange={(value) => usePlayerStore.getState().setAudio(value)}
           />
 
 
@@ -496,6 +498,8 @@ function PlayerArea({
   onEnded,
   onError,
   onRetry,
+  language,
+  onLanguageChange,
 }: {
   sourcesQuery: ReturnType<
     typeof useQuery<Awaited<ReturnType<typeof fetchEpisodeSources>>>
@@ -515,6 +519,8 @@ function PlayerArea({
   onEnded: () => void;
   onError: () => void;
   onRetry: () => void;
+  language: "sub" | "dub" | "multi";
+  onLanguageChange: (value: "sub" | "dub" | "multi") => void;
 }) {
   if (sourcesQuery.isLoading) {
     return (
@@ -559,6 +565,26 @@ function PlayerArea({
         <ErrorMessage
           message="Streaming providers could not be reached. Your network may be blocking them — a VPN often helps — or they may be temporarily down."
           action={<RetryButton onClick={onRetry} />}
+        />
+      );
+    }
+    // ponytail: dub-requested-but-only-sub-exists dead-ends without this — the
+    // servers report names the available track, so offer a one-tap switch.
+    const servers = sourcesQuery.data.servers ?? [];
+    const other = language === "dub" ? "sub" : language === "sub" ? "dub" : null;
+    if (other !== null && servers.some((s) => (other === "dub" ? s.dub : s.sub))) {
+      const label = other.toUpperCase();
+      return (
+        <ErrorMessage
+          message={`No ${language.toUpperCase()} streams for this episode, but ${label} is available.`}
+          action={
+            <div className="flex gap-2">
+              <Button variant="outline" className="glass rounded-xl" onClick={() => onLanguageChange(other)}>
+                {`Switch to ${label}`}
+              </Button>
+              <RetryButton onClick={onRetry} />
+            </div>
+          }
         />
       );
     }

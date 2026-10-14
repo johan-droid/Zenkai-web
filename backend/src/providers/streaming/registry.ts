@@ -44,9 +44,124 @@ export const TEMPLATE_ENDPOINTS: TemplateEndpoint[] = [
   },
 ];
 
-/** Public demo streams, useful for exercising the player end to end. */
-export const DEMO_ENDPOINTS: TemplateEndpoint[] = [
+/**
+ * Static fallback embeds (no DB needed).
+ *
+ * Same URL patterns as the seeded registry, but only the ones keyed on
+ * anilist/{id} — the ids synthetic resolution always holds when Postgres is
+ * unreachable (degraded/Vercel mode). MAL/TMDB-keyed patterns are skipped
+ * here: without a DB we never hold those ids, so they would only add
+ * `missing_required_id` skips. The DB registry still overrides when present.
+ */
+export const STATIC_FALLBACK_ENDPOINTS: TemplateEndpoint[] = [
   {
+    id: "recloud-sub",
+    providerSlug: "recloud",
+    providerName: "ReCloud",
+    endpointSlug: "sub",
+    displayName: "ReCloud",
+    language: "sub",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://cdn.4animo.xyz/embed/hd-2/ani/{anilist_id}/{episode}/sub?k=1",
+    requiredIdType: "anilist",
+    priority: 30,
+  },
+  {
+    id: "recloud-dub",
+    providerSlug: "recloud",
+    providerName: "ReCloud",
+    endpointSlug: "dub",
+    displayName: "ReCloud Dub",
+    language: "dub",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://cdn.4animo.xyz/embed/hd-2/ani/{anilist_id}/{episode}/dub?k=1",
+    requiredIdType: "anilist",
+    priority: 31,
+  },
+  {
+    id: "yumezone-megaplay-sub",
+    providerSlug: "yumezone",
+    providerName: "YumeZone",
+    endpointSlug: "megaplay-sub",
+    displayName: "YumeZone",
+    language: "sub",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://yumezone.qzz.io/embed/megaplay/ani/{anilist_id}/{episode}/sub",
+    requiredIdType: "anilist",
+    priority: 32,
+  },
+  {
+    id: "yumezone-megaplay-dub",
+    providerSlug: "yumezone",
+    providerName: "YumeZone",
+    endpointSlug: "megaplay-dub",
+    displayName: "YumeZone Dub",
+    language: "dub",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://yumezone.qzz.io/embed/megaplay/ani/{anilist_id}/{episode}/dub",
+    requiredIdType: "anilist",
+    priority: 33,
+  },
+  {
+    id: "yumezone-animesalt-multi",
+    providerSlug: "yumezone",
+    providerName: "YumeZone",
+    endpointSlug: "animesalt-multi",
+    displayName: "YumeZone Multi",
+    language: "multi",
+    accessType: "embed",
+    badge: "Multi-Audio",
+    urlTemplate: "https://yumezone.qzz.io/embed/animesalt/ani/{anilist_id}/{episode}/sub",
+    requiredIdType: "anilist",
+    priority: 34,
+  },
+  {
+    id: "vidnest-sub",
+    providerSlug: "vidnest",
+    providerName: "Vidnest",
+    endpointSlug: "sub",
+    displayName: "Vidnest",
+    language: "sub",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://vidnest.fun/anime/{id}/{e}/sub",
+    requiredIdType: "none",
+    priority: 35,
+  },
+  {
+    id: "vidnest-dub",
+    providerSlug: "vidnest",
+    providerName: "Vidnest",
+    endpointSlug: "dub",
+    displayName: "Vidnest Dub",
+    language: "dub",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://vidnest.fun/anime/{id}/{e}/dub",
+    requiredIdType: "none",
+    priority: 36,
+  },
+  {
+    id: "vidnest-multi",
+    providerSlug: "vidnest",
+    providerName: "Vidnest",
+    endpointSlug: "multi",
+    displayName: "Vidnest Multi",
+    language: "multi",
+    accessType: "embed",
+    badge: "Embed HD",
+    urlTemplate: "https://vidnest.fun/anime/{id}/{e}/sub",
+    requiredIdType: "none",
+    priority: 37,
+  },
+];
+
+/** Public demo streams, useful for exercising the player end to end. */
+export const DEMO_ENDPOINTS: TemplateEndpoint[] = [  {
     id: "demo-hls-a",
     providerSlug: "demo-hls-a",
     providerName: "Demo HLS (test stream)",
@@ -107,6 +222,15 @@ export function buildProviders(): StreamingProvider[] {
   // browser plays the iframe so the backend never resolves an m3u8.
   if (config.HIANIME_EMBED_ENABLED) {
     providers.push(new HiAnimeEmbedProvider());
+  }
+
+  // Static fallback embeds: no DB, no scraping, just id interpolation. These
+  // are what keeps playback alive on Vercel/degraded mode where Postgres is
+  // unreachable and the seeded registry never loads.
+  for (const endpoint of STATIC_FALLBACK_ENDPOINTS) {
+    providers.push(
+      new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
+    );
   }
 
   // In-process scrapers are the primary path: they remove a network hop and a

@@ -266,7 +266,16 @@ export async function getApp(): Promise<FastifyInstance> {
   if (!appPromise) {
     appPromise = (async () => {
       const resources = await createResources();
-      const databaseReady = await waitForDatabase(resources.rawSql, 10_000);
+      // ponytail: localhost default can never answer from Vercel/serverless —
+      // skip the 10s wait and degrade immediately (saves cold-start budget).
+      let host = "unparseable";
+      try {
+        host = new URL(config.DATABASE_URL).hostname || "unparseable";
+      } catch {
+        // keep default
+      }
+      const isLocalDefault = host === "localhost" || host === "127.0.0.1" || host === "::1";
+      const databaseReady = isLocalDefault ? false : await waitForDatabase(resources.rawSql, 10_000);
 
       if (!databaseReady) {
         setDatabaseOnline(false);
@@ -274,12 +283,6 @@ export async function getApp(): Promise<FastifyInstance> {
         // URL points at localhost (copied from local .env, unreachable from
         // serverless), an SSL-requiring host with sslmode=disable, or a host
         // that is genuinely down.
-        let host = "unparseable";
-        try {
-          host = new URL(config.DATABASE_URL).hostname || "unparseable";
-        } catch {
-          // keep default
-        }
         console.warn(
           `[zenkai] database not reachable at boot (host=${host}); starting degraded and reporting via /health`,
         );

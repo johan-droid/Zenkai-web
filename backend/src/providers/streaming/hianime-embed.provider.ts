@@ -449,6 +449,25 @@ export class HiAnimeEmbedProvider implements StreamingProvider {
         return known === -1 ? 99 : known;
       };
       const servers = [...byName.values()].sort((a, b) => order(a.name) - order(b.name));
+      // ponytail: upstream sometimes reports dub:true on the episode but dub:[] on
+      // servers (verified Tensura S4 ep2) while direct dub iframes still play (200).
+      // Synthesize known servers instead of returning empty; drop if direct URLs die.
+      for (const language of wanted) {
+        const targetHas = language === "dub" ? target.dub : target.sub;
+        const hasServer = servers.some((s) => (language === "dub" ? s.dub : s.sub));
+        if (targetHas && !hasServer && (target.ani || target.mal)) {
+          for (const name of ["s-1", "s-2", "s-3"]) {
+            let entry = servers.find((s) => s.name === name);
+            if (!entry) {
+              entry = { name, label: serverLabel(name), sub: false, dub: false };
+              servers.push(entry);
+            }
+            if (language === "dub") entry.dub = true;
+            else entry.sub = true;
+          }
+          servers.sort((a, b) => order(a.name) - order(b.name));
+        }
+      }
       if (request.anilistId) {
         setCachedServerAvailability(request.anilistId, request.episodeNumber, servers);
       }
