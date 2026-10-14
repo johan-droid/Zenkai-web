@@ -47,12 +47,12 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  --color-brand-50: oklch(0.97 0.02 292);
-  --color-brand-200: oklch(0.85 0.08 292);
-  --color-brand-400: oklch(0.72 0.17 292);
-  --color-brand-500: oklch(0.62 0.22 292);
-  --color-brand-600: oklch(0.55 0.24 292);
-  --color-brand-700: oklch(0.48 0.22 292);
+  --color-brand-50: oklch(0.97 0.03 25.5);
+  --color-brand-200: oklch(0.85 0.12 25.5);
+  --color-brand-400: oklch(0.70 0.22 25.5);
+  --color-brand-500: oklch(0.60 0.24 25.5);
+  --color-brand-600: oklch(0.52 0.24 25.5);
+  --color-brand-700: oklch(0.42 0.20 25.5);
 
   --animate-aurora: aurora 24s ease-in-out infinite alternate;
   --animate-shimmer: shimmer 2.4s linear infinite;

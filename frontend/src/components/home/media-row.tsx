@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, ChevronRight, WifiOff } from "lucide-react";
+import { useRef } from "react";
+import { AlertTriangle, ChevronLeft, ChevronRight, WifiOff } from "lucide-react";
 import Link from "next/link";
 
 import { MediaCard } from "@/components/cards/media-card";
@@ -51,6 +52,14 @@ export function MediaRow({
 }
 
 function ShelfBody({ state }: { state: ShelfState }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (direction: "left" | "right") => {
+    if (!scrollRef.current) return;
+    const offset = direction === "left" ? -460 : 460;
+    scrollRef.current.scrollBy({ left: offset, behavior: "smooth" });
+  };
+
   if (state.kind === "loading") {
     return (
       <div className="flex gap-4 overflow-hidden">
@@ -63,16 +72,39 @@ function ShelfBody({ state }: { state: ShelfState }) {
 
   if (state.kind === "items") {
     return (
-      <div className="no-scrollbar -mx-1 flex snap-x gap-4 overflow-x-auto px-1 pb-2">
-        {state.items.map((media, index) => (
-          <MediaCard
-            // A shelf can list several units of one title (the upcoming shelf
-            // lists episodes), so the position disambiguates the key.
-            key={`${media.kind}-${media.id}-${index}`}
-            media={media}
-            className="w-36 shrink-0 snap-start sm:w-44"
-          />
-        ))}
+      <div className="group/shelf relative">
+        <button
+          type="button"
+          aria-label="Scroll shelf left"
+          onClick={() => handleScroll("left")}
+          className="absolute -left-3 top-1/2 z-20 hidden size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/80 text-white shadow-xl backdrop-blur-md opacity-0 transition-all duration-200 hover:scale-110 hover:bg-[#c8102e] hover:border-[#c8102e] group-hover/shelf:opacity-100 md:flex"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+
+        <div
+          ref={scrollRef}
+          className="no-scrollbar -mx-1 flex snap-x gap-4 overflow-x-auto px-1 pb-2 scroll-smooth"
+        >
+          {state.items.map((media, index) => (
+            <MediaCard
+              // A shelf can list several units of one title (the upcoming shelf
+              // lists episodes), so the position disambiguates the key.
+              key={`${media.kind}-${media.id}-${index}`}
+              media={media}
+              className="w-36 shrink-0 snap-start sm:w-44"
+            />
+          ))}
+        </div>
+
+        <button
+          type="button"
+          aria-label="Scroll shelf right"
+          onClick={() => handleScroll("right")}
+          className="absolute -right-3 top-1/2 z-20 hidden size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/80 text-white shadow-xl backdrop-blur-md opacity-0 transition-all duration-200 hover:scale-110 hover:bg-[#c8102e] hover:border-[#c8102e] group-hover/shelf:opacity-100 md:flex"
+        >
+          <ChevronRight className="size-4" />
+        </button>
       </div>
     );
   }

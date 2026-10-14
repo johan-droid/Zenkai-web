@@ -146,14 +146,14 @@ export function VideoPlayer({
           volume={volume}
           muted={muted}
           handlers={handlers}
-          playerApi={playerApi}
+          playerApiRef={playerApi}
           onActiveSkipChange={setActiveSkip}
         />
       </MediaPlayer>
 
       {activeSkip ? (
         <SkipButton
-          label={activeSkip === "opening" ? "Skip intro" : activeSkip === "ending" ? "Skip outro" : "Skip recap"}
+          label={activeSkip === "opening" ? "Skip intro" : activeSkip === "ending" ? "Skip recap" : "Skip recap"}
           autoSkip={autoSkip}
           onSkip={handleSkip}
         />
@@ -170,7 +170,7 @@ function MediaEffects({
   volume,
   muted,
   handlers,
-  playerApi,
+  playerApiRef,
   onActiveSkipChange,
 }: {
   execution: PlaybackExecution & { kind: "media" };
@@ -180,7 +180,7 @@ function MediaEffects({
   volume: number;
   muted: boolean;
   handlers: MutableRefObject<{ onProgress: (a: number, b: number) => void; onEnded: () => void; onError: () => void }>;
-  playerApi: MutableRefObject<{ seekTo: (timeSeconds: number) => void } | null>;
+  playerApiRef: MutableRefObject<{ seekTo: (timeSeconds: number) => void } | null>;
   onActiveSkipChange: (next: "opening" | "ending" | "recap" | null) => void;
 }) {
   const player = useMediaPlayer();
@@ -229,30 +229,30 @@ function MediaEffects({
       if (!canPlay || restored.current) return;
       restored.current = true;
       player.currentTime = initialTime;
-      if (volume !== 1) player.volume = volume;
-      player.muted = muted;
+      remote.changeVolume(volume);
+      if (muted) remote.mute(); else remote.unmute();
       void player.play().catch(() => {
         /* Autoplay may be blocked; the user can press play. */
       });
     });
-  }, [player, initialTime, volume, muted]);
+  }, [player, remote, initialTime, volume, muted]);
 
   // Apply rate/volume changes from the settings UI live.
   useEffect(() => {
     if (!player) return;
-    player.volume = volume;
-    player.muted = muted;
-    remote.changePlaybackRate(playbackRate, new Event("ratechange"));
+    remote.changeVolume(volume);
+    if (muted) remote.mute(); else remote.unmute();
+    remote.changePlaybackRate(playbackRate);
   }, [player, remote, playbackRate, volume, muted]);
 
   // Expose seek control up to the parent skip button.
   useEffect(() => {
     if (!player) return;
-    playerApi.current = { seekTo: (timeSeconds) => { player.currentTime = timeSeconds; } };
+    playerApiRef.current = { seekTo: (timeSeconds) => { player.currentTime = timeSeconds; } };
     return () => {
-      playerApi.current = null;
+      playerApiRef.current = null;
     };
-  }, [player, playerApi]);
+  }, [player, playerApiRef]);
 
   return null;
 }

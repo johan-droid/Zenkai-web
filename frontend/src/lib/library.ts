@@ -203,6 +203,23 @@ export async function getLibraryCount(): Promise<number> {
   return db.library.count();
 }
 
+/** Get counts of library items broken down by status. */
+export async function getLibraryStatusCounts(): Promise<Record<LibraryStatus, number>> {
+  const counts: Record<LibraryStatus, number> = {
+    watching: 0,
+    plan: 0,
+    completed: 0,
+    dropped: 0,
+  };
+  const rows = await db.library.toArray();
+  for (const row of rows) {
+    if (row.status in counts) {
+      counts[row.status as LibraryStatus]++;
+    }
+  }
+  return counts;
+}
+
 /* ------------------------------------------------------------------ */
 /* Import / export                                                     */
 /* ------------------------------------------------------------------ */
@@ -214,8 +231,12 @@ export async function exportLibraryData(): Promise<ExportPayload> {
   const payload: ExportPayload = {
     version: 1,
     exportedAt: new Date().toISOString(),
-    progress: allProgress.filter((p) => p.kind === "anime" || p.kind === "manga") as any,
-    library: allLibrary.filter((l) => l.kind === "anime" || l.kind === "manga") as any,
+    progress: allProgress.filter(
+      (p): p is ProgressRecord & { kind: "anime" | "manga" } => p.kind === "anime" || p.kind === "manga",
+    ),
+    library: allLibrary.filter(
+      (l): l is LibraryRecord & { kind: "anime" | "manga" } => l.kind === "anime" || l.kind === "manga",
+    ),
   };
   return exportPayloadSchema.parse(payload);
 }

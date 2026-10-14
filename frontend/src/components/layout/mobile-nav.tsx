@@ -18,6 +18,17 @@ const MOBILE_NAV_ITEMS = [
 export function MobileNav() {
   const pathname = usePathname();
 
+  // Hide mobile bottom navigation during video playback and reading modes
+  // to prevent overlapping player chrome, seek bar and fullscreen controls
+  const isImmersiveMedia =
+    pathname.startsWith("/watch/") ||
+    pathname.startsWith("/read/") ||
+    pathname.startsWith("/read-novel/");
+
+  if (isImmersiveMedia) {
+    return null;
+  }
+
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-50 border-t border-white/[0.08] bg-black/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden"

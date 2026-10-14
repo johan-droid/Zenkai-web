@@ -8,7 +8,7 @@ export function ApiListPanel() {
   return (
     <section className="glass-panel flex flex-col gap-4 rounded-2xl p-5 sm:p-6">
       <div className="flex items-center gap-2">
-        <Database className="size-4 text-brand-400" />
+        <Database className="size-4 text-[#ff4d6a]" />
         <h2 className="text-base font-bold tracking-tight">Data sources</h2>
       </div>
       <p className="text-sm text-muted-foreground">
@@ -29,7 +29,7 @@ export function ApiListPanel() {
                   variant="secondary"
                   className={
                     api.status === "wired"
-                      ? "rounded-lg bg-brand-500/20 text-brand-200"
+                      ? "rounded-lg bg-[#c8102e]/20 text-[#ff8093]"
                       : "rounded-lg"
                   }
                 >

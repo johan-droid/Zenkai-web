@@ -130,6 +130,12 @@ export async function clearHistory(): Promise<void> {
   await db.progress.clear();
 }
 
+/** Removes all progress records for a single title, removing it from continue watching and history. */
+export async function removeProgress(kind: ProgressKind, mediaId: string): Promise<void> {
+  const rows = await db.progress.where({ kind, mediaId }).toArray();
+  await Promise.all(rows.map((row) => db.progress.delete(row.id)));
+}
+
 export async function setLibraryStatus(
   input: {
     kind: ProgressKind;

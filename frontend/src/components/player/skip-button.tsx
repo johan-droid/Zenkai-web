@@ -23,12 +23,8 @@ export function SkipButton({
   const [remaining, setRemaining] = useState(seconds);
 
   useEffect(() => {
-    if (!autoSkip) {
-      setRemaining(seconds);
-      return;
-    }
+    if (!autoSkip) return;
 
-    setRemaining(seconds);
     const timer = setInterval(() => {
       setRemaining((value) => {
         if (value <= 1) {
@@ -41,7 +37,7 @@ export function SkipButton({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [autoSkip, seconds, onSkip]);
+  }, [autoSkip, onSkip]);
 
   return (
     <div className="absolute right-4 bottom-20 z-20 sm:bottom-24">

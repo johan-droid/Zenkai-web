@@ -186,7 +186,6 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
 
     return () => {
       cancelled = true;
-      playbackAttemptRef.current++;
     };
   }, [episodeCard, selectedSourceId, language, retryNonce, refetchSources]);
 

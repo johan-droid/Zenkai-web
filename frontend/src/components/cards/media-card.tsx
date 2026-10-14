@@ -25,7 +25,7 @@ export function MediaCard({
       className={cn("group/card block outline-none select-none", className)}
       aria-label={title}
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl border border-white/[0.08] bg-[#07070a]/95 transition-colors duration-200 group-hover/card:border-[#c8102e]/50 group-focus-visible/card:ring-2 group-focus-visible/card:ring-[#c8102e]">
+      <div className="relative flex flex-col justify-between aspect-[2/3] overflow-hidden rounded-xl border border-white/[0.08] bg-[#07070a]/95 transition-all duration-300 group-hover/card:border-[#c8102e]/60 group-hover/card:shadow-[0_8px_25px_rgba(200,16,46,0.15)] group-focus-visible/card:ring-2 group-focus-visible/card:ring-[#c8102e]">
         {media.cover.url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img

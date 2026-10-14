@@ -82,4 +82,33 @@ describe("Stage 6: Novel contract & routing", () => {
     const parsed = novelChapterContentSchema.safeParse(raw);
     assert.equal(parsed.success, true);
   });
+
+  it("validates novel chapter list and browse result schemas", () => {
+    const chapterRaw = {
+      id: "ch-1",
+      novelId: "94970",
+      chapterNumber: 1,
+      title: "Prologue",
+      releaseDate: "2015-05-25",
+    };
+    const parsedChapter = novelChapterSchema.safeParse(chapterRaw);
+    assert.equal(parsedChapter.success, true);
+
+    const browseRaw = {
+      items: [
+        {
+          id: "94970",
+          anilistId: 94970,
+          title: "Classroom of the Elite",
+          coverImage: "https://example.com/cover.jpg",
+          status: "RELEASING",
+          genres: ["Drama"],
+        },
+      ],
+      total: 1,
+      hasNextPage: false,
+    };
+    const parsedBrowse = novelBrowseResultSchema.safeParse(browseRaw);
+    assert.equal(parsedBrowse.success, true);
+  });
 });

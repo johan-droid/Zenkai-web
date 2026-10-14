@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Menu, Search } from "lucide-react";
+import { Download, History, Menu, Search, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -59,18 +59,32 @@ export function Navbar() {
               size="sm"
               onClick={installPWA}
               aria-label="Install Zenkai App"
-              className="hidden items-center gap-2 rounded-xl border-brand-400/40 text-brand-400 hover:text-brand-300 md:flex"
+              className="hidden items-center gap-2 rounded-xl border-[#c8102e]/40 text-rose-300 hover:bg-[#c8102e]/20 hover:text-white md:flex"
             >
               <Download className="size-4" />
               <span>Install App</span>
             </Button>
           ) : null}
 
+          {/* Mobile search button navigates directly without opening modal */}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Search"
+            className="sm:hidden"
+            asChild
+          >
+            <Link href="/search">
+              <Search className="size-4" />
+            </Link>
+          </Button>
+
+          {/* Desktop Search Palette */}
           <SearchCommand>
             <Button
               variant="ghost"
               size="sm"
-              className="hidden h-9 w-56 justify-start gap-2 rounded-xl px-3 text-muted-foreground hover:text-foreground sm:flex"
+              className="hidden h-9 w-52 justify-start gap-2 rounded-xl px-3 text-muted-foreground hover:text-foreground sm:flex lg:w-60"
             >
               <Search className="size-4" />
               <span className="text-sm">Search…</span>
@@ -78,18 +92,33 @@ export function Navbar() {
                 ⌘K
               </kbd>
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Search"
-              className="sm:hidden"
-              asChild
-            >
-              <Link href="/search">
-                <Search className="size-4" />
-              </Link>
-            </Button>
           </SearchCommand>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="History"
+            title="History"
+            className="hidden lg:flex"
+            asChild
+          >
+            <Link href="/history">
+              <History className="size-4 text-muted-foreground hover:text-foreground" />
+            </Link>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Settings"
+            title="Settings"
+            className="hidden lg:flex"
+            asChild
+          >
+            <Link href="/settings">
+              <Settings className="size-4 text-muted-foreground hover:text-foreground" />
+            </Link>
+          </Button>
 
           <MobileMenu pathname={pathname} />
         </div>
@@ -122,7 +151,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
                 setOpen(false);
                 installPWA();
               }}
-              className="flex w-full items-center justify-start gap-3 rounded-xl border-brand-400/40 px-3 py-2.5 text-sm font-medium text-brand-400"
+              className="flex w-full items-center justify-start gap-3 rounded-xl border-[#c8102e]/40 px-3 py-2.5 text-sm font-medium text-rose-300 hover:bg-[#c8102e]/20 hover:text-white"
             >
               <Download className="size-4" />
               <span>Install Zenkai App</span>

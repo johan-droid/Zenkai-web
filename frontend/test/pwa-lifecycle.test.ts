@@ -59,18 +59,18 @@ class PWALifecycleManager {
   private deferredPrompt: MockBeforeInstallPromptEvent | null = null;
   public isInstallable = false;
   public isStandalone = false;
-  public listeners: { [key: string]: Set<(...args: any[]) => void> } = {};
+  public listeners: { [key: string]: Set<(...args: unknown[]) => void> } = {};
 
-  addEventListener(event: string, handler: (...args: any[]) => void) {
+  addEventListener(event: string, handler: (...args: unknown[]) => void) {
     if (!this.listeners[event]) this.listeners[event] = new Set();
     this.listeners[event].add(handler);
   }
 
-  removeEventListener(event: string, handler: (...args: any[]) => void) {
+  removeEventListener(event: string, handler: (...args: unknown[]) => void) {
     this.listeners[event]?.delete(handler);
   }
 
-  dispatchEvent(event: string, ...args: any[]) {
+  dispatchEvent(event: string, ...args: unknown[]) {
     this.listeners[event]?.forEach((h) => h(...args));
   }
 
@@ -78,9 +78,10 @@ class PWALifecycleManager {
   mount(isStandaloneMode = false) {
     this.isStandalone = isStandaloneMode;
 
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      this.deferredPrompt = e;
+    const handleBeforeInstallPrompt = (e: unknown) => {
+      const promptEvent = e as MockBeforeInstallPromptEvent;
+      promptEvent.preventDefault();
+      this.deferredPrompt = promptEvent;
       this.isInstallable = true;
     };
 

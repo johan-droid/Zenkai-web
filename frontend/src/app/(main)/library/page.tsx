@@ -22,6 +22,7 @@ import {
   exportLibraryData,
   getLibraryCount,
   getLibraryEntries,
+  getLibraryStatusCounts,
   importLibraryData,
   libraryState,
   parseImport,
@@ -170,6 +171,7 @@ export default function LibraryPage() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const totalCount = useLiveQuery(() => readOrFail(() => getLibraryCount()), []);
+  const statusCounts = useLiveQuery(() => readOrFail(() => getLibraryStatusCounts()), []);
 
   async function handleRemove(record: LibraryEntry) {
     setNotice(null);
@@ -260,11 +262,19 @@ export default function LibraryPage() {
 
       <Tabs defaultValue="watching">
         <TabsList className="glass rounded-xl">
-          {LIBRARY_STATUSES.map(({ value, label }) => (
-            <TabsTrigger key={value} value={value}>
-              {label}
-            </TabsTrigger>
-          ))}
+          {LIBRARY_STATUSES.map(({ value, label }) => {
+            const count = statusCounts?.ok ? statusCounts.value[value] : undefined;
+            return (
+              <TabsTrigger key={value} value={value} className="gap-2">
+                <span>{label}</span>
+                {typeof count === "number" && count > 0 && (
+                  <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {count}
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
         {LIBRARY_STATUSES.map(({ value }) => (

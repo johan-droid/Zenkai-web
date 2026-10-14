@@ -34,7 +34,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning className="dark">
-      <body className="min-h-screen bg-background text-foreground antialiased selection:bg-purple-500/30">
+      <body className="min-h-screen bg-background text-foreground antialiased selection:bg-[#c8102e]/30 selection:text-white">
         <AppProviders>{children}</AppProviders>
         <Analytics />
       </body>

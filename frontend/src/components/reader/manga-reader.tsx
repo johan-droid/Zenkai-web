@@ -71,7 +71,7 @@ export function MangaReader({
   // `/read/12/12.5` can open chapter 12.5 instead of failing outright.
   const chapter = useMemo(
     () => resolveChapter(chapterNumber, feed.data?.items),
-    [chapterNumber, feed.data?.items],
+    [chapterNumber, feed.data],
   );
   const chapterId = chapter?.id ?? null;
 
@@ -83,7 +83,7 @@ export function MangaReader({
       .filter((e) => Number.isFinite(e.num) && e.num > chapterNumber)
       .sort((a, b) => a.num - b.num);
     return sorted[0]?.num ?? null;
-  }, [feed.data?.items, chapterNumber]);
+  }, [feed.data, chapterNumber]);
 
   const prevChapter = useMemo(() => {
     if (!feed.data?.items) return null;
@@ -92,7 +92,7 @@ export function MangaReader({
       .filter((e) => Number.isFinite(e.num) && e.num < chapterNumber)
       .sort((a, b) => b.num - a.num);
     return sorted[0]?.num ?? null;
-  }, [feed.data?.items, chapterNumber]);
+  }, [feed.data, chapterNumber]);
 
   const readRouteBase = anilistId ? `/read/${anilistId}` : `/read/${mangaId}`;
   const mangaRoute = anilistId ? `/manga/${anilistId}` : `/manga/${mangaId}`;
@@ -139,7 +139,9 @@ export function MangaReader({
     if (restored.current || !total || mode === "vertical") return;
     restored.current = true;
     if (savedPage && savedPage > 1 && savedPage <= total) {
-      setPage(savedPage - 1);
+      queueMicrotask(() => {
+        setPage(savedPage - 1);
+      });
     }
   }, [total, savedPage, mode]);
 
@@ -498,13 +500,27 @@ function PagedView({
         aria-label="Page"
       />
 
-      {page >= total - 1 && nextChapter !== null && nextChapter !== undefined && (
-        <div className="mt-8 flex items-center gap-3">
-          <Button className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30" asChild>
-            <Link href={`${readRouteBase}/${nextChapter}`}>
-              Next Chapter {nextChapter} <ArrowRight className="ml-1 size-4" />
-            </Link>
-          </Button>
+      {page >= total - 1 && (
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          {prevChapter !== null && prevChapter !== undefined && (
+            <Button variant="outline" className="glass rounded-xl" asChild>
+              <Link href={`${readRouteBase}/${prevChapter}`}>
+                ← Ch {prevChapter}
+              </Link>
+            </Button>
+          )}
+          {mangaRoute ? (
+            <Button variant="outline" className="glass rounded-xl" asChild>
+              <Link href={mangaRoute}>Overview</Link>
+            </Button>
+          ) : null}
+          {nextChapter !== null && nextChapter !== undefined && (
+            <Button className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30" asChild>
+              <Link href={`${readRouteBase}/${nextChapter}`}>
+                Next Chapter {nextChapter} <ArrowRight className="ml-1 size-4" />
+              </Link>
+            </Button>
+          )}
         </div>
       )}
     </div>

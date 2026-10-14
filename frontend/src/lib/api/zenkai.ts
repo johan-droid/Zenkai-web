@@ -1668,7 +1668,7 @@ export function novelSummaryToMedia(novel: NovelSummary): MediaSummary {
     banner: novel.bannerImage ?? null,
     description: novel.description ?? null,
     format: "NOVEL",
-    status: (novel.status as any) || "UNKNOWN",
+    status: (novel.status as MediaStatus) || "UNKNOWN",
     season: null,
     seasonYear: novel.startYear ?? null,
     episodes: null,

@@ -89,7 +89,7 @@ export function PreferencesPanel() {
                 aria-pressed={active}
                 className={cn(
                   "glass rounded-xl",
-                  active && "border-brand-400/60 bg-brand-500/20",
+                  active && "border-[#c8102e]/60 bg-[#c8102e]/20 text-white font-medium",
                 )}
               >
                 <Icon />
@@ -173,7 +173,7 @@ export function PreferencesPanel() {
         ) : isInstallable ? (
           <Button
             variant="outline"
-            className="glass rounded-xl gap-2 w-fit border-brand-400/40 text-brand-400 hover:text-brand-300"
+            className="glass rounded-xl gap-2 w-fit border-[#c8102e]/40 text-[#ff4d6a] hover:bg-[#c8102e]/10 hover:text-white"
             onClick={installPWA}
           >
             <Download className="size-4" />

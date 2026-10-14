@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { ExternalLink, Maximize2, RefreshCw } from "lucide-react";
 import type { PlaybackExecution } from "@/lib/api/zenkai";
 
@@ -21,18 +21,26 @@ export interface EmbedPlayerProps {
  * - Direct popout and full-screen controls
  * - High-speed iframe sandbox with full multimedia permissions
  */
-export function EmbedPlayer({
+function EmbedPlayerInner({
   execution,
   title,
   episodeNumber,
-}: EmbedPlayerProps) {
+  onReload,
+}: {
+  execution: PlaybackExecution & { kind: "embed" };
+  title?: string;
+  episodeNumber?: number;
+  onReload: () => void;
+}) {
   const [loaded, setLoaded] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [timedOut, setTimedOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleReload = useCallback(() => {
-    setLoaded(false);
-    setReloadKey((prev) => prev + 1);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTimedOut(true);
+    }, 12000);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleFullscreen = useCallback(() => {
@@ -82,7 +90,7 @@ export function EmbedPlayer({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={handleReload}
+            onClick={onReload}
             title="Reload Embed Stream"
             className="flex size-7 items-center justify-center rounded-lg bg-black/60 text-zinc-400 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
           >
@@ -131,12 +139,31 @@ export function EmbedPlayer({
               Loading CinePlayer stream ({execution.language.toUpperCase()})
             </span>
           </div>
+
+          {timedOut && (
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={onReload}
+                className="rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 transition-colors"
+              >
+                Reload Mirror
+              </button>
+              <a
+                href={execution.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl border border-[#c8102e]/50 bg-[#c8102e]/20 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-[#c8102e]/40 transition-colors"
+              >
+                Open in New Tab
+              </a>
+            </div>
+          )}
         </div>
       )}
 
       {/* The Iframe */}
       <iframe
-        key={reloadKey}
         src={execution.url}
         title={title ? `${title} - Episode ${episodeNumber ?? ""}` : "Zenkai CinePlayer"}
         className="absolute inset-0 h-full w-full border-0"
@@ -145,5 +172,27 @@ export function EmbedPlayer({
         onLoad={() => setLoaded(true)}
       />
     </div>
+  );
+}
+
+export function EmbedPlayer({
+  execution,
+  title,
+  episodeNumber,
+}: EmbedPlayerProps) {
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const handleReload = useCallback(() => {
+    setReloadKey((prev) => prev + 1);
+  }, []);
+
+  return (
+    <EmbedPlayerInner
+      key={`${execution.url}-${reloadKey}`}
+      execution={execution}
+      title={title}
+      episodeNumber={episodeNumber}
+      onReload={handleReload}
+    />
   );
 }

@@ -58,21 +58,41 @@ function LibraryButton({
   coverUrl: string | null;
 }) {
   if (kind === "novel") return null;
-  const dbKind = kind as "anime" | "manga";
+  return (
+    <LibraryButtonContent
+      kind={kind as "anime" | "manga"}
+      mediaId={mediaId}
+      title={title}
+      coverUrl={coverUrl}
+    />
+  );
+}
+
+function LibraryButtonContent({
+  kind,
+  mediaId,
+  title,
+  coverUrl,
+}: {
+  kind: "anime" | "manga";
+  mediaId: string;
+  title: string;
+  coverUrl: string | null;
+}) {
   const record = useLiveQuery(
-    () => getLibraryEntry(dbKind, mediaId),
-    [dbKind, mediaId],
+    () => getLibraryEntry(kind, mediaId),
+    [kind, mediaId],
   );
 
   const currentStatus = record?.status;
   const currentOption = LIBRARY_OPTIONS.find((o) => o.value === currentStatus);
 
   async function setStatus(status: LibraryStatus) {
-    await saveLibraryEntry({ kind: dbKind, mediaId, title, coverUrl, status });
+    await saveLibraryEntry({ kind, mediaId, title, coverUrl, status });
   }
 
   async function remove() {
-    await removeLibraryEntry({ kind: dbKind, mediaId });
+    await removeLibraryEntry({ kind, mediaId });
   }
 
   return (
@@ -167,10 +187,12 @@ export function DetailLayout({
   data,
   kind,
   children,
+  continueUnit,
 }: {
   data: DetailData;
   kind: MediaKind;
   children?: React.ReactNode;
+  continueUnit?: number | null;
 }) {
   const media = data.summary;
   const title = displayTitle(media.title);
@@ -233,13 +255,28 @@ export function DetailLayout({
               ) : null}
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button size="lg" className="rounded-xl" asChild>
-                <Link href={kind === "anime" ? watchHref(media.id, 1) : readHref(media.id, 1)}>
-                  {kind === "anime" ? <Play className="fill-current" /> : <BookOpen />}
-                  {kind === "anime" ? "Watch episode 1" : "Start reading"}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button size="lg" className="rounded-xl bg-[#c8102e] font-bold text-white hover:bg-[#a00d25] shadow-lg shadow-[#c8102e]/25" asChild>
+                <Link
+                  href={
+                    kind === "anime"
+                      ? watchHref(media.id, continueUnit ?? 1)
+                      : readHref(media.id, continueUnit ?? 1)
+                  }
+                >
+                  {kind === "anime" ? <Play className="fill-current size-4" /> : <BookOpen className="size-4" />}
+                  {continueUnit
+                    ? (kind === "anime" ? `Continue EP ${continueUnit}` : `Continue CH ${continueUnit}`)
+                    : (kind === "anime" ? "Watch Episode 1" : "Start Reading")}
                 </Link>
               </Button>
+              {continueUnit && continueUnit > 1 ? (
+                <Button size="lg" variant="outline" className="glass rounded-xl" asChild>
+                  <Link href={kind === "anime" ? watchHref(media.id, 1) : readHref(media.id, 1)}>
+                    {kind === "anime" ? "Episode 1" : "Chapter 1"}
+                  </Link>
+                </Button>
+              ) : null}
               <LibraryButton
                 kind={kind}
                 mediaId={String(media.id)}

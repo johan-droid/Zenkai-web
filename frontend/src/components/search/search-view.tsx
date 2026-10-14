@@ -66,10 +66,23 @@ export function SearchView() {
     staleTime: 2 * 60_000,
   });
 
+  const filteredCards = (query.data?.items ?? []).filter((card) => {
+    if (genre && !card.genres.some((g) => g.toLowerCase() === genre.toLowerCase())) {
+      return false;
+    }
+    if (format && card.format?.toUpperCase() !== format.toUpperCase()) {
+      return false;
+    }
+    if (status && card.status?.toUpperCase() !== status.toUpperCase()) {
+      return false;
+    }
+    return true;
+  });
+
   const state = searchState({
     term: trimmed,
     flags: query,
-    items: query.data?.items.map((card) => discoveryCardToMedia(card, "anime")),
+    items: query.data ? filteredCards.map((card) => discoveryCardToMedia(card, "anime")) : undefined,
   });
 
   const hasFilters = Boolean(genre || format || status);
@@ -84,9 +97,20 @@ export function SearchView() {
             value={term}
             onChange={(event) => setTerm(event.target.value)}
             placeholder="Search for a title…"
-            className="h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 text-base"
+            className="h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 pr-9 text-base"
             aria-label="Search anime"
           />
+          {term ? (
+            <button
+              type="button"
+              onClick={() => setTerm("")}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <span className="sr-only">Clear</span>
+              ×
+            </button>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-3">
@@ -180,7 +204,22 @@ export function SearchView() {
         <EmptyState
           icon={Search}
           title={`No results for "${state.query}"`}
-          description="Check the spelling or try a shorter query."
+          description={hasFilters ? "No titles matched your query with the current filters." : "Check the spelling or try a shorter query."}
+          action={
+            hasFilters ? (
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => {
+                  setFilter("genre", undefined);
+                  setFilter("format", undefined);
+                  setFilter("status", undefined);
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : undefined
+          }
         />
       ) : state.kind === "error" ? (
         <EmptyState

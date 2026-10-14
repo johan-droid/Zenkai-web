@@ -1,4 +1,4 @@
-const CACHE_NAME = "zenkai-pwa-v1";
+const CACHE_NAME = "zenkai-pwa-v2";
 const STATIC_ASSETS = [
   "/",
   "/anime",
@@ -49,6 +49,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Never intercept Range requests (avoids Cache API DOMException 206 for video/audio streams)
+  if (request.headers.has("range")) {
+    return;
+  }
+
+  // Never cache ephemeral playback tokens, source resolution, or direct media chunks
+  if (
+    url.pathname.includes("/playback") ||
+    url.pathname.includes("/sources") ||
+    url.pathname.endsWith(".m3u8") ||
+    url.pathname.endsWith(".ts")
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   // API Requests: Network-first with cache fallback
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
@@ -72,7 +88,11 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request)
         .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
+          if (
+            networkResponse &&
+            networkResponse.status === 200 &&
+            !networkResponse.headers.get("content-type")?.includes("video")
+          ) {
             const copy = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           }

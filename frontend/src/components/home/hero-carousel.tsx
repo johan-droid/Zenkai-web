@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useContinueWatching } from "@/hooks/use-progress";
 import type { MediaSummary } from "@/lib/media";
 import { displayTitle, formatScore, mediaHref, seasonLabel } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -22,20 +23,40 @@ export function HeroCarousel({
   isLoading?: boolean;
 }) {
   const [index, setIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const animeProgress = useContinueWatching("anime");
+  const mangaProgress = useContinueWatching("manga");
 
   useEffect(() => {
-    if (items.length <= 1) return;
+    if (items.length <= 1 || isHovered) return;
     const timer = setInterval(() => setIndex((value) => (value + 1) % items.length), ROTATE_MS);
     return () => clearInterval(timer);
-  }, [items.length]);
+  }, [items.length, isHovered]);
 
   if (isLoading) return <HeroSkeleton />;
   if (!items.length) return null;
 
   const active = items[Math.min(index, items.length - 1)]!;
 
+  const activeContinue =
+    active.kind === "anime"
+      ? animeProgress?.find((p) => p.mediaId === active.id)
+      : mangaProgress?.find((p) => p.mediaId === active.id);
+
+  const watchUrl = activeContinue
+    ? (active.kind === "anime" ? `/watch/${active.id}/${activeContinue.unit}` : `/read/${active.id}/${activeContinue.unit}`)
+    : (active.kind === "anime" ? `/watch/${active.id}/1` : `/read/${active.id}/1`);
+
+  const watchLabel = activeContinue
+    ? (active.kind === "anime" ? `Continue EP ${activeContinue.unit}` : `Continue CH ${activeContinue.unit}`)
+    : (active.kind === "anime" ? "Watch Now" : "Start Reading");
+
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black sm:rounded-3xl">
+    <section
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black sm:rounded-3xl"
+    >
       <div className="relative min-h-[clamp(18rem,42vh,26rem)] w-full sm:min-h-[clamp(22rem,52vh,34rem)]">
         <AnimatePresence mode="popLayout">
           <motion.div
@@ -104,9 +125,9 @@ export function HeroCarousel({
 
             <div className="flex flex-wrap items-center gap-2 pt-1 sm:gap-3 sm:pt-2">
               <Button size="lg" className="rounded-xl bg-[#c8102e] font-bold text-white shadow-lg shadow-[#c8102e]/25 hover:bg-[#a00d25] sm:rounded-xl" asChild>
-                <Link href={`/watch/${active.id}/1`}>
+                <Link href={watchUrl}>
                   <Play className="size-4 fill-current" />
-                  Watch Now
+                  {watchLabel}
                 </Link>
               </Button>
               <Button size="lg" variant="outline" className="rounded-xl border-white/20 bg-white/5 text-white hover:bg-white/10 sm:rounded-xl" asChild>

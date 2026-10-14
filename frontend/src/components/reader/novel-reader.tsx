@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -8,8 +8,6 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  BookOpen,
-  Type,
   SunMedium,
   Moon,
   Coffee,
@@ -22,7 +20,7 @@ import {
   fetchNovelChapters,
   fetchNovelDetail,
 } from "@/lib/api/zenkai";
-import { useThrottledProgressSaver, useUnitProgress } from "@/hooks/use-progress";
+import { useThrottledProgressSaver } from "@/hooks/use-progress";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +64,6 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
   const totalChapters = chaptersQuery.data?.items.length ?? detailQuery.data?.chapters ?? 1;
 
   // Local-first reading progress persistence in Dexie
-  const progress = useUnitProgress("novel", novelId, chapterNumber);
   const saveProgress = useThrottledProgressSaver();
 
   // Mark chapter progress
@@ -115,7 +112,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
 
   // Theme styling configurations
   const themeClasses: Record<ReaderTheme, string> = {
-    dark: "bg-zinc-950 text-zinc-100 selection:bg-brand-500/30 selection:text-brand-200",
+    dark: "bg-zinc-950 text-zinc-100 selection:bg-[#c8102e]/30 selection:text-white",
     sepia: "bg-[#fbf0d9] text-[#433422] selection:bg-[#dfc49c] selection:text-[#332211]",
     black: "bg-black text-zinc-200 selection:bg-zinc-800 selection:text-white",
   };
@@ -215,7 +212,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
       <main className="mx-auto flex-1 w-full max-w-3xl px-5 py-10 sm:py-14 sm:px-8">
         {contentQuery.isLoading ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-            <Loader2 className="size-8 animate-spin text-brand-400" />
+            <Loader2 className="size-8 animate-spin text-[#c8102e]" />
             <p className="text-sm text-muted-foreground font-medium">Loading chapter {chapterNumber}...</p>
           </div>
         ) : contentQuery.isError || !content ? (
@@ -245,7 +242,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
             </div>
 
             <div className="mt-12 flex items-center justify-center gap-2 text-xs opacity-60">
-              <CheckCircle2 className="size-4 text-brand-400" />
+              <CheckCircle2 className="size-4 text-[#c8102e]" />
               <span>Chapter {chapterNumber} finished</span>
             </div>
           </article>

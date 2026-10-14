@@ -1,7 +1,6 @@
 import {
   BookOpen,
   CalendarDays,
-  Compass,
   History,
   Home,
   Library,
@@ -32,20 +31,13 @@ export const navSections: NavSection[] = [
       { label: "Anime", href: "/anime", icon: Tv, mobile: true, description: "Browse anime" },
       { label: "Manga", href: "/manga", icon: BookOpen, mobile: true, description: "Browse manga" },
       { label: "Novels", href: "/novel", icon: ScrollText, description: "Browse light novels" },
-      { label: "Discover", href: "/search", icon: Compass, description: "Search everything" },
+      { label: "Schedule", href: "/schedule", icon: CalendarDays, description: "Airing this week" },
+      { label: "Library", href: "/library", icon: Library, mobile: true, description: "Lists and saved" },
     ],
   },
   {
-    title: "Your stuff",
+    title: "Personal",
     items: [
-      {
-        label: "Library",
-        href: "/library",
-        icon: Library,
-        mobile: true,
-        description: "Lists and saved",
-      },
-      { label: "Schedule", href: "/schedule", icon: CalendarDays, description: "Airing this week" },
       { label: "History", href: "/history", icon: History, description: "Recently watched" },
       { label: "Settings", href: "/settings", icon: Settings, description: "Preferences and data" },
     ],

@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useContinueWatching } from "@/hooks/use-progress";
-import { clearHistory, type ContinueEntry } from "@/lib/db/progress";
+import { clearHistory, removeProgress, type ContinueEntry } from "@/lib/db/progress";
 import { cn } from "@/lib/utils";
 
 function formatTime(seconds: number): string {
@@ -28,7 +28,13 @@ function timeAgo(ms: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function HistoryCard({ entry }: { entry: ContinueEntry }) {
+function HistoryCard({
+  entry,
+  onRemove,
+}: {
+  entry: ContinueEntry;
+  onRemove: (entry: ContinueEntry) => void;
+}) {
   const href =
     entry.kind === "anime"
       ? `/watch/${entry.mediaId}/${entry.unit}`
@@ -37,62 +43,77 @@ function HistoryCard({ entry }: { entry: ContinueEntry }) {
       : `/read/${entry.mediaId}/${entry.unit}`;
 
   return (
-    <Link
-      href={href}
-      className="group glass-panel flex gap-4 rounded-2xl p-3 transition-all hover:bg-white/5 hover:scale-[1.01]"
-    >
-      {/* Cover */}
-      <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-xl bg-white/5">
-        {entry.coverUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={entry.coverUrl}
-            alt={entry.title}
-            className="size-full object-cover"
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center">
-            {entry.kind === "anime" ? (
-              <Play className="size-5 text-muted-foreground" />
-            ) : (
-              <BookOpen className="size-5 text-muted-foreground" />
-            )}
+    <div className="group glass-panel relative flex items-center justify-between gap-4 rounded-2xl p-3 transition-all hover:bg-white/5 hover:scale-[1.005]">
+      <Link href={href} className="flex min-w-0 flex-1 items-center gap-4">
+        {/* Cover */}
+        <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-xl bg-white/5">
+          {entry.coverUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={entry.coverUrl}
+              alt={entry.title}
+              className="size-full object-cover"
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center">
+              {entry.kind === "anime" ? (
+                <Play className="size-5 text-muted-foreground" />
+              ) : (
+                <BookOpen className="size-5 text-muted-foreground" />
+              )}
+            </div>
+          )}
+
+          {/* Play overlay */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+            <Play className="size-5 fill-white text-white" />
           </div>
-        )}
-
-        {/* Play overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-          <Play className="size-5 fill-white text-white" />
-        </div>
-      </div>
-
-      {/* Info */}
-      <div className="flex min-w-0 flex-1 flex-col justify-between">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="truncate text-sm font-semibold">{entry.title}</p>
-          <p className="text-xs text-muted-foreground">
-            {entry.kind === "anime" ? `Episode ${entry.unit}` : `Chapter ${entry.unit}`}
-            {entry.totalUnits ? ` / ${entry.totalUnits}` : ""}
-          </p>
         </div>
 
-        {/* Progress bar (anime only) */}
-        {entry.kind === "anime" && entry.durationSeconds && entry.fraction > 0 ? (
-          <div className="flex flex-col gap-1">
-            <Progress value={entry.fraction * 100} className="h-1" />
+        {/* Info */}
+        <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <p className="truncate text-sm font-semibold">{entry.title}</p>
             <p className="text-xs text-muted-foreground">
-              {formatTime(entry.positionSeconds)} watched
+              {entry.kind === "anime" ? `Episode ${entry.unit}` : `Chapter ${entry.unit}`}
+              {entry.totalUnits ? ` / ${entry.totalUnits}` : ""}
             </p>
           </div>
-        ) : null}
-      </div>
 
-      {/* Timestamp */}
-      <div className="flex shrink-0 items-start gap-1 text-xs text-muted-foreground/60">
-        <Clock className="mt-0.5 size-3" />
-        {timeAgo(entry.updatedAt)}
+          {/* Progress bar (anime only) */}
+          {entry.kind === "anime" && entry.durationSeconds && entry.fraction > 0 ? (
+            <div className="mt-2 flex flex-col gap-1">
+              <Progress value={entry.fraction * 100} className="h-1" />
+              <p className="text-[11px] text-muted-foreground">
+                {formatTime(entry.positionSeconds)} watched
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </Link>
+
+      <div className="flex shrink-0 items-center gap-3 pr-1">
+        {/* Timestamp */}
+        <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground/60">
+          <Clock className="mt-0.5 size-3" />
+          <span>{timeAgo(entry.updatedAt)}</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Remove ${entry.title} from history`}
+          title="Remove from history"
+          className="size-8 rounded-lg text-muted-foreground opacity-60 transition-opacity hover:bg-white/10 hover:text-white hover:opacity-100"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove(entry);
+          }}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -117,6 +138,10 @@ export default function HistoryPage() {
     setClearing(true);
     await clearHistory();
     setClearing(false);
+  }
+
+  async function handleRemove(entry: ContinueEntry) {
+    await removeProgress(entry.kind, entry.mediaId);
   }
 
   return (
@@ -172,7 +197,11 @@ export default function HistoryPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {displayedEntries.map((entry) => (
-            <HistoryCard key={`${entry.kind}-${entry.mediaId}-${entry.unit}`} entry={entry} />
+            <HistoryCard
+              key={`${entry.kind}-${entry.mediaId}-${entry.unit}`}
+              entry={entry}
+              onRemove={handleRemove}
+            />
           ))}
         </div>
       )}

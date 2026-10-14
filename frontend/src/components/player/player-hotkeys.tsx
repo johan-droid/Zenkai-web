@@ -2,7 +2,6 @@
 
 import { Keyboard } from "lucide-react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +38,6 @@ export function PlayerHotkeys({
   onTheater: () => void;
   onNext: () => void;
 }) {
-  const router = useRouter();
 
   useHotkeys("t", () => {
     onTheater();
