@@ -11,5 +11,6 @@ export * from "./anime";
 export * from "./episodes";
 export * from "./external_ids";
 export * from "./manga";
+export * from "./novel";
 export * from "./providers";
 export * from "./schedule";

@@ -36,7 +36,9 @@ import { registerAnimeRoutes } from "./modules/anime/routes.js";
 import { MangaRepository } from "./modules/manga/repository.js";
 import { MangaService } from "./modules/manga/service.js";
 import { registerMangaRoutes } from "./modules/manga/routes.js";
+import { NovelRepository } from "./modules/novel/repository.js";
 import { NovelService } from "./modules/novel/service.js";
+import { NovelProvider } from "./providers/novel/index.js";
 import { registerNovelRoutes } from "./modules/novel/routes.js";
 import { ScheduleService } from "./modules/schedule/service.js";
 import { registerScheduleRoutes } from "./modules/schedule/routes.js";
@@ -157,7 +159,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
   const mangaRepo = new MangaRepository(deps.db);
   const mangaService = new MangaService(mangaRepo);
-  const novelService = new NovelService();
+  const novelRepo = new NovelRepository(deps.db);
+  const novelService = new NovelService(new NovelProvider(), novelRepo);
   const providers =
     deps.providers ??
     (await loadProvidersFromDb(deps.db));
@@ -256,6 +259,41 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerNovelRoutes(app, novelService);
   registerScheduleRoutes(app, scheduleService);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo);
+
+  /**
+   * Media and image proxy for CDN referer-gated assets (WeebCentral, ComicK, Lnori).
+   */
+  app.get("/api/v1/proxy", async (request, reply) => {
+    const { url, referer } = request.query as { url?: string; referer?: string };
+    if (!url || !url.startsWith("http")) {
+      return reply.code(400).send({ error: "bad_request", message: "url parameter is required and must be an http(s) URL" });
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      };
+      if (referer) {
+        headers.referer = referer;
+      }
+
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        return reply.code(res.status).send({ error: "upstream_error", message: `Upstream returned status ${res.status}` });
+      }
+
+      const contentType = res.headers.get("content-type") || "image/jpeg";
+      reply.header("content-type", contentType);
+      reply.header("cache-control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400");
+      reply.header("access-control-allow-origin", "*");
+
+      const arrayBuffer = await res.arrayBuffer();
+      return reply.send(Buffer.from(arrayBuffer));
+    } catch (err: any) {
+      return reply.code(502).send({ error: "proxy_error", message: err?.message ?? "Failed to proxy resource" });
+    }
+  });
 
   return app;
 }

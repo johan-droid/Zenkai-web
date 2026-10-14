@@ -7,3 +7,4 @@
 
 export * from "./types.js";
 export { MangaDexProvider, toSummary } from "./mangadex.js";
+export { ZenkaiMangaProvider, MANGA_SOURCES, type MangaSourceId } from "./zenkai.js";

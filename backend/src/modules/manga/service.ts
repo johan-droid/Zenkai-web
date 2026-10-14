@@ -16,17 +16,20 @@ import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { MangaDexProvider } from "../../providers/manga/mangadex.js";
+import { ZenkaiMangaProvider } from "../../providers/manga/zenkai.js";
 import type { MangaProvider, ProviderChapter } from "../../providers/manga/types.js";
 import { MangaRepository, type MangaListOptions } from "./repository.js";
 
 export interface ChapterListOptions {
   language?: string;
+  source?: string;
 }
 
 export class MangaService {
   constructor(
     private readonly repo: MangaRepository,
     private readonly provider: MangaProvider = new MangaDexProvider(),
+    private readonly zenkaiProvider: ZenkaiMangaProvider = new ZenkaiMangaProvider(),
   ) {}
 
   /** Ensure a title is in the database, fetching it if it is not. */
@@ -205,7 +208,25 @@ export class MangaService {
 
     const key = `manga:chapters:${targetProviderId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
-      const incoming = await this.provider.getChapters(targetProviderId, { language, limit: 100 });
+      let incoming: ProviderChapter[] = [];
+      const isZenkaiId = targetProviderId.length === 26 || targetProviderId.startsWith("01");
+
+      if (!isZenkaiId) {
+        try {
+          incoming = await this.provider.getChapters(targetProviderId, { language, limit: 100 });
+        } catch {
+          incoming = [];
+        }
+      }
+
+      if (incoming.length === 0) {
+        try {
+          incoming = await this.zenkaiProvider.getChapters(targetProviderId, { language });
+        } catch {
+          // Upstream fallback exhausted
+        }
+      }
+
       await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
       return incoming;
     });
@@ -253,7 +274,7 @@ export class MangaService {
   async getChapterPages(chapterId: string): Promise<{ pageCount: number; pages: Array<{ pageNumber: number; url: string }> }> {
     let chapter = await this.repo.getChapter(chapterId).catch(() => null);
     if (!chapter) {
-      // Treat chapterId as upstream MangaDex chapter UUID if DB record not found
+      // Treat chapterId as upstream chapter id if DB record not found
       chapter = { id: chapterId, mangadexChapterId: chapterId, pages: 0 };
     }
 
@@ -270,7 +291,18 @@ export class MangaService {
       );
     }
 
-    const upstream = await this.provider.getChapterPages(String(upstreamId));
+    let upstream;
+    const isZenkaiId = String(upstreamId).length === 26 || String(upstreamId).startsWith("01");
+    if (isZenkaiId) {
+      upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+    } else {
+      try {
+        upstream = await this.provider.getChapterPages(String(upstreamId));
+      } catch {
+        upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+      }
+    }
+
     await this.repo.replaceChapterPages(localChapterId, upstream).catch(() => undefined);
 
     return shape(upstream.baseUrl, upstream.hash, upstream.pages, chapter.pages);
@@ -335,7 +367,11 @@ function shape(
     pageCount: chapterPageCount || pages.length,
     pages: pages.map((page) => ({
       pageNumber: page.pageNumber,
-      url: hash ? `${baseUrl}/data/${hash}/${page.fileName}` : `${baseUrl}/data/${page.fileName}`,
+      url: page.fileName.startsWith("http")
+        ? page.fileName
+        : hash
+          ? `${baseUrl}/data/${hash}/${page.fileName}`
+          : `${baseUrl}/data/${page.fileName}`,
     })),
   };
 }

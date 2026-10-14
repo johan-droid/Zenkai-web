@@ -1562,6 +1562,7 @@ export function catalogueToShelfState(
 
 export const novelSummarySchema = z.object({
   id: z.string(),
+  slug: z.string().nullable().optional(),
   anilistId: z.number(),
   title: z.string(),
   romajiTitle: z.string().nullable().optional(),
@@ -1577,6 +1578,7 @@ export const novelSummarySchema = z.object({
   chapters: z.number().nullable().optional(),
   volumes: z.number().nullable().optional(),
   startYear: z.number().nullable().optional(),
+  source: z.string().nullable().optional(),
 });
 export type NovelSummary = z.infer<typeof novelSummarySchema>;
 
@@ -1591,6 +1593,7 @@ export const novelChapterSchema = z.object({
   id: z.string(),
   novelId: z.string(),
   chapterNumber: z.number(),
+  chapterSlug: z.string().nullable().optional(),
   title: z.string(),
   releaseDate: z.string().nullable().optional(),
 });
@@ -1598,6 +1601,7 @@ export type NovelChapter = z.infer<typeof novelChapterSchema>;
 
 export const novelChapterFeedSchema = z.object({
   novelId: z.string(),
+  source: z.string().nullable().optional(),
   items: z.array(novelChapterSchema),
 });
 export type NovelChapterFeed = z.infer<typeof novelChapterFeedSchema>;
@@ -1606,6 +1610,7 @@ export const novelChapterContentSchema = z.object({
   id: z.string(),
   novelId: z.string(),
   chapterNumber: z.number(),
+  chapterSlug: z.string().nullable().optional(),
   title: z.string(),
   content: z.string(),
   paragraphs: z.array(z.string()),
@@ -1620,6 +1625,7 @@ export function fetchNovelBrowse(params: {
   search?: string;
   genre?: string;
   sort?: "POPULARITY_DESC" | "TRENDING_DESC" | "SCORE_DESC" | "START_DATE_DESC";
+  source?: string;
 } = {}): Promise<NovelBrowseResult> {
   const query: Record<string, string | number> = {};
   if (params.page) query.page = params.page;
@@ -1627,27 +1633,41 @@ export function fetchNovelBrowse(params: {
   if (params.search) query.search = params.search;
   if (params.genre) query.genre = params.genre;
   if (params.sort) query.sort = params.sort;
+  if (params.source) query.source = params.source;
 
   return getValidated("/api/v1/novel", novelBrowseResultSchema, query);
 }
 
-export function fetchNovelSearch(q: string, limit = 20): Promise<{ query: string; items: NovelSummary[] }> {
-  return getValidated("/api/v1/novel/search", z.object({ query: z.string(), items: z.array(novelSummarySchema) }), {
-    q,
-    limit,
-  });
+export function fetchNovelSearch(q: string, limit = 20, source?: string): Promise<{ query: string; items: NovelSummary[] }> {
+  const query: Record<string, string | number> = { q, limit };
+  if (source) query.source = source;
+  return getValidated("/api/v1/novel/search", z.object({ query: z.string(), items: z.array(novelSummarySchema), source: z.string().optional() }), query);
 }
 
-export function fetchNovelDetail(id: string): Promise<NovelSummary> {
-  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}`, novelSummarySchema);
+export function fetchNovelDetail(id: string, source?: string): Promise<NovelSummary> {
+  const query = source ? { source } : undefined;
+  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}`, novelSummarySchema, query);
 }
 
-export function fetchNovelChapters(id: string): Promise<NovelChapterFeed> {
-  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}/chapters`, novelChapterFeedSchema);
+export function fetchNovelChapters(id: string, source?: string): Promise<NovelChapterFeed> {
+  const query = source ? { source } : undefined;
+  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}/chapters`, novelChapterFeedSchema, query);
 }
 
-export function fetchNovelChapterContent(id: string, chapter: number): Promise<NovelChapterContent> {
-  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}/chapters/${chapter}`, novelChapterContentSchema);
+export function fetchNovelChapterContent(id: string, chapter: number | string, source?: string): Promise<NovelChapterContent> {
+  const query = source ? { source } : undefined;
+  return getValidated(`/api/v1/novel/${encodeURIComponent(id)}/chapters/${encodeURIComponent(chapter)}`, novelChapterContentSchema, query);
+}
+
+/**
+ * Returns proxy URL for external CDN media that requires referer gating.
+ */
+export function proxyMediaUrl(url: string, referer?: string): string {
+  if (!url || !url.startsWith("http")) return url;
+  const params = new URLSearchParams({ url });
+  if (referer) params.set("referer", referer);
+  const base = getZenkaiApiUrl();
+  return `${base}/api/v1/proxy?${params.toString()}`;
 }
 
 export function novelSummaryToMedia(novel: NovelSummary): MediaSummary {

@@ -32,30 +32,38 @@ export interface NovelReaderProps {
 export type ReaderTheme = "dark" | "sepia" | "black";
 export type FontSize = "sm" | "base" | "lg" | "xl";
 
+export const NOVEL_SOURCES = [
+  { id: "novelfire", label: "NovelFire" },
+  { id: "novelfull", label: "NovelFull" },
+  { id: "webnovel", label: "WebNovel" },
+  { id: "lnori", label: "Lnori" },
+] as const;
+
 export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
   const router = useRouter();
 
   const [theme, setTheme] = useState<ReaderTheme>("dark");
   const [fontSize, setFontSize] = useState<FontSize>("base");
+  const [source, setSource] = useState<string>("novelfire");
 
   // Query novel detail
   const detailQuery = useQuery({
-    queryKey: ["novel", novelId],
-    queryFn: () => fetchNovelDetail(novelId),
+    queryKey: ["novel", novelId, source],
+    queryFn: () => fetchNovelDetail(novelId, source),
     staleTime: 10 * 60_000,
   });
 
   // Query chapters list for navigation dropdown
   const chaptersQuery = useQuery({
-    queryKey: ["chapters", "novel", novelId],
-    queryFn: () => fetchNovelChapters(novelId),
+    queryKey: ["chapters", "novel", novelId, source],
+    queryFn: () => fetchNovelChapters(novelId, source),
     staleTime: 10 * 60_000,
   });
 
   // Query chapter content
   const contentQuery = useQuery({
-    queryKey: ["novel-content", novelId, chapterNumber],
-    queryFn: () => fetchNovelChapterContent(novelId, chapterNumber),
+    queryKey: ["novel-content", novelId, chapterNumber, source],
+    queryFn: () => fetchNovelChapterContent(novelId, chapterNumber, source),
     staleTime: 10 * 60_000,
   });
 
@@ -146,6 +154,20 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Novel Source Provider Selector */}
+            <select
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              className="h-7 rounded-xl bg-white/5 px-2 text-xs text-zinc-300 ring-1 ring-white/10 border-0 focus:ring-1 focus:ring-white/30 cursor-pointer"
+              title="Novel Provider Source"
+            >
+              {NOVEL_SOURCES.map((s) => (
+                <option key={s.id} value={s.id} className="bg-zinc-900 text-zinc-200">
+                  {s.label}
+                </option>
+              ))}
+            </select>
+
             {/* Font Size Selector */}
             <div className="flex items-center rounded-xl bg-white/5 p-0.5 ring-1 ring-white/10">
               <Button

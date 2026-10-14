@@ -10,8 +10,30 @@
  *    answer and retrying it just burns the provider's rate limit.
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { config } from "../config/index.js";
 import { AppError, errorMessage, isAbortError } from "./errors.js";
+
+const execFileAsync = promisify(execFile);
+
+async function curlFallback<T>(url: string, options: FetchJsonOptions): Promise<T> {
+  const args = ["-s", "-L", "--max-time", String(Math.ceil((options.timeoutMs ?? 15000) / 1000))];
+  if (options.method === "POST") {
+    args.push("-X", "POST");
+    args.push("-H", "content-type: application/json");
+    if (options.body) {
+      args.push("-d", typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+    }
+  }
+  for (const [k, v] of Object.entries(options.headers ?? {})) {
+    args.push("-H", `${k}: ${v}`);
+  }
+  args.push(url);
+
+  const { stdout } = await execFileAsync("curl", args, { maxBuffer: 20 * 1024 * 1024 });
+  return JSON.parse(stdout) as T;
+}
 
 export interface FetchJsonOptions {
   timeoutMs?: number;
@@ -119,6 +141,15 @@ export async function fetchJson<T = unknown>(
 
         if (error instanceof AppError) throw error;
         if (options.signal?.aborted) throw error;
+
+        const msg = errorMessage(error);
+        if (msg.includes("ENETUNREACH") || msg.includes("fetch failed")) {
+          try {
+            return await curlFallback<T>(url, options);
+          } catch {
+            // curl fallback also failed, continue standard retry/error logic
+          }
+        }
 
         if (isAbortError(error)) {
           if (attempt < retries) {
