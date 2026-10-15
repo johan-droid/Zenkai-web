@@ -1423,6 +1423,8 @@ const MANGA_STATUS_MAP: Record<string, MediaStatus> = {
   COMPLETED: "FINISHED",
   HIATUS: "HIATUS",
   CANCELLED: "CANCELLED",
+  RELEASING: "RELEASING",
+  FINISHED: "FINISHED",
 };
 
 /**
@@ -1550,6 +1552,106 @@ export function animeDetailToDetailData(detail: AnimeDetail): DetailData {
     airing: detail.nextAiringEpisode ?? null,
   };
 }
+
+/**
+ * Map canonical manga detail onto the shared media model.
+ */
+export function mangaDetailToMedia(detail: MangaDetail, requestedId?: string): MediaSummary {
+  const rawStatus = (detail.status ?? "").toUpperCase();
+  const status: MediaStatus =
+    MANGA_STATUS_MAP[rawStatus] ??
+    (rawStatus === "RELEASING" ||
+    rawStatus === "FINISHED" ||
+    rawStatus === "HIATUS" ||
+    rawStatus === "CANCELLED"
+      ? (rawStatus as MediaStatus)
+      : "UNKNOWN");
+
+  const preferredTitle =
+    detail.canonicalTitle ??
+    detail.titles?.primary ??
+    (detail.titles?.alternates && detail.titles.alternates.length > 0
+      ? detail.titles.alternates[0]
+      : null);
+
+  const genres = (detail.genres ?? []).map((g) => (typeof g === "string" ? g : g.name));
+
+  return {
+    id: requestedId || detail.mangadexId || detail.id,
+    malId: null,
+    kind: "manga",
+    provider: "zenkai",
+    title: {
+      preferred: preferredTitle,
+      english: detail.titles?.primary ?? null,
+      romaji: detail.canonicalTitle ?? null,
+      native: null,
+    },
+    cover: {
+      url: cleanImageUrl(detail.coverImageLarge ?? detail.coverUrl),
+      color: null,
+    },
+    banner: cleanImageUrl(detail.bannerUrl),
+    description: detail.description ?? null,
+    format: "MANGA",
+    status,
+    season: null,
+    seasonYear: detail.year ?? null,
+    episodes: null,
+    chapters: detail.totalChapters ?? null,
+    volumes: detail.totalVolumes ?? null,
+    durationMinutes: null,
+    averageScore: null,
+    popularity: null,
+    genres,
+  };
+}
+
+/**
+ * Map one canonical manga relation onto a card the grid can render.
+ */
+export function mangaRelationToMedia(
+  relation: NonNullable<MangaDetail["relations"]>[number],
+): MediaSummary {
+  return {
+    id: relation.providerId,
+    malId: null,
+    kind: "manga",
+    provider: "zenkai",
+    title: { preferred: relation.title ?? null },
+    cover: { url: cleanImageUrl(relation.coverUrl), color: null },
+    banner: null,
+    description: null,
+    format: "MANGA",
+    status: "UNKNOWN",
+    season: null,
+    seasonYear: null,
+    episodes: null,
+    chapters: null,
+    volumes: null,
+    durationMinutes: null,
+    averageScore: null,
+    popularity: null,
+    genres: [],
+  };
+}
+
+/**
+ * Assemble the manga detail view-model from the canonical payload.
+ */
+export function mangaDetailToDetailData(detail: MangaDetail, requestedId?: string): DetailData {
+  return {
+    summary: mangaDetailToMedia(detail, requestedId),
+    relations: (detail.relations ?? []).map((relation) => ({
+      relationType: relation.type,
+      media: mangaRelationToMedia(relation),
+    })),
+    recommendations: [],
+    characters: [],
+    airing: null,
+  };
+}
+
 
 /**
  * Why a detail request failed, for UI that must not lie.

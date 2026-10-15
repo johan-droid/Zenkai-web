@@ -9,9 +9,11 @@ import {
   fetchMangaDetail,
   fetchMangaChapters,
   classifyMangaError,
+  mangaDetailToDetailData,
 } from "@/lib/api/zenkai";
 import { readHref } from "@/lib/media";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useContinueWatching } from "@/hooks/use-progress";
 
 /** Chapters the grid renders before it stops; presentation limit only. */
 const MAX_CHAPTER_BUTTONS = 100;
@@ -44,6 +46,12 @@ export function MediaDetailView({ id }: { id: string }) {
     staleTime: 10 * 60_000,
   });
 
+  const continueEntries = useContinueWatching("manga");
+  const continueEntry = continueEntries?.find(
+    (e) => e.mediaId === id || (mediaId && e.mediaId === mediaId),
+  );
+  const continueUnit = continueEntry?.unit ?? null;
+
   if (isLoading) return <DetailSkeleton />;
 
   if (error) {
@@ -62,11 +70,12 @@ export function MediaDetailView({ id }: { id: string }) {
 
   if (!data) return <DetailNotFound kind="manga" />;
 
+  const detailData = mangaDetailToDetailData(data, id);
   const chapters = chaptersQuery.data?.items ?? [];
   const shownUnits = Math.min(data.totalChapters ?? 0, MAX_CHAPTER_BUTTONS);
 
   return (
-    <DetailLayout data={data as unknown as import("@/lib/media").DetailData} kind="manga">
+    <DetailLayout data={detailData} kind="manga" continueUnit={continueUnit}>
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight">Chapters</h2>

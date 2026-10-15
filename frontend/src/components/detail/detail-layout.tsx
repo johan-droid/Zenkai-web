@@ -194,18 +194,25 @@ export function DetailLayout({
   children?: React.ReactNode;
   continueUnit?: number | null;
 }) {
-  const media = data.summary;
-  const title = displayTitle(media.title);
+  const media = data?.summary;
+  if (!media) return null;
+  const title = displayTitle(media.title ?? {});
   const score = formatScore(media.averageScore);
+  const coverUrl = media.cover?.url ?? null;
+  const bannerUrl = media.banner ?? coverUrl;
+  const genres = media.genres ?? [];
+  const characters = data.characters ?? [];
+  const relations = data.relations ?? [];
+  const recommendations = data.recommendations ?? [];
 
   return (
     <div className="flex flex-col gap-8">
       <section className="glass-panel relative overflow-hidden rounded-3xl">
         <div className="relative h-56 w-full sm:h-72">
-          {media.banner ?? media.cover.url ? (
+          {bannerUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={media.banner ?? media.cover.url!}
+              src={bannerUrl}
               alt=""
               referrerPolicy="no-referrer"
               className="size-full object-cover"
@@ -217,9 +224,9 @@ export function DetailLayout({
         <div className="relative -mt-20 flex flex-col gap-5 p-5 sm:-mt-24 sm:flex-row sm:p-6">
           <div className="w-32 shrink-0 sm:w-44">
             <div className="glass-panel aspect-[2/3] overflow-hidden rounded-2xl">
-              {media.cover.url ? (
+              {coverUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={media.cover.url} alt={title} referrerPolicy="no-referrer" className="size-full object-cover" />
+                <img src={coverUrl} alt={title} referrerPolicy="no-referrer" className="size-full object-cover" />
               ) : null}
             </div>
           </div>
@@ -235,12 +242,16 @@ export function DetailLayout({
                   {seasonLabel(media.season, media.seasonYear)}
                 </Badge>
               ) : null}
-              <Badge variant="secondary" className="rounded-lg">
-                {media.format}
-              </Badge>
-              <Badge variant="secondary" className="rounded-lg">
-                {media.status.replaceAll("_", " ")}
-              </Badge>
+              {media.format ? (
+                <Badge variant="secondary" className="rounded-lg">
+                  {media.format}
+                </Badge>
+              ) : null}
+              {media.status ? (
+                <Badge variant="secondary" className="rounded-lg">
+                  {media.status.replaceAll("_", " ")}
+                </Badge>
+              ) : null}
               {score ? (
                 <Badge variant="secondary" className="gap-1 rounded-lg">
                   <Star className="size-3 fill-amber-400 text-amber-400" />
@@ -282,7 +293,7 @@ export function DetailLayout({
                 kind={kind}
                 mediaId={String(media.id)}
                 title={title}
-                coverUrl={media.cover.url ?? null}
+                coverUrl={coverUrl}
               />
             </div>
 
@@ -292,12 +303,18 @@ export function DetailLayout({
               </p>
             ) : null}
 
-            {media.genres.length ? (
+            {genres.length ? (
               <div className="flex flex-wrap gap-2 pt-1">
-                {media.genres.map((genre) => (
+                {genres.map((genre) => (
                   <Link
                     key={genre}
-                    href={`/anime?genre=${encodeURIComponent(genre)}`}
+                    href={
+                      kind === "manga"
+                        ? `/manga?genre=${encodeURIComponent(genre)}`
+                        : kind === "novel"
+                        ? `/novel?genre=${encodeURIComponent(genre)}`
+                        : `/anime?genre=${encodeURIComponent(genre)}`
+                    }
                     className="rounded-full border border-glass-border bg-white/5 px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {genre}
@@ -311,11 +328,11 @@ export function DetailLayout({
 
       {children}
 
-      {data.characters.length ? (
+      {characters.length ? (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-bold tracking-tight">Characters</h2>
           <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
-            {data.characters.map((character) => (
+            {characters.map((character) => (
               <div key={character.id} className="glass w-28 shrink-0 rounded-2xl p-2 text-center">
                 <div className="mb-2 aspect-square overflow-hidden rounded-xl bg-muted">
                   {character.image ? (
@@ -336,15 +353,15 @@ export function DetailLayout({
         </section>
       ) : null}
 
-      {data.relations.length ? (
+      {relations.length ? (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-bold tracking-tight">Related</h2>
           <div className="no-scrollbar flex gap-4 overflow-x-auto pb-2">
-            {data.relations.map((relation) => (
-              <div key={`${relation.media.kind}-${relation.media.id}`} className="w-36 shrink-0">
-                <MediaCard media={relation.media} />
+            {relations.map((relation) => (
+              <div key={`${relation.media?.kind ?? "manga"}-${relation.media?.id ?? ""}`} className="w-36 shrink-0">
+                {relation.media ? <MediaCard media={relation.media} /> : null}
                 <p className="mt-1 truncate text-center text-[0.7rem] text-muted-foreground">
-                  {relation.relationType.replaceAll("_", " ")}
+                  {relation.relationType?.replaceAll("_", " ") ?? ""}
                 </p>
               </div>
             ))}
@@ -352,11 +369,11 @@ export function DetailLayout({
         </section>
       ) : null}
 
-      {data.recommendations.length ? (
+      {recommendations.length ? (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-bold tracking-tight">Recommended</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
-            {data.recommendations.map((media) => (
+            {recommendations.map((media) => (
               <MediaCard key={`${media.kind}-${media.id}`} media={media} />
             ))}
           </div>
