@@ -199,7 +199,7 @@ export class NovelProvider {
   async searchScraper(queryText: string, source = "novelfire"): Promise<NovelSummary[]> {
     try {
       const url = `${this.#scraperEndpoint}/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(queryText)}`;
-      const res = await fetchJson<{ results: Array<any> }>(url, { timeoutMs: 15000 });
+      const res = await fetchJson<{ results: Array<any> }>(url, { timeoutMs: 4000, retries: 0 });
       if (!res?.results || !Array.isArray(res.results)) return [];
 
       return res.results.map((r) => ({
@@ -230,7 +230,7 @@ export class NovelProvider {
   async getScraperHome(source = "novelfire"): Promise<{ popular: NovelSummary[]; latest: NovelSummary[]; rankings: NovelSummary[] }> {
     try {
       const url = `${this.#scraperEndpoint}/home?source=${encodeURIComponent(source)}`;
-      const res = await fetchJson<{ popular?: any[]; latest?: any[]; rankings?: any[] }>(url, { timeoutMs: 15000 });
+      const res = await fetchJson<{ popular?: any[]; latest?: any[]; rankings?: any[] }>(url, { timeoutMs: 4000, retries: 0 });
       const mapItem = (r: any): NovelSummary => ({
         id: r.slug || r.id,
         slug: r.slug || r.id,
@@ -400,9 +400,10 @@ export class NovelProvider {
     if (slug) {
       try {
         const url = `${this.#scraperEndpoint}/chapters?source=${encodeURIComponent(source)}&slug=${encodeURIComponent(slug)}`;
-        const res = await fetchJson<{ chapters?: Array<{ slug: string; title: string; number: string }> }>(url, { timeoutMs: 20000 });
+        const res = await fetchJson<{ chapters?: Array<{ slug: string; title: string; number: string }> }>(url, { timeoutMs: 4500, retries: 0 });
         if (res?.chapters && Array.isArray(res.chapters) && res.chapters.length > 0) {
-          return res.chapters.map((ch, idx) => {
+          const list = res.chapters.slice(0, 300);
+          return list.map((ch, idx) => {
             const num = Number(ch.number) || (idx + 1);
             return {
               id: `novel-${slug}-${ch.slug || num}`,
@@ -475,7 +476,7 @@ export class NovelProvider {
           paragraphs?: string[];
           prevChapterSlug?: string | null;
           nextChapterSlug?: string | null;
-        }>(url, { timeoutMs: 25000 });
+        }>(url, { timeoutMs: 4500, retries: 0 });
 
         if (res?.paragraphs && Array.isArray(res.paragraphs) && res.paragraphs.length > 0) {
           // Clean out aggregator watermarks / disclaimers from the end if present
