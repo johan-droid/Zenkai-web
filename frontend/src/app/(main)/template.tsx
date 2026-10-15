@@ -1,15 +1,21 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { usePathname } from "next/navigation";
 
 export default function MainTemplate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   return (
     <motion.div
       key={pathname}
-      initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
+      initial={hasMounted ? { opacity: 0, y: 12, filter: "blur(6px)" } : false}
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       exit={{ opacity: 0, y: -8, filter: "blur(4px)" }}
       transition={{
@@ -22,3 +28,4 @@ export default function MainTemplate({ children }: { children: React.ReactNode }
     </motion.div>
   );
 }
+

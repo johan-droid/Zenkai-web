@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   fetchScheduleWeek,
   classifyScheduleError,
+  cleanImageUrl,
   type ScheduleEntry,
 } from "@/lib/api/zenkai";
 import { mediaHref } from "@/lib/media";
@@ -100,10 +101,10 @@ function ScheduleRow({ entry }: { entry: ScheduleEntry }) {
       <span className="w-16 shrink-0 text-sm font-semibold tabular-nums text-brand-400">
         {time}
       </span>
-      {entry.coverUrl ? (
+      {entry.coverUrl && !entry.coverUrl.startsWith("file:") ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={entry.coverUrl}
+          src={cleanImageUrl(entry.coverUrl) ?? entry.coverUrl}
           alt=""
           loading="lazy"
           className="h-14 w-10 shrink-0 rounded-lg object-cover"

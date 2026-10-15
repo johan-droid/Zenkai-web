@@ -71,6 +71,23 @@ export function registerMangaRoutes(app: FastifyInstance, service: MangaService)
     return { items, total, limit: query.limit, offset: query.offset };
   });
 
+  /** Catalogue alias to guard against /catalogue resolving as :id and failing with 502 */
+  app.get("/api/v1/manga/catalogue", async (request, reply) => {
+    const query = parseOrThrow(listQuery, request.query);
+
+    const { items, total } = await service.list({
+      limit: query.limit,
+      offset: query.offset,
+      genre: query.genre,
+      status: query.status,
+      includeAdult: query.includeAdult,
+      sort: query.sort,
+    });
+
+    reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
+    return { items, total, limit: query.limit, offset: query.offset };
+  });
+
   /** Title search, database first with a MangaDex fallback. */
   app.get("/api/v1/manga/search", async (request) => {
     const { q, limit } = parseOrThrow(searchQuery, request.query);
