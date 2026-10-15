@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Prevent browser source maps from emitting file:/// source references in production
+  productionBrowserSourceMaps: false,
   // Pin the workspace root so Turbopack does not walk up to a parent lockfile.
   turbopack: {
     root: __dirname,

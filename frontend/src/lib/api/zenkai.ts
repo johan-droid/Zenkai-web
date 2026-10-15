@@ -178,30 +178,54 @@ export const homePayloadSchema = z.object({
 export type HomeSection = z.infer<typeof homeSectionSchema>;
 export type HomePayload = z.infer<typeof homePayloadSchema>;
 
-const mangaCatalogueSchema = z.object({
-  items: z.array(
-    z.object({
-      id: z.string(),
-      mangadexId: z.string().nullable(),
-      canonicalTitle: z.string(),
-      coverUrl: z.string().nullable(),
-      coverImageLarge: z.string().nullable(),
-      bannerUrl: z.string().nullable(),
-      description: z.string().nullable().optional(),
-      status: z.string(),
-      year: z.number().nullable(),
-      totalChapters: z.number().nullable(),
-      totalVolumes: z.number().nullable(),
-    }),
-  ),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
+const mangaCatalogueItemSchema = z
+  .object({
+    id: z.string().optional(),
+    providerId: z.string().optional(),
+    mangadexId: z.string().nullable().optional(),
+    canonicalTitle: z.string().optional(),
+    titles: z
+      .object({
+        primary: z.string().optional(),
+        alternates: z.array(z.string()).optional(),
+      })
+      .optional(),
+    coverUrl: z.string().nullable().optional(),
+    coverImageLarge: z.string().nullable().optional(),
+    bannerUrl: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    status: z.string().optional(),
+    year: z.number().nullable().optional(),
+    totalChapters: z.number().nullable().optional(),
+    totalVolumes: z.number().nullable().optional(),
+  })
+  .transform((item) => {
+    const id = item.id || item.mangadexId || item.providerId || "";
+    const canonicalTitle =
+      item.canonicalTitle || item.titles?.primary || "Untitled Manga";
+    return {
+      id,
+      mangadexId: item.mangadexId ?? item.providerId ?? null,
+      canonicalTitle,
+      coverUrl: item.coverUrl ?? null,
+      coverImageLarge: item.coverImageLarge ?? null,
+      bannerUrl: item.bannerUrl ?? null,
+      description: item.description ?? null,
+      status: (item.status ?? "ONGOING").toUpperCase(),
+      year: item.year ?? null,
+      totalChapters: item.totalChapters ?? null,
+      totalVolumes: item.totalVolumes ?? null,
+    };
+  });
+
+export const mangaCatalogueSchema = z.object({
+  items: z.array(mangaCatalogueItemSchema),
+  total: z.number().optional().default(0),
+  limit: z.number().optional().default(20),
+  offset: z.number().optional().default(0),
 });
 
-export type MangaCatalogueItem = z.infer<
-  (typeof mangaCatalogueSchema)["shape"]["items"]
->[number];
+export type MangaCatalogueItem = z.infer<typeof mangaCatalogueItemSchema>;
 export type MangaCatalogueResult = z.infer<typeof mangaCatalogueSchema>;
 
 /* ------------------------------------------------------------------ */
@@ -1298,6 +1322,7 @@ function enumOr<T extends string>(
  */
 export function cleanImageUrl(url: string | null | undefined): string | null {
   if (!url) return null;
+  if (/^file:/i.test(url)) return null;
   if (/anilistcdn|anilist\.co/i.test(url)) {
     return url.replace(/-(?:\d+x\d+|\d+)(\.[a-z0-9]+)$/i, "$1");
   }

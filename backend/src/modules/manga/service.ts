@@ -60,7 +60,7 @@ export class MangaService {
     if (!detail) throw AppError.notFound(`manga ${providerId} not found`);
 
     const localId = await this.repo.upsert(detail).catch(() => providerId);
-    return { ...detail, id: localId };
+    return { ...detail, id: localId, canonicalTitle: (detail as any).canonicalTitle ?? detail.titles?.primary ?? "" };
   }
 
   /**
@@ -73,7 +73,7 @@ export class MangaService {
     const localId = await this.repo.upsert(detail).catch(() => providerId);
     await this.repo.replaceRelations(localId, detail).catch(() => undefined);
 
-    return { ...detail, id: localId };
+    return { ...detail, id: localId, canonicalTitle: (detail as any).canonicalTitle ?? detail.titles?.primary ?? "" };
   }
 
   /**
@@ -150,7 +150,20 @@ export class MangaService {
       try {
         return await this.repo.list(options);
       } catch {
-        return { items: page.items as any, total: page.items.length };
+        const fallbackItems = page.items.map((item) => ({
+          id: item.providerId,
+          mangadexId: item.providerId,
+          canonicalTitle: item.titles?.primary ?? "Untitled Manga",
+          coverUrl: item.coverUrl ?? null,
+          coverImageLarge: item.coverImageLarge ?? null,
+          bannerUrl: null,
+          description: item.description ?? null,
+          status: (item.status || "ONGOING").toUpperCase(),
+          year: item.year ?? null,
+          totalChapters: item.totalChapters ?? null,
+          totalVolumes: item.totalVolumes ?? null,
+        }));
+        return { items: fallbackItems, total: page.items.length };
       }
     }
 
@@ -174,7 +187,12 @@ export class MangaService {
       page.items.map((summary) => this.repo.upsert(summary).catch(() => undefined)),
     );
 
-    return page.items as unknown as Record<string, any>[];
+    return page.items.map((item) => ({
+      id: item.providerId,
+      mangadexId: item.providerId,
+      canonicalTitle: item.titles?.primary ?? "Untitled Manga",
+      ...item,
+    })) as unknown as Record<string, any>[];
   }
 
   /**

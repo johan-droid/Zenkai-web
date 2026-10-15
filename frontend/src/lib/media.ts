@@ -155,6 +155,7 @@ export function fuzzyDateToIso(
 }
 
 export function mediaHref(media: Pick<MediaSummary, "kind" | "id">): string {
+  if (!media.id) return `/${media.kind}`;
   if (media.kind === "anime") return `/anime/${media.id}`;
   if (media.kind === "manga") return `/manga/${media.id}`;
   return `/novel/${media.id}`;

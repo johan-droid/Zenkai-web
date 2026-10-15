@@ -216,6 +216,37 @@ describe("fetchMangaCatalogue", () => {
     assert.equal(state.kind, "empty");
   });
 
+  it("accepts provider fallback shape with providerId and titles without throwing contract error", async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: {
+        items: [
+          {
+            providerId: "32d76d19-8a05-4db0-9fc2-e0b0648fe9d0",
+            titles: { primary: "Solo Leveling", alternates: ["Na Honjaman Level-Up"] },
+            description: "A hunter climbs from E-rank to S-rank.",
+            coverUrl: "https://uploads.mangadex.org/covers/32d76d19/cover.jpg",
+            coverImageLarge: "https://uploads.mangadex.org/covers/32d76d19/large.jpg",
+            status: "COMPLETED",
+            contentRating: "safe",
+            isAdult: false,
+            year: 2018,
+            genres: [{ name: "Action", group: "tag" }],
+          },
+        ],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      },
+    }));
+
+    const result = await fetchMangaCatalogue(20);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].id, "32d76d19-8a05-4db0-9fc2-e0b0648fe9d0");
+    assert.equal(result.items[0].canonicalTitle, "Solo Leveling");
+    assert.equal(result.items[0].status, "COMPLETED");
+  });
+
   it("keeps a backend failure an error for the catalogue shelf", async () => {
     stubFetch(() => ({ status: 500, body: { error: "internal" } }));
 

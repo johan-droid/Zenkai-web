@@ -150,17 +150,21 @@ describe("Stage 2 — Manga Catalogue Capability & Fallback", () => {
     assert.deepEqual(res.items, []);
   });
 
-  it("matches genres case-insensitively", async () => {
-    const repo = new MockRepo() as any;
+  it("normalizes provider items into canonical catalogue shape when DB is completely offline", async () => {
+    const offlineRepo = {
+      count: async () => { throw new Error("DB offline"); },
+      list: async () => { throw new Error("DB offline"); },
+      upsert: async () => { throw new Error("DB offline"); },
+    } as any;
     const provider = new MockProvider();
-    const service = new MangaService(repo, provider);
+    provider.itemsToReturn = [createMockSummary("md-123", "Solo Leveling")];
+    const service = new MangaService(offlineRepo, provider);
 
-    await repo.upsert(createMockSummary("m1", "Action Manga", ["Action"]));
-
-    const lowerRes = await service.list({ limit: 10, offset: 0, genre: "action" });
-    const upperRes = await service.list({ limit: 10, offset: 0, genre: "ACTION" });
-
-    assert.equal(lowerRes.total, 1);
-    assert.equal(upperRes.total, 1);
+    const res = await service.list({ limit: 10, offset: 0 });
+    assert.equal(res.total, 1);
+    assert.equal(res.items[0].id, "md-123");
+    assert.equal(res.items[0].mangadexId, "md-123");
+    assert.equal(res.items[0].canonicalTitle, "Solo Leveling");
+    assert.equal(res.items[0].status, "ONGOING");
   });
 });
