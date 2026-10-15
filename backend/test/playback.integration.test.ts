@@ -148,6 +148,14 @@ describe("provider fallback", () => {
     const good = stub("fb-empty-healthy", { count: 1 });
 
     for (let i = 0; i < FAILURE_THRESHOLD + 3; i++) {
+      await new PlaybackResolver([empty, good]).resolve(req(`9010-${i}`));
+    }
+
+    assert.equal(healthRegistry.get(slug).failureStreak, 0, "a miss is not an outage");
+    assert.equal(healthRegistry.isQuarantined(slug), false);
+  });
+});
+
 describe("quarantine", () => {
   it("takes a repeatedly failing provider out of rotation", async () => {
     const slug = "quarantine-target";
@@ -195,12 +203,5 @@ describe("quarantine", () => {
       "a healthy provider's record must be untouched by its neighbour's failures",
     );
     assert.equal(healthRegistry.get("iso-good").score, 1);
-  });
-});
-      await new PlaybackResolver([empty, good]).resolve(req(`9010-${i}`));
-    }
-
-    assert.equal(healthRegistry.get(slug).failureStreak, 0, "a miss is not an outage");
-    assert.equal(healthRegistry.isQuarantined(slug), false);
   });
 });

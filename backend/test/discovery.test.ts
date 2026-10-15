@@ -215,6 +215,16 @@ describe("card projection", () => {
 
   it("defaults absent genres to an empty list, not undefined", () => {
     // A card with `genres: undefined` serialises to a missing key, which a
+    // client rendering `row.genres.map(...)` would crash on.
+    assert.deepEqual(toCard(summary("1", { genres: undefined })).genres, []);
+  });
+
+  it("carries the local id when the title is already catalogued", () => {
+    assert.equal(toCard(summary("42"), "local-42").id, "local-42");
+    assert.equal(toCard(summary("42")).id, null);
+  });
+});
+
 describe("provider-derived rankings", () => {
   const clock = () => new Date("2024-01-10T00:00:00Z");
 
@@ -314,6 +324,31 @@ describe("failure semantics", () => {
 
   it("surfaces a provider error rather than an empty list", async () => {
     const service = new DiscoveryService(stubRepo(), new StubProvider({ fail: "error" }), clock);
+
+    await assert.rejects(
+      () => service.ranking("topRated", { perPage: 3 }),
+      (error: AppError) => {
+        assert.equal(error.reason, "upstream_error");
+        return true;
+      },
+    );
+  });
+
+  it("treats a valid empty response as empty, not as a failure", async () => {
+    // This is the distinction the whole section exists for: zero results from a
+    // healthy provider is a successful empty answer.
+    const service = new DiscoveryService(
+      stubRepo(),
+      new StubProvider({ items: [], total: 0, hasNextPage: false }),
+      clock,
+    );
+
+    const result = await service.ranking("trending", { perPage: 5 });
+    assert.deepEqual(result.items, []);
+    assert.equal(result.hasNextPage, false);
+    assert.equal(result.source, "provider");
+  });
+});
 
 describe("caching", () => {
   const clock = () => new Date("2024-01-10T00:00:00Z");
@@ -420,38 +455,5 @@ describe("home aggregation", () => {
     }
     // Four provider-backed sections, one call each. Not five calls per shelf.
     assert.equal(provider.calls.length, 4);
-  });
-});
-    await assert.rejects(
-      () => service.ranking("topRated", { perPage: 3 }),
-      (error: AppError) => {
-        assert.equal(error.reason, "upstream_error");
-        return true;
-      },
-    );
-  });
-
-  it("treats a valid empty response as empty, not as a failure", async () => {
-    // This is the distinction the whole section exists for: zero results from a
-    // healthy provider is a successful empty answer.
-    const service = new DiscoveryService(
-      stubRepo(),
-      new StubProvider({ items: [], total: 0, hasNextPage: false }),
-      clock,
-    );
-
-    const result = await service.ranking("trending", { perPage: 5 });
-    assert.deepEqual(result.items, []);
-    assert.equal(result.hasNextPage, false);
-    assert.equal(result.source, "provider");
-  });
-});
-    // client rendering `row.genres.map(...)` would crash on.
-    assert.deepEqual(toCard(summary("1", { genres: undefined })).genres, []);
-  });
-
-  it("carries the local id when the title is already catalogued", () => {
-    assert.equal(toCard(summary("42"), "local-42").id, "local-42");
-    assert.equal(toCard(summary("42")).id, null);
   });
 });
