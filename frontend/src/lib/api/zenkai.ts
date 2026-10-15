@@ -806,7 +806,7 @@ export function fetchAnimeSearch(
  */
 export const mangaDetailSchema = z.object({
   /** Local canonical id; the reader holds chapter ids derived from this. */
-  id: z.string(),
+  id: z.union([z.string(), z.number()]).transform(String),
   /** The MangaDex uuid, when the title has one; null until then. */
   mangadexId: z.string().nullish(),
   /** Cross-reference ids from the provider that owned the title. */
@@ -846,7 +846,7 @@ export const mangaDetailSchema = z.object({
     .array(
       z.object({
         type: z.string(),
-        providerId: z.string(),
+        providerId: z.union([z.string(), z.number()]).transform(String),
         title: z.string().nullish(),
         coverUrl: z.string().nullish(),
       }),
@@ -893,8 +893,11 @@ export async function fetchMangaDetail(id: string): Promise<MangaDetail> {
  * The reader resolves a requested number to the closest feed entry.
  */
 export const mangaChapterSchema = z.object({
-  id: z.string(),
-  chapterNumber: z.union([z.string(), z.number()]).transform(String),
+  id: z.union([z.string(), z.number()]).transform(String),
+  chapterNumber: z
+    .union([z.string(), z.number()])
+    .nullish()
+    .transform((val) => (val != null ? String(val) : "0")),
   volume: z.string().nullish(),
   title: z.string().nullish(),
   language: z.string().nullish(),
@@ -930,27 +933,33 @@ export type MangaChapterFeed = z.infer<typeof mangaChapterFeedSchema>;
 export const mangaChapterPagesSchema = z
   .object({
     pageCount: z.number().optional().default(0),
-    pages: z.array(
-      z.union([
-        z.object({
-          pageNumber: z.number(),
-          url: z.string(),
-        }),
-        z.string().transform((url) => ({
-          pageNumber: 0,
-          url,
-        })),
-      ]),
-    ).transform((pages) =>
-      pages.map((p, idx) => ({
-        pageNumber: p.pageNumber || idx + 1,
-        url: p.url,
-      })),
-    ),
+    pages: z
+      .array(
+        z.union([
+          z.object({
+            pageNumber: z.number().nullish().default(0),
+            url: z.string(),
+          }),
+          z.string().transform((url) => ({
+            pageNumber: 0,
+            url,
+          })),
+        ]),
+      )
+      .nullish()
+      .default([])
+      .transform((pages) =>
+        (pages ?? [])
+          .map((p, idx) => ({
+            pageNumber: p.pageNumber || idx + 1,
+            url: p.url,
+          }))
+          .filter((p) => Boolean(p.url) && !/^file:/i.test(p.url)),
+      ),
   })
   .transform((res) => ({
-    pageCount: res.pageCount || res.pages.length,
-    pages: res.pages,
+    pageCount: res.pageCount || (res.pages?.length ?? 0),
+    pages: res.pages ?? [],
   }));
 
 export type MangaChapterPages = z.infer<typeof mangaChapterPagesSchema>;

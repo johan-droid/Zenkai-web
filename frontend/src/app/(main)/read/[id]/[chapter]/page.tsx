@@ -10,6 +10,7 @@ import { SearchX } from "lucide-react";
 import {
   fetchMangaDetail,
   classifyMangaError,
+  cleanImageUrl,
 } from "@/lib/api/zenkai";
 
 /**
@@ -40,11 +41,12 @@ export default function ReadPage() {
   const title =
     media.data?.titles?.primary ??
     media.data?.canonicalTitle ??
+    (media.data as any)?.title ??
     "";
 
   const mangaId = media.data?.mangadexId ?? media.data?.id ?? null;
 
-  if (!Number.isFinite(chapterNumber) || chapterNumber < 1) {
+  if (!Number.isFinite(chapterNumber) || chapterNumber < 0) {
     return (
       <EmptyState
         icon={SearchX}
@@ -105,9 +107,8 @@ export default function ReadPage() {
       anilistId={anilistId}
       chapterNumber={chapterNumber}
       title={title}
-      coverUrl={media.data?.coverUrl ?? media.data?.coverImageLarge ?? null}
+      coverUrl={cleanImageUrl(media.data?.coverImageLarge ?? media.data?.coverUrl)}
     />
   );
-
 }
 

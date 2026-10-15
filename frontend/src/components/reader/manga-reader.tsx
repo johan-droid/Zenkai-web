@@ -397,33 +397,37 @@ function ReaderImage({
     return () => observer.disconnect();
   }, [onVisible]);
 
+  const isInvalid = !src || src.startsWith("file:");
+
   return (
     <div className="relative w-full" ref={ref}>
-      {state === "loading" ? (
+      {state === "loading" && !isInvalid ? (
         <div className="flex aspect-[2/3] w-full items-center justify-center bg-white/5">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : null}
-      {state === "error" ? (
+      {state === "error" || isInvalid ? (
         <div className="flex aspect-[2/3] w-full items-center justify-center bg-white/5 text-xs text-muted-foreground">
           Page {index + 1} failed to load
         </div>
       ) : null}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={`Page ${index + 1}`}
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-        onLoad={() => {
-          setState("loaded");
-        }}
-        onError={() => {
-          setState("error");
-        }}
-        className={cn("w-full select-none", state === "loaded" ? "block" : "hidden")}
-      />
+      {!isInvalid ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={`Page ${index + 1}`}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onLoad={() => {
+            setState("loaded");
+          }}
+          onError={() => {
+            setState("error");
+          }}
+          className={cn("w-full select-none", state === "loaded" ? "block" : "hidden")}
+        />
+      ) : null}
     </div>
   );
 }
@@ -609,5 +613,5 @@ function resolveChapter(
     .sort((a, b) => a.value - b.value);
 
   const below = [...numeric].reverse().find((entry) => entry.value <= chapterNumber);
-  return below?.item ?? numeric[0]?.item ?? null;
+  return below?.item ?? numeric[0]?.item ?? items[0] ?? null;
 }

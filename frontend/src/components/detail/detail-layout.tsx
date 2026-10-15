@@ -209,7 +209,7 @@ export function DetailLayout({
     <div className="flex flex-col gap-8">
       <section className="glass-panel relative overflow-hidden rounded-3xl">
         <div className="relative h-56 w-full sm:h-72">
-          {bannerUrl ? (
+          {bannerUrl && !bannerUrl.startsWith("file:") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={bannerUrl}
@@ -224,7 +224,7 @@ export function DetailLayout({
         <div className="relative -mt-20 flex flex-col gap-5 p-5 sm:-mt-24 sm:flex-row sm:p-6">
           <div className="w-32 shrink-0 sm:w-44">
             <div className="glass-panel aspect-[2/3] overflow-hidden rounded-2xl">
-              {coverUrl ? (
+              {coverUrl && !coverUrl.startsWith("file:") ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={coverUrl} alt={title} referrerPolicy="no-referrer" className="size-full object-cover" />
               ) : null}
@@ -335,7 +335,7 @@ export function DetailLayout({
             {characters.map((character) => (
               <div key={character.id} className="glass w-28 shrink-0 rounded-2xl p-2 text-center">
                 <div className="mb-2 aspect-square overflow-hidden rounded-xl bg-muted">
-                  {character.image ? (
+                  {character.image && !character.image.startsWith("file:") ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={character.image}
