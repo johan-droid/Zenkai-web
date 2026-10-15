@@ -385,6 +385,7 @@ describe("mangaCatalogueItemToMedia", () => {
       coverUrl: null,
       coverImageLarge: null,
       bannerUrl: null,
+      description: null,
       status: "ONGOING",
       year: 2024,
       totalChapters: 42,

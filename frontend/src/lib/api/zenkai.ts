@@ -1389,7 +1389,9 @@ const MANGA_STATUS_MAP: Record<string, MediaStatus> = {
  * rating the backend never sent is never displayed. The detail route
  * addresses manga by its cross-reference id (the backend's rule).
  */
-export function mangaCatalogueItemToMedia(item: MangaCatalogueItem): MediaSummary {
+export function mangaCatalogueItemToMedia(
+  item: Omit<MangaCatalogueItem, "description"> & { description?: string | null },
+): MediaSummary {
   return {
     id: item.mangadexId || item.id,
     malId: null,
