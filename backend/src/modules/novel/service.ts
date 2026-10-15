@@ -81,7 +81,7 @@ export class NovelService {
 
       const incoming = await this.provider.getChapters(id, source);
       if (incoming.length > 0 && this.repo) {
-        await this.repo.upsertChapters(id, incoming, source).catch(() => undefined);
+        void this.repo.upsertChapters(id, incoming, source).catch(() => undefined);
       }
       return incoming;
     });

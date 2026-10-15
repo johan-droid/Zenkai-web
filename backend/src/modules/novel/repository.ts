@@ -6,7 +6,7 @@
  * fall back to upstream providers and in-memory/Redis caches without blocking.
  */
 
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   novel,
@@ -125,28 +125,37 @@ export class NovelRepository {
   async upsertChapters(novelId: string, chapters: NovelChapter[], source = "novelfire"): Promise<void> {
     if (!chapters.length) return;
 
+    const dedupedMap = new Map<number, NovelChapter>();
     for (const ch of chapters) {
-      await this.db
-        .insert(novelChapters)
-        .values({
+      if (!dedupedMap.has(ch.chapterNumber)) {
+        dedupedMap.set(ch.chapterNumber, ch);
+      }
+    }
+    const deduped = Array.from(dedupedMap.values()).slice(0, 300);
+    if (!deduped.length) return;
+
+    await this.db
+      .insert(novelChapters)
+      .values(
+        deduped.map((ch) => ({
           novelId,
           chapterNumber: ch.chapterNumber,
           chapterSlug: ch.chapterSlug || `chapter-${ch.chapterNumber}`,
           title: ch.title,
           releaseDate: ch.releaseDate || null,
           source,
-        })
-        .onConflictDoUpdate({
-          target: [novelChapters.novelId, novelChapters.chapterNumber],
-          set: {
-            title: ch.title,
-            chapterSlug: ch.chapterSlug || `chapter-${ch.chapterNumber}`,
-            releaseDate: ch.releaseDate || null,
-            source,
-          },
-        })
-        .catch(() => undefined);
-    }
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [novelChapters.novelId, novelChapters.chapterNumber],
+        set: {
+          title: sql`excluded.title`,
+          chapterSlug: sql`excluded.chapter_slug`,
+          releaseDate: sql`excluded.release_date`,
+          source: sql`excluded.source`,
+        },
+      })
+      .catch(() => undefined);
   }
 
   async getChapterContent(novelId: string, chapterNumber: number): Promise<NovelChapterContent | null> {
