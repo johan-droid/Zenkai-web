@@ -22,6 +22,7 @@ import { config } from "./config/index.js";
 import { cache } from "./cache/index.js";
 import { createDb, createResources, waitForDatabase, startPeriodicProbe, setDatabaseOnline, type Db } from "./db/client.js";
 import { AppError, errorMessage } from "./http/errors.js";
+import { assertSafeUrl, BlockedUrlError } from "./http/url-guard.js";
 import { AnilistProvider } from "./providers/metadata/anilist.js";
 import {
   buildProviders,
@@ -267,13 +268,29 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   /**
    * Media and image proxy for CDN referer-gated assets (WeebCentral, ComicK, Lnori).
    */
+  /**
+   * Media and image proxy for CDN referer-gated assets (WeebCentral, ComicK, Lnori).
+   * Protected with SSRF URL guard, DNS re-check, and header sanity validation.
+   */
   app.get("/api/v1/proxy", async (request, reply) => {
     const { url, referer } = request.query as { url?: string; referer?: string };
     if (!url || !url.startsWith("http")) {
       return reply.code(400).send({ error: "bad_request", message: "url parameter is required and must be an http(s) URL" });
     }
 
+    // Guard referer against CRLF injection or command injection patterns
+    if (referer) {
+      if (/[\r\n\0]/.test(referer) || !/^https?:\/\//i.test(referer)) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid referer header" });
+      }
+    }
+
     try {
+      let currentUrl = url;
+      const maxRedirects = 5;
+      let buffer: Buffer | null = null;
+      let contentType = "image/jpeg";
+
       const headers: Record<string, string> = {
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
@@ -282,40 +299,81 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
         headers.referer = referer;
       }
 
-      let buffer: Buffer;
-      let contentType = "image/jpeg";
+      for (let hop = 0; hop <= maxRedirects; hop++) {
+        // Enforce SSRF protection on every hop (blocks private IP, loopback, cloud metadata)
+        await assertSafeUrl(currentUrl);
 
-      try {
-        const res = await fetch(url, { headers });
-        if (res.ok) {
-          contentType = res.headers.get("content-type") || "image/jpeg";
-          const arrayBuffer = await res.arrayBuffer();
-          buffer = Buffer.from(arrayBuffer);
-        } else {
-          throw new Error(`Upstream returned ${res.status}`);
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10_000);
+          const res = await fetch(currentUrl, {
+            headers,
+            signal: controller.signal,
+            redirect: "manual",
+          });
+          clearTimeout(timeout);
+
+          if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get("location");
+            if (!location) throw new Error("Redirect without location header");
+            currentUrl = new URL(location, currentUrl).toString();
+            continue;
+          }
+
+          if (res.ok) {
+            contentType = res.headers.get("content-type") || "image/jpeg";
+            const lowerType = contentType.toLowerCase().split(";")[0].trim();
+            // Reject non-media responses (e.g. internal JSON or HTML endpoints)
+            if (
+              lowerType.startsWith("text/html") ||
+              lowerType.startsWith("application/json") ||
+              lowerType.startsWith("text/plain")
+            ) {
+              return reply.code(400).send({ error: "bad_request", message: "Target URL does not return image content" });
+            }
+
+            const arrayBuffer = await res.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
+            break;
+          } else {
+            throw new Error(`Upstream returned ${res.status}`);
+          }
+        } catch (fetchErr) {
+          // If direct fetch failed, fallback to safe curl for the verified URL
+          await assertSafeUrl(currentUrl);
+
+          const curlArgs = [
+            "-s",
+            "--max-time", "15",
+            "--proto", "=http,https",
+            "--proto-redir", "=http,https",
+            "--max-redirs", "5",
+          ];
+          if (referer) {
+            curlArgs.push("-H", `referer: ${referer}`);
+          }
+          curlArgs.push("-H", `user-agent: ${headers["user-agent"]}`);
+          curlArgs.push(currentUrl);
+
+          const { stdout } = await execFileAsync("curl", curlArgs, {
+            encoding: "buffer",
+            maxBuffer: 25 * 1024 * 1024,
+          });
+
+          if (!stdout || stdout.length === 0) {
+            throw fetchErr;
+          }
+
+          buffer = stdout;
+          if (currentUrl.endsWith(".png")) contentType = "image/png";
+          else if (currentUrl.endsWith(".webp")) contentType = "image/webp";
+          else if (currentUrl.endsWith(".avif")) contentType = "image/avif";
+          break;
         }
-      } catch (fetchErr) {
-        // Resilient fallback via curl
-        const curlArgs = ["-s", "-L", "--max-time", "15"];
-        if (referer) {
-          curlArgs.push("-H", `referer: ${referer}`);
-        }
-        curlArgs.push("-H", `user-agent: ${headers["user-agent"]}`);
-        curlArgs.push(url);
+      }
 
-        const { stdout } = await execFileAsync("curl", curlArgs, {
-          encoding: "buffer",
-          maxBuffer: 25 * 1024 * 1024,
-        });
-
-        if (!stdout || stdout.length === 0) {
-          throw fetchErr;
-        }
-
-        buffer = stdout;
-        if (url.endsWith(".png")) contentType = "image/png";
-        else if (url.endsWith(".webp")) contentType = "image/webp";
-        else if (url.endsWith(".avif")) contentType = "image/avif";
+      if (!buffer) {
+        return reply.code(502).send({ error: "proxy_error", message: "Failed to retrieve resource" });
       }
 
       reply.header("content-type", contentType);
@@ -323,6 +381,9 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
       reply.header("access-control-allow-origin", "*");
       return reply.send(buffer);
     } catch (err: any) {
+      if (err instanceof BlockedUrlError || err?.name === "BlockedUrlError") {
+        return reply.code(400).send({ error: "blocked_url", message: err.message });
+      }
       return reply.code(502).send({ error: "proxy_error", message: err?.message ?? "Failed to proxy resource" });
     }
   });
@@ -373,4 +434,31 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const app = await getApp();
   await app.ready();
   app.server.emit("request", req, res);
+}
+
+// In standalone environments (e.g. Docker, VM, npm start), start the listener
+if (typeof require !== "undefined" && require.main === module) {
+  getApp()
+    .then(async (app) => {
+      await app.listen({ port: config.PORT, host: config.HOST });
+      console.log(`🚀 Zenkai Backend API running at http://${config.HOST}:${config.PORT}`);
+
+      const shutdown = async (signal: string): Promise<void> => {
+        app.log.info({ signal }, "shutting down");
+        try {
+          await app.close();
+          process.exit(0);
+        } catch (error) {
+          console.error("[zenkai] shutdown failed:", errorMessage(error));
+          process.exit(1);
+        }
+      };
+
+      process.on("SIGTERM", () => void shutdown("SIGTERM"));
+      process.on("SIGINT", () => void shutdown("SIGINT"));
+    })
+    .catch((err) => {
+      console.error("[zenkai] failed to start:", errorMessage(err));
+      process.exit(1);
+    });
 }

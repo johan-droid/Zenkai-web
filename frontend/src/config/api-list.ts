@@ -47,9 +47,9 @@ export const API_LIST: ApiDefinition[] = [
     purpose: "Primary anime/manga metadata, search, browse, relations, characters, airing schedule.",
     docs: "https://docs.anilist.co/",
     status: "wired",
-    client: "@/lib/api/anilist",
+    client: "@/lib/api/zenkai",
     provides: ["anime", "manga", "metadata", "schedule"],
-    notes: "Rate limited (~90 req/min). Public reads need no auth.",
+    notes: "Resolved via canonical Zenkai backend API (/api/v1/anime/*). Rate limited (~90 req/min). Public reads need no auth.",
   },
   {
     id: "mangadex",
@@ -60,9 +60,9 @@ export const API_LIST: ApiDefinition[] = [
     purpose: "Manga chapters, page images (at-home server), cover art.",
     docs: "https://api.mangadex.org/docs/",
     status: "wired",
-    client: "@/lib/api/mangadex",
+    client: "@/lib/api/zenkai",
     provides: ["manga", "images", "metadata"],
-    notes: "At-home base URLs expire in ~15 min. Report image loads to api.mangadex.network.",
+    notes: "Resolved via canonical Zenkai backend API (/api/v1/manga/*). At-home base URLs expire in ~15 min.",
   },
   {
     id: "jikan",

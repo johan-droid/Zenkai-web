@@ -17,7 +17,7 @@ import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { MangaDexProvider } from "../../providers/manga/mangadex.js";
 import { ZenkaiMangaProvider } from "../../providers/manga/zenkai.js";
-import type { MangaProvider, ProviderChapter } from "../../providers/manga/types.js";
+import type { MangaProvider, MangaSummary, Page, ProviderChapter } from "../../providers/manga/types.js";
 import { MangaRepository, type MangaListOptions } from "./repository.js";
 
 export interface ChapterListOptions {
@@ -241,18 +241,32 @@ export class MangaService {
       // DB offline
     }
 
-    const page = await this.provider.search(query, limit);
+    let page: Page<MangaSummary> | null = null;
+    try {
+      page = await this.provider.search(query, limit);
+    } catch {
+      // Upstream MangaDex timeout/failure; attempt Zenkai multi-provider fallback
+      try {
+        page = await this.zenkaiProvider.search(query, limit);
+      } catch {
+        return [];
+      }
+    }
 
-    await Promise.all(
-      page.items.map((summary) => this.repo.upsert(summary).catch(() => undefined)),
-    );
+    if (page && page.items.length > 0) {
+      await Promise.all(
+        page.items.map((summary: MangaSummary) => this.repo.upsert(summary).catch(() => undefined)),
+      );
 
-    return page.items.map((item) => ({
-      id: item.providerId,
-      mangadexId: item.providerId,
-      canonicalTitle: item.titles?.primary ?? "Untitled Manga",
-      ...item,
-    })) as unknown as Record<string, any>[];
+      return page.items.map((item: MangaSummary) => ({
+        id: item.providerId,
+        mangadexId: item.providerId,
+        canonicalTitle: item.titles?.primary ?? "Untitled Manga",
+        ...item,
+      })) as unknown as Record<string, any>[];
+    }
+
+    return [];
   }
 
   /**

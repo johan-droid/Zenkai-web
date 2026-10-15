@@ -132,6 +132,38 @@ describe("Runtime Endpoints Verification", () => {
     });
     assert.equal(badRes.statusCode, 400);
 
+    // SSRF Sabotage 1: Loopback address must be blocked with 400
+    const loopbackRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/proxy?url=http://127.0.0.1:4000/health",
+    });
+    assert.equal(loopbackRes.statusCode, 400);
+    const loopbackBody = JSON.parse(loopbackRes.body);
+    assert.equal(loopbackBody.error, "blocked_url");
+
+    // SSRF Sabotage 2: Cloud metadata address must be blocked with 400
+    const metadataRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/proxy?url=http://169.254.169.254/latest/meta-data",
+    });
+    assert.equal(metadataRes.statusCode, 400);
+    const metadataBody = JSON.parse(metadataRes.body);
+    assert.equal(metadataBody.error, "blocked_url");
+
+    // SSRF Sabotage 3: RFC1918 private network address must be blocked with 400
+    const privateRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/proxy?url=http://10.0.0.1/admin",
+    });
+    assert.equal(privateRes.statusCode, 400);
+
+    // SSRF Sabotage 4: Referer with CRLF injection must be rejected with 400
+    const crlfRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/proxy?url=https://official.lowee.us/test.jpg&referer=http://example.com%0d%0aInjected:header",
+    });
+    assert.equal(crlfRes.statusCode, 400);
+
     // Valid image URL proxy
     const proxyRes = await app.inject({
       method: "GET",

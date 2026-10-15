@@ -1,0 +1,76 @@
+name: Zenkai CI - Launch Release Gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-gate:
+    name: Backend Release Gate (TypeScript, Tests, SSRF, Build, Boot)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Verify TypeScript types
+        run: |
+          cd backend
+          npx tsc --noEmit
+
+      - name: Run backend security & unit test suites
+        run: |
+          cd backend
+          npm test
+
+      - name: Verify production build & artifact bundling
+        run: |
+          cd backend
+          npm run build
+
+      - name: Verify standalone production boot & port listener
+        run: |
+          cd backend
+          timeout 3s node dist/app.js || [ $? -eq 124 ]
+
+  frontend-gate:
+    name: Frontend Release Gate (TypeScript, Tests, Turbopack Build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run frontend unit & contract tests
+        run: |
+          cd frontend
+          npm test
+
+      - name: Build Next.js production bundle
+        run: |
+          cd frontend
+          npm run build
