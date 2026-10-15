@@ -808,14 +808,17 @@ export const mangaDetailSchema = z.object({
   /** Local canonical id; the reader holds chapter ids derived from this. */
   id: z.string(),
   /** The MangaDex uuid, when the title has one; null until then. */
-  mangadexId: z.string().nullable(),
+  mangadexId: z.string().nullish(),
   /** Cross-reference ids from the provider that owned the title. */
-  externalIds: z.record(z.string(), z.string().nullable()).optional(),
-  titles: z.object({
-    primary: z.string(),
-    alternates: z.array(z.string()),
-  }),
-  canonicalTitle: z.string(),
+  externalIds: z.record(z.string(), z.string().nullish()).optional(),
+  titles: z
+    .object({
+      primary: z.string().nullish().default("Untitled Manga"),
+      alternates: z.array(z.string()).nullish().default([]),
+    })
+    .nullish()
+    .default({ primary: "Untitled Manga", alternates: [] }),
+  canonicalTitle: z.string().nullish().default("Untitled Manga"),
   description: z.string().nullish(),
   coverUrl: z.string().nullish(),
   coverImageLarge: z.string().nullish(),
@@ -823,24 +826,32 @@ export const mangaDetailSchema = z.object({
   status: z.string().nullish(),
   contentRating: z.string().nullish(),
   year: z.number().nullish(),
-  genres: z.array(
-    z.object({
-      name: z.string(),
-      group: z.string().nullable(),
-    }),
-  ).nullish(),
+  genres: z
+    .array(
+      z.union([
+        z.object({
+          name: z.string(),
+          group: z.string().nullish(),
+        }),
+        z.string().transform((name) => ({ name, group: null })),
+      ]),
+    )
+    .nullish()
+    .default([]),
   authors: z.array(z.string()).nullish(),
   artists: z.array(z.string()).nullish(),
   totalChapters: z.number().nullish(),
   totalVolumes: z.number().nullish(),
-  relations: z.array(
-    z.object({
-      type: z.string(),
-      providerId: z.string(),
-      title: z.string().nullish(),
-      coverUrl: z.string().nullish(),
-    }),
-  ).nullish(),
+  relations: z
+    .array(
+      z.object({
+        type: z.string(),
+        providerId: z.string(),
+        title: z.string().nullish(),
+        coverUrl: z.string().nullish(),
+      }),
+    )
+    .nullish(),
 });
 
 export type MangaDetail = z.infer<typeof mangaDetailSchema>;
@@ -867,12 +878,12 @@ export function fetchMangaDetail(anilistId: string): Promise<MangaDetail> {
  */
 export const mangaChapterSchema = z.object({
   id: z.string(),
-  chapterNumber: z.string(),
+  chapterNumber: z.union([z.string(), z.number()]).transform(String),
   volume: z.string().nullish(),
   title: z.string().nullish(),
   language: z.string().nullish(),
   pages: z.number().nullish(),
-  publishedAt: z.string().nullish(),
+  publishedAt: z.union([z.string(), z.number()]).nullish(),
   scanlationGroup: z.string().nullish(),
 });
 
@@ -900,15 +911,31 @@ export type MangaChapterFeed = z.infer<typeof mangaChapterFeedSchema>;
  * do not persist them. A 404 is a missing chapter; a 502 is an upstream image
  * provider being unavailable.
  */
-export const mangaChapterPagesSchema = z.object({
-  pageCount: z.number(),
-  pages: z.array(
-    z.object({
-      pageNumber: z.number(),
-      url: z.string(),
-    }),
-  ),
-});
+export const mangaChapterPagesSchema = z
+  .object({
+    pageCount: z.number().optional().default(0),
+    pages: z.array(
+      z.union([
+        z.object({
+          pageNumber: z.number(),
+          url: z.string(),
+        }),
+        z.string().transform((url) => ({
+          pageNumber: 0,
+          url,
+        })),
+      ]),
+    ).transform((pages) =>
+      pages.map((p, idx) => ({
+        pageNumber: p.pageNumber || idx + 1,
+        url: p.url,
+      })),
+    ),
+  })
+  .transform((res) => ({
+    pageCount: res.pageCount || res.pages.length,
+    pages: res.pages,
+  }));
 
 export type MangaChapterPages = z.infer<typeof mangaChapterPagesSchema>;
 
@@ -1589,60 +1616,60 @@ export function catalogueToShelfState(
 
 export const novelSummarySchema = z.object({
   id: z.string(),
-  slug: z.string().nullable().optional(),
-  anilistId: z.number(),
-  title: z.string(),
-  romajiTitle: z.string().nullable().optional(),
-  englishTitle: z.string().nullable().optional(),
-  nativeTitle: z.string().nullable().optional(),
-  coverImage: z.string().nullable().optional(),
-  bannerImage: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-  averageScore: z.number().nullable().optional(),
-  popularity: z.number().nullable().optional(),
-  status: z.string(),
-  genres: z.array(z.string()).default([]),
-  chapters: z.number().nullable().optional(),
-  volumes: z.number().nullable().optional(),
-  startYear: z.number().nullable().optional(),
-  source: z.string().nullable().optional(),
+  slug: z.string().nullish(),
+  anilistId: z.union([z.number(), z.string()]).nullish().transform((val) => Number(val) || 0),
+  title: z.string().nullish().default("Untitled Novel"),
+  romajiTitle: z.string().nullish(),
+  englishTitle: z.string().nullish(),
+  nativeTitle: z.string().nullish(),
+  coverImage: z.string().nullish(),
+  bannerImage: z.string().nullish(),
+  description: z.string().nullish(),
+  averageScore: z.number().nullish(),
+  popularity: z.number().nullish(),
+  status: z.string().nullish().default("UNKNOWN"),
+  genres: z.array(z.string()).nullish().transform((val) => val ?? []),
+  chapters: z.number().nullish(),
+  volumes: z.number().nullish(),
+  startYear: z.number().nullish(),
+  source: z.string().nullish(),
 });
 export type NovelSummary = z.infer<typeof novelSummarySchema>;
 
 export const novelBrowseResultSchema = z.object({
   items: z.array(novelSummarySchema),
-  total: z.number(),
-  hasNextPage: z.boolean(),
+  total: z.number().optional().default(0),
+  hasNextPage: z.boolean().optional().default(false),
 });
 export type NovelBrowseResult = z.infer<typeof novelBrowseResultSchema>;
 
 export const novelChapterSchema = z.object({
   id: z.string(),
-  novelId: z.string(),
-  chapterNumber: z.number(),
-  chapterSlug: z.string().nullable().optional(),
-  title: z.string(),
-  releaseDate: z.string().nullable().optional(),
+  novelId: z.union([z.string(), z.number()]).transform(String),
+  chapterNumber: z.coerce.number(),
+  chapterSlug: z.string().nullish(),
+  title: z.string().nullish().default(""),
+  releaseDate: z.string().nullish(),
 });
 export type NovelChapter = z.infer<typeof novelChapterSchema>;
 
 export const novelChapterFeedSchema = z.object({
-  novelId: z.string(),
-  source: z.string().nullable().optional(),
+  novelId: z.union([z.string(), z.number()]).transform(String),
+  source: z.string().nullish(),
   items: z.array(novelChapterSchema),
 });
 export type NovelChapterFeed = z.infer<typeof novelChapterFeedSchema>;
 
 export const novelChapterContentSchema = z.object({
   id: z.string(),
-  novelId: z.string(),
-  chapterNumber: z.number(),
-  chapterSlug: z.string().nullable().optional(),
-  title: z.string(),
-  content: z.string(),
-  paragraphs: z.array(z.string()),
-  previousChapter: z.number().nullable(),
-  nextChapter: z.number().nullable(),
+  novelId: z.union([z.string(), z.number()]).transform(String),
+  chapterNumber: z.coerce.number(),
+  chapterSlug: z.string().nullish(),
+  title: z.string().nullish().default(""),
+  content: z.string().nullish().default(""),
+  paragraphs: z.array(z.string()).nullish().transform((val) => val ?? []),
+  previousChapter: z.coerce.number().nullish(),
+  nextChapter: z.coerce.number().nullish(),
 });
 export type NovelChapterContent = z.infer<typeof novelChapterContentSchema>;
 

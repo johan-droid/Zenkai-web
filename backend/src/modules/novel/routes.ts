@@ -53,6 +53,15 @@ export function registerNovelRoutes(app: FastifyInstance, service: NovelService)
     return result;
   });
 
+  /** Novel catalogue alias to guard against /catalogue resolving as :id */
+  app.get("/api/v1/novel/catalogue", async (request, reply) => {
+    const query = parseOrThrow(listQuery, request.query);
+    const result = await service.browse(query);
+
+    reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
+    return result;
+  });
+
   /** Novel title search. */
   app.get("/api/v1/novel/search", async (request) => {
     const { q, limit, source } = parseOrThrow(searchQuery, request.query);

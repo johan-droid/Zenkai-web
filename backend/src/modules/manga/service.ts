@@ -41,7 +41,10 @@ export class MangaService {
       // DB offline
     }
 
-    const detail = await this.provider.getById(providerId);
+    let detail = await this.provider.getById(providerId).catch(() => null);
+    if (!detail) {
+      detail = await this.zenkaiProvider.getById(providerId).catch(() => null);
+    }
     if (!detail) throw AppError.notFound(`manga ${providerId} not found upstream`);
 
     return this.repo.upsert(detail).catch(() => providerId);
@@ -56,7 +59,10 @@ export class MangaService {
       // DB offline
     }
 
-    const detail = await this.provider.getById(providerId);
+    let detail = await this.provider.getById(providerId).catch(() => null);
+    if (!detail) {
+      detail = await this.zenkaiProvider.getById(providerId).catch(() => null);
+    }
     if (!detail) throw AppError.notFound(`manga ${providerId} not found`);
 
     const localId = await this.repo.upsert(detail).catch(() => providerId);
@@ -67,7 +73,10 @@ export class MangaService {
    * Full detail including relations, always refreshed from the provider.
    */
   async getFull(providerId: string): Promise<Record<string, any>> {
-    const detail = await this.provider.getById(providerId);
+    let detail = await this.provider.getById(providerId).catch(() => null);
+    if (!detail) {
+      detail = await this.zenkaiProvider.getById(providerId).catch(() => null);
+    }
     if (!detail) throw AppError.notFound(`manga ${providerId} not found upstream`);
 
     const localId = await this.repo.upsert(detail).catch(() => providerId);
@@ -105,15 +114,52 @@ export class MangaService {
       }
     }
 
-    if (!mangadexId) {
-      throw Object.assign(
-        new Error(`manga ${anilistId} has no MangaDex cross-reference`),
-        { statusCode: 404, reason: "not_found" },
-      );
+    let full: Record<string, any> | null = null;
+    if (mangadexId) {
+      full = await this.getFull(mangadexId).catch(() => null);
     }
 
-    const full = await this.getFull(mangadexId);
-    await this.repo.replaceExternalIds(full.id, { ...(manga.externalIds ?? {}), mangadex: mangadexId }).catch(() => undefined);
+    if (!full) {
+      // Fallback 1: try Zenkai provider search (WeebCentral, etc.)
+      const zenkaiSearch = await this.zenkaiProvider.search(manga.canonicalTitle, 1).catch(() => null);
+      if (zenkaiSearch?.items?.[0]) {
+        const item = zenkaiSearch.items[0];
+        full = await this.getFull(item.providerId).catch(() => null);
+      }
+    }
+
+    if (!full) {
+      // Fallback 2: Canonical AniList detail representation
+      full = {
+        id: anilistId,
+        mangadexId: null,
+        titles: manga.titles,
+        canonicalTitle: manga.canonicalTitle,
+        description: manga.description,
+        coverUrl: manga.coverUrl,
+        coverImageLarge: manga.coverImageLarge,
+        bannerUrl: manga.bannerUrl,
+        status: manga.status,
+        contentRating: "safe",
+        year: manga.year,
+        genres: (manga.genres ?? []).map((g: string) => ({ name: g, group: null })),
+        authors: [],
+        artists: [],
+        totalChapters: (manga as any).totalChapters ?? null,
+        totalVolumes: (manga as any).totalVolumes ?? null,
+        relations: (manga.relations ?? []).map((r: any) => ({
+          type: r.type,
+          providerId: String(r.anilistId),
+          title: r.title,
+          coverUrl: r.coverUrl,
+        })),
+      };
+    }
+
+    if (full.id && mangadexId) {
+      await this.repo.replaceExternalIds(full.id, { ...(manga.externalIds ?? {}), mangadex: mangadexId }).catch(() => undefined);
+    }
+    await this.repo.replaceExternalIds(full.id ?? anilistId, { anilist: anilistId }).catch(() => undefined);
 
     return full;
   }

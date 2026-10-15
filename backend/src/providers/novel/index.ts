@@ -331,24 +331,55 @@ export class NovelProvider {
         };
       }
     } catch {
-      // Return synthetic fallback if all else fails
+      // Fall back to synthetic below
     }
 
-    return null;
+    return {
+      id: slug,
+      slug,
+      anilistId: 0,
+      title: slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      romajiTitle: null,
+      englishTitle: slug.replace(/-/g, " "),
+      nativeTitle: null,
+      coverImage: null,
+      bannerImage: null,
+      description: "Light novel information temporarily unavailable.",
+      averageScore: null,
+      popularity: null,
+      status: "UNKNOWN",
+      genres: [],
+      chapters: null,
+      volumes: null,
+      startYear: null,
+      source,
+    };
   }
 
+  readonly #slugCache = new Map<string, string>();
+
   async resolveSlugForTitle(title: string, source = "novelfire"): Promise<string | null> {
+    const cacheKey = `${source}:${title.toLowerCase()}`;
+    if (this.#slugCache.has(cacheKey)) {
+      return this.#slugCache.get(cacheKey)!;
+    }
+
     const results = await this.searchScraper(title, source);
     if (!results.length) return null;
 
     const norm = cleanTitle(title);
     const exact = results.find((r) => cleanTitle(r.title) === norm);
-    if (exact) return exact.slug || exact.id;
+    const resolved =
+      (exact ? exact.slug || exact.id : null) ||
+      results.find((r) => cleanTitle(r.title).startsWith(norm) || norm.startsWith(cleanTitle(r.title)))?.slug ||
+      results[0]?.slug ||
+      results[0]?.id ||
+      null;
 
-    const prefix = results.find((r) => cleanTitle(r.title).startsWith(norm) || norm.startsWith(cleanTitle(r.title)));
-    if (prefix) return prefix.slug || prefix.id;
-
-    return results[0]?.slug || results[0]?.id || null;
+    if (resolved) {
+      this.#slugCache.set(cacheKey, resolved);
+    }
+    return resolved;
   }
 
   async getChapters(anilistIdOrSlug: string | number, source = "novelfire"): Promise<NovelChapter[]> {

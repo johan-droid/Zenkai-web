@@ -357,7 +357,7 @@ export class MangaDexProvider implements MangaProvider {
       `${this.#endpoint}/manga/${encodeURIComponent(providerId)}?${params}`,
     );
 
-    const resource = response.data?.[0];
+    const resource = Array.isArray(response.data) ? response.data[0] : response.data;
     if (!resource) return null;
 
     // Relations are requested separately: they are a distinct endpoint upstream,
