@@ -10,6 +10,8 @@
  * through `inject()` without binding a port.
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
@@ -260,6 +262,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerScheduleRoutes(app, scheduleService);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo);
 
+  const execFileAsync = promisify(execFile);
+
   /**
    * Media and image proxy for CDN referer-gated assets (WeebCentral, ComicK, Lnori).
    */
@@ -278,18 +282,46 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
         headers.referer = referer;
       }
 
-      const res = await fetch(url, { headers });
-      if (!res.ok) {
-        return reply.code(res.status).send({ error: "upstream_error", message: `Upstream returned status ${res.status}` });
+      let buffer: Buffer;
+      let contentType = "image/jpeg";
+
+      try {
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          contentType = res.headers.get("content-type") || "image/jpeg";
+          const arrayBuffer = await res.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+        } else {
+          throw new Error(`Upstream returned ${res.status}`);
+        }
+      } catch (fetchErr) {
+        // Resilient fallback via curl
+        const curlArgs = ["-s", "-L", "--max-time", "15"];
+        if (referer) {
+          curlArgs.push("-H", `referer: ${referer}`);
+        }
+        curlArgs.push("-H", `user-agent: ${headers["user-agent"]}`);
+        curlArgs.push(url);
+
+        const { stdout } = await execFileAsync("curl", curlArgs, {
+          encoding: "buffer",
+          maxBuffer: 25 * 1024 * 1024,
+        });
+
+        if (!stdout || stdout.length === 0) {
+          throw fetchErr;
+        }
+
+        buffer = stdout;
+        if (url.endsWith(".png")) contentType = "image/png";
+        else if (url.endsWith(".webp")) contentType = "image/webp";
+        else if (url.endsWith(".avif")) contentType = "image/avif";
       }
 
-      const contentType = res.headers.get("content-type") || "image/jpeg";
       reply.header("content-type", contentType);
       reply.header("cache-control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400");
       reply.header("access-control-allow-origin", "*");
-
-      const arrayBuffer = await res.arrayBuffer();
-      return reply.send(Buffer.from(arrayBuffer));
+      return reply.send(buffer);
     } catch (err: any) {
       return reply.code(502).send({ error: "proxy_error", message: err?.message ?? "Failed to proxy resource" });
     }
