@@ -72,6 +72,7 @@ export function HeroCarousel({
               <img
                 src={active.banner ?? active.cover.url!}
                 alt=""
+                referrerPolicy="no-referrer"
                 onError={(e) => {
                   if (active.cover.url && e.currentTarget.src !== active.cover.url) {
                     e.currentTarget.src = active.cover.url;

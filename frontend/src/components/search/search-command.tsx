@@ -153,6 +153,7 @@ function MediaCommandItem({
         <img
           src={media.cover.url}
           alt=""
+          referrerPolicy="no-referrer"
           className="size-9 shrink-0 rounded-md object-cover"
           loading="lazy"
         />

@@ -859,14 +859,30 @@ export type MangaDetail = z.infer<typeof mangaDetailSchema>;
 /**
  * Full canonical manga detail (P17).
  *
- * Addressed by AniList id so the reader and detail routes can keep using the
- * same cross-reference id the anime side uses. A 404 is a missing title; a 400
- * is a malformed id; everything else is a transport/contract problem.
+ * Addressed by either AniList id or MangaDex uuid/provider id. If a numeric id
+ * is passed, resolves via /api/v1/manga/by-anilist/:id with fallback to /api/v1/manga/:id.
+ * If a MangaDex uuid or provider string is passed, resolves via /api/v1/manga/:id
+ * with fallback to /api/v1/manga/by-anilist/:id.
  */
-export function fetchMangaDetail(anilistId: string): Promise<MangaDetail> {
+export async function fetchMangaDetail(id: string): Promise<MangaDetail> {
+  const trimmed = id.trim();
+  const isNumeric = /^\d+$/.test(trimmed);
+  if (isNumeric) {
+    return getValidated(
+      `/api/v1/manga/by-anilist/${encodeURIComponent(trimmed)}`,
+      mangaDetailSchema,
+    ).catch(() =>
+      getValidated(`/api/v1/manga/${encodeURIComponent(trimmed)}`, mangaDetailSchema),
+    );
+  }
   return getValidated(
-    `/api/v1/manga/by-anilist/${encodeURIComponent(anilistId)}`,
+    `/api/v1/manga/${encodeURIComponent(trimmed)}`,
     mangaDetailSchema,
+  ).catch(() =>
+    getValidated(
+      `/api/v1/manga/by-anilist/${encodeURIComponent(trimmed)}`,
+      mangaDetailSchema,
+    ),
   );
 }
 

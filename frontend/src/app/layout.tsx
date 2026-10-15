@@ -14,6 +14,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "ZENKAI — Anime, Manga & Novels",
   description: "Stream anime, read manga and novels ad-free in high definition with CinePlayer.",
+  referrer: "no-referrer",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

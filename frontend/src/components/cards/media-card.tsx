@@ -32,6 +32,7 @@ export function MediaCard({
             src={media.cover.url}
             alt={title}
             loading={priority ? "eager" : "lazy"}
+            referrerPolicy="no-referrer"
             onError={(e) => {
               e.currentTarget.style.display = "none";
             }}

@@ -440,37 +440,58 @@ export class DiscoveryService {
       }
       try {
         const rows = await this.upcomingSource.upcoming({ limit: size });
-        return {
-          status: "ok",
-          items: rows.map((row) => ({
-            id: null,
-            anilistId: row.anilistId != null ? String(row.anilistId) : "",
-            title: row.title,
-            titles: { romaji: null, english: null, native: null, synonyms: [] },
-            coverUrl: row.coverUrl,
-            coverImageLarge: null,
-            bannerUrl: null,
-            format: null,
-            status: null,
-            season: null,
-            seasonYear: null,
-            year: null,
-            averageScore: null,
-            totalEpisodes: null,
-            popularity: null,
-            genres: [],
-            isAdult: false,
-            // Carried through so a client can show "in 3 days" without a
-            // second request, and so the shelf is not ambiguous about which
-            // episode it is listing.
-            episodeNumber: row.episodeNumber,
-            airingAt: new Date(row.airingAt).toISOString(),
-          })) as unknown as DiscoveryCard[],
-        };
+        if (rows.length > 0) {
+          return {
+            status: "ok",
+            items: rows.map((row) => ({
+              id: null,
+              anilistId: row.anilistId != null ? String(row.anilistId) : "",
+              title: row.title,
+              titles: { romaji: null, english: null, native: null, synonyms: [] },
+              coverUrl: row.coverUrl,
+              coverImageLarge: null,
+              bannerUrl: null,
+              format: null,
+              status: null,
+              season: null,
+              seasonYear: null,
+              year: null,
+              averageScore: null,
+              totalEpisodes: null,
+              popularity: null,
+              genres: [],
+              isAdult: false,
+              // Carried through so a client can show "in 3 days" without a
+              // second request, and so the shelf is not ambiguous about which
+              // episode it is listing.
+              episodeNumber: row.episodeNumber,
+              airingAt: new Date(row.airingAt).toISOString(),
+            })) as unknown as DiscoveryCard[],
+          };
+        }
+      } catch {
+        // Proceed to provider fallback
+      }
+
+      // Resilient fallback: browse upstream upcoming anime from AniList
+      try {
+        const page = await this.provider.browse({
+          status: "NOT_YET_RELEASED",
+          sort: "POPULARITY_DESC",
+          perPage: size,
+        });
+        if (page?.items && page.items.length > 0) {
+          return {
+            status: "ok",
+            items: dedupeByIdentity(page.items.map((summary) => toCard(summary, null))),
+          };
+        }
       } catch (error) {
-        const reason = error instanceof AppError ? error.reason : "internal";
+        const reason = error instanceof AppError ? error.reason : "upstream_error";
         return { status: "unavailable", items: [], reason };
       }
+
+      return { status: "unavailable", items: [], reason: "empty" };
     };
 
     const [trending, popular, seasonal, recent, topRated, upcomingShelf] = await Promise.all([

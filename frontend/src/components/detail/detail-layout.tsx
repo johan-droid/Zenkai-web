@@ -207,6 +207,7 @@ export function DetailLayout({
             <img
               src={media.banner ?? media.cover.url!}
               alt=""
+              referrerPolicy="no-referrer"
               className="size-full object-cover"
             />
           ) : null}
@@ -218,7 +219,7 @@ export function DetailLayout({
             <div className="glass-panel aspect-[2/3] overflow-hidden rounded-2xl">
               {media.cover.url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={media.cover.url} alt={title} className="size-full object-cover" />
+                <img src={media.cover.url} alt={title} referrerPolicy="no-referrer" className="size-full object-cover" />
               ) : null}
             </div>
           </div>

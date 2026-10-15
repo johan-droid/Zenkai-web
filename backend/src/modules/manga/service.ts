@@ -77,21 +77,35 @@ export class MangaService {
     if (!detail) {
       detail = await this.zenkaiProvider.getById(providerId).catch(() => null);
     }
+    if (!detail && Number.isFinite(Number(providerId))) {
+      return this.getByAnilistId(providerId);
+    }
     if (!detail) throw AppError.notFound(`manga ${providerId} not found upstream`);
 
     const localId = await this.repo.upsert(detail).catch(() => providerId);
     await this.repo.replaceRelations(localId, detail).catch(() => undefined);
 
-    return { ...detail, id: localId, canonicalTitle: (detail as any).canonicalTitle ?? detail.titles?.primary ?? "" };
+    const isMangaDex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providerId);
+    const mangadexId =
+      (detail as any).mangadexId ??
+      (isMangaDex ? providerId : ((detail as any).providerId || null));
+
+    return {
+      ...detail,
+      id: localId,
+      mangadexId,
+      canonicalTitle: (detail as any).canonicalTitle ?? detail.titles?.primary ?? "",
+    };
   }
 
   /**
-   * Resolve a manga by its AniList id.
+   * Resolve a manga by its AniList id or provider id.
    */
   async getByAnilistId(anilistId: string): Promise<Record<string, any>> {
     const numericId = Number(anilistId);
     if (!Number.isFinite(numericId)) {
-      throw Object.assign(new Error("invalid anilist id"), { statusCode: 400, reason: "bad_request" });
+      // If it's a provider ID (e.g. MangaDex UUID), resolve directly via getFull
+      return this.getFull(anilistId);
     }
 
     try {
