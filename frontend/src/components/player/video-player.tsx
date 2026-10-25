@@ -5,10 +5,13 @@ import { DefaultVideoLayout, defaultLayoutIcons } from "@vidstack/react/player/l
 import type { MediaProviderAdapter } from "@vidstack/react";
 import { isHLSProvider } from "@vidstack/react";
 import Hls from "hls.js";
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import { SkipButton } from "@/components/player/skip-button";
 import type { PlaybackExecution } from "@/lib/api/zenkai";
+import { computeResumePosition } from "@/lib/player/resume";
+
+export { computeResumePosition };
 
 import "@vidstack/react/player/styles/default/theme.css";
 import "@vidstack/react/player/styles/default/layouts/video.css";
@@ -99,6 +102,11 @@ export function VideoPlayer({
   const handlers = useRef({ onProgress, onEnded, onError });
   const playerApi = useRef<{ seekTo: (timeSeconds: number) => void } | null>(null);
 
+  const safeInitialTime =
+    typeof initialTime === "number" && Number.isFinite(initialTime) && initialTime > 1
+      ? initialTime
+      : 0;
+
   // Keep the latest callbacks reachable from subscriptions below without
   // re-subscribing every render. Must run in an effect: writing a ref during
   // render is not allowed.
@@ -106,17 +114,21 @@ export function VideoPlayer({
     handlers.current = { onProgress, onEnded, onError };
   }, [onProgress, onEnded, onError]);
 
-  // Wire hls.js into Vidstack's HLS provider.
-  const onProviderChange = (provider: MediaProviderAdapter | null) => {
-    if (isHLSProvider(provider)) {
-      provider.library = Hls;
-      provider.config = {
-        enableWorker: true,
-        lowLatencyMode: false,
-        backBufferLength: 90,
-      };
-    }
-  };
+  // Wire hls.js into Vidstack's HLS provider with startPosition configured.
+  const onProviderChange = useCallback(
+    (provider: MediaProviderAdapter | null) => {
+      if (isHLSProvider(provider)) {
+        provider.library = Hls;
+        provider.config = {
+          enableWorker: true,
+          lowLatencyMode: false,
+          backBufferLength: 90,
+          startPosition: safeInitialTime > 1 ? safeInitialTime : -1,
+        };
+      }
+    },
+    [safeInitialTime],
+  );
 
   const handleSkip = () => {
     if (!activeSkip) return;
@@ -130,6 +142,7 @@ export function VideoPlayer({
         title={title}
         src={{ src: mediaSrc(execution), type: mediaTypeFor(execution) }}
         poster={poster ?? undefined}
+        currentTime={safeInitialTime > 1 ? safeInitialTime : undefined}
         playsInline
         crossOrigin
         onProviderChange={onProviderChange}
@@ -140,7 +153,7 @@ export function VideoPlayer({
         <DefaultVideoLayout icons={defaultLayoutIcons} noModal />
         <MediaEffects
           execution={execution}
-          initialTime={initialTime}
+          initialTime={safeInitialTime}
           skipTimes={skipTimes}
           playbackRate={playbackRate}
           volume={volume}
@@ -222,20 +235,27 @@ function MediaEffects({
   }, [player, skipTimes, handlers, onActiveSkipChange]);
 
   // Restore the resume position once, as soon as the media is seekable.
+  // When startPosition in HLS config or currentTime prop succeeded, player.currentTime
+  // is already at initialTime. We only issue a seek if player is not yet near initialTime,
+  // avoiding duplicate segment requests and buffer flushes.
   useEffect(() => {
     if (!player || restored.current || initialTime <= 1) return;
 
-    return player.subscribe(({ canPlay }) => {
+    return player.subscribe(({ canPlay, currentTime, duration }) => {
       if (!canPlay || restored.current) return;
+
+      // Guard against seeking past duration or into near-end positions (within 10s of duration).
+      if (duration > 0 && initialTime >= Math.max(0, duration - 10)) {
+        restored.current = true;
+        return;
+      }
+
       restored.current = true;
-      player.currentTime = initialTime;
-      remote.changeVolume(volume);
-      if (muted) remote.mute(); else remote.unmute();
-      void player.play().catch(() => {
-        /* Autoplay may be blocked; the user can press play. */
-      });
+      if (Math.abs(currentTime - initialTime) > 2) {
+        player.currentTime = initialTime;
+      }
     });
-  }, [player, remote, initialTime, volume, muted]);
+  }, [player, initialTime]);
 
   // Apply rate/volume changes from the settings UI live.
   useEffect(() => {

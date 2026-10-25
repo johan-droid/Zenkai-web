@@ -29,7 +29,7 @@ import { EpisodeList } from "@/components/player/episode-list";
 import { PlayerHotkeys } from "@/components/player/player-hotkeys";
 import { QualityMenu } from "@/components/player/quality-menu";
 import { SourceSwitcher } from "@/components/player/source-switcher";
-import { VideoPlayer } from "@/components/player/video-player";
+import { computeResumePosition, VideoPlayer } from "@/components/player/video-player";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -204,6 +204,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   // Resume position & title progress.
   const progress = useUnitProgress("anime", id, episodeNumber);
   const titleProgress = useTitleProgress("anime", id);
+  const initialTime = computeResumePosition(progress);
 
   const watchedSet = useMemo(() => {
     const set = new Set<number>();
@@ -359,12 +360,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
         <QualityMenu rate={playbackRate} onRateChange={(rate) => {
           usePlayerStore.getState().setPlaybackRate(rate);
         }} />
-        <PlayerHotkeys
-          onTheater={() => {
-            usePlayerStore.getState().toggleTheaterMode();
-          }}
-          onNext={goNext}
-        />
+        <PlayerHotkeys />
       </div>
 
       <div className={cn("grid gap-6", theaterMode ? "" : "lg:grid-cols-[1fr_360px]")}>
@@ -377,7 +373,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
             title={media ? displayTitle(media.title, id) : id}
             poster={media?.cover.url ?? null}
             episodeNumber={episodeNumber}
-            initialTime={progress?.positionSeconds}
+            initialTime={initialTime}
             skipTimes={skipTimes}
             autoSkip={autoSkip}
             playbackRate={playbackRate}
@@ -462,12 +458,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
                 {nextCard?.airingState === "upcoming" ? "Next (unreleased)" : "Next"}
               </Button>
             </div>
-            <PlayerHotkeys
-              onTheater={() => {
-                usePlayerStore.getState().toggleTheaterMode();
-              }}
-              onNext={goNext}
-            />
+            <PlayerHotkeys />
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
               Local progress is saved on this device.

@@ -26,7 +26,7 @@
 
 import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
-import { assertSafeUrl, BlockedUrlError } from "../../http/url-guard.js";
+import { assertSafeUrl, BlockedUrlError, hostAllowed } from "../../http/url-guard.js";
 import type {
   AccessType,
   PlaybackDelivery,
@@ -43,7 +43,22 @@ const ALLOWED_CONTENT_TYPES = [
   "video/mp2t",
   "video/mp4",
   "video/webm",
+  "video/iso.segment",
+  "audio/mp4",
+  "audio/aac",
+  "audio/mpeg",
+  "application/octet-stream",
+  "binary/octet-stream",
+  "text/plain",
+];
+
+/** Media types accepted as HLS playlists. */
+const ALLOWED_PLAYLIST_CONTENT_TYPES = [
   "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+  "audio/mpegurl",
+  "text/plain",
+  "application/octet-stream",
 ];
 
 /** Manifests are small; anything larger is a media file, not a playlist. */
@@ -51,6 +66,53 @@ const MANIFEST_MAX_BYTES = 2 * 1024 * 1024;
 
 /** Redirect hops are followed one at a time, and each hop is re-validated. */
 const MAX_REDIRECTS = 5;
+
+/**
+ * Validate and sanitize upstream referer URL against control chars, credentials,
+ * and enforce a trusted origin policy (allowlist or same origin as target URL).
+ */
+export function sanitizeReferer(
+  referer?: string,
+  targetUrl?: URL,
+  allowlist?: string[],
+): string | undefined {
+  if (!referer) return undefined;
+  if (/[\r\n\0]/.test(referer)) {
+    throw AppError.badRequest("invalid characters in referer");
+  }
+  let url: URL;
+  try {
+    url = new URL(referer);
+  } catch {
+    throw AppError.badRequest("invalid referer URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw AppError.badRequest("unsupported referer protocol");
+  }
+  if (url.username || url.password) {
+    throw AppError.badRequest("credentials in referer are not allowed");
+  }
+  if (targetUrl && allowlist) {
+    const isSameOrigin = url.origin === targetUrl.origin;
+    const isAllowlisted =
+      allowlist.length > 0 && hostAllowed(url.hostname.toLowerCase(), allowlist);
+    if (!isSameOrigin && !isAllowlisted) {
+      throw AppError.badRequest("untrusted referer origin");
+    }
+  }
+  return url.toString();
+}
+
+/** Validate and sanitize HTTP Range header value. */
+export function sanitizeRange(range?: string): string | undefined {
+  if (!range) return undefined;
+  if (/[\r\n\0]/.test(range)) return undefined;
+  const trimmed = range.trim();
+  if (/^bytes=\d*-\d*(?:,\s*\d*-\d*)*$/i.test(trimmed) && trimmed.length <= 128) {
+    return trimmed;
+  }
+  return undefined;
+}
 
 /**
  * Fetch a URL, following redirects only after each hop passes the SSRF guard.
@@ -68,8 +130,24 @@ export async function fetchWithRedirectValidation(
     fetchImpl?: typeof fetch;
     assertImpl?: typeof assertSafeUrl;
     timeoutMs?: number;
+    range?: string;
+    referer?: string;
   },
 ): Promise<Response> {
+  if (!options.allowlist || options.allowlist.length === 0) {
+    throw AppError.badRequest("playback proxy allowlist is empty");
+  }
+
+  let targetUrl: URL;
+  try {
+    targetUrl = new URL(rawUrl);
+  } catch {
+    throw AppError.badRequest("malformed url");
+  }
+
+  const validatedReferer = sanitizeReferer(options.referer, targetUrl, options.allowlist);
+  const sanitizedRange = sanitizeRange(options.range);
+
   const doAssert = options.assertImpl ?? assertSafeUrl;
   const doFetch = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -86,20 +164,24 @@ export async function fetchWithRedirectValidation(
       throw error;
     }
 
+    const outboundHeaders: Record<string, string> = {
+      "user-agent": "Zenkai/1.0 (+https://github.com/johan-droid/Zenkai-web)",
+      accept: "*/*",
+    };
+    if (sanitizedRange) {
+      outboundHeaders["range"] = sanitizedRange;
+    }
+    if (validatedReferer) {
+      outboundHeaders["referer"] = validatedReferer;
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await doFetch(safe.url as URL | string, {
         signal: controller.signal,
-        // Media CDNs commonly require the origin Referer; forwarding it is what
-        // makes the relay work where a bare request returns 403. This fixed
-        // pair is the entire header policy: no client-supplied header ever
-        // reaches the upstream.
-        headers: {
-          "user-agent": "Zenkai/1.0 (+https://github.com/johan-droid/Zenkai-web)",
-          accept: "*/*",
-        },
+        headers: outboundHeaders,
         redirect: "manual",
       });
     } finally {
@@ -243,6 +325,28 @@ const DIRECT_MEDIA_TYPE: Record<string, string> = {
   mov: "video/quicktime",
 };
 
+export interface FetchResourceOptions {
+  enabled?: boolean;
+  allowlist?: string[];
+  fetchImpl?: typeof fetch;
+  assertImpl?: typeof assertSafeUrl;
+  timeoutMs?: number;
+  relayPrefix?: string;
+  referer?: string;
+  range?: string;
+  forcePlaylist?: boolean;
+}
+
+export interface ResourceResult {
+  isPlaylist: boolean;
+  body: string | ReadableStream<Uint8Array> | null;
+  contentType: string;
+  status: number;
+  contentLength?: string;
+  contentRange?: string;
+  acceptRanges?: string;
+}
+
 export class PlaybackGateway {
   readonly #stats: GatewayStats = { planned: 0, unmapped: 0 };
 
@@ -275,7 +379,7 @@ export class PlaybackGateway {
       mediaType: this.#mediaType(access, parsed),
 
       url: parsed.toString(),
-      ...this.#delivery(access, parsed),
+      ...this.#delivery(access, parsed, source.referer),
 
       language: source.language,
       quality: source.quality,
@@ -416,7 +520,7 @@ export class PlaybackGateway {
    * sink, so no other access mode is proxied. A default deployment has the relay
    * off, so every plan is client-delivered.
    */
-  #delivery(access: AccessType, url: URL): { delivery: PlaybackDelivery; proxyUrl?: string } {
+  #delivery(access: AccessType, url: URL, referer?: string): { delivery: PlaybackDelivery; proxyUrl?: string } {
     if (!config.ENABLE_PLAYBACK_PROXY) return { delivery: "client" };
     if (access !== "hls") return { delivery: "client" };
 
@@ -428,86 +532,245 @@ export class PlaybackGateway {
       return { delivery: "client" };
     }
 
+    const searchParams = new URLSearchParams({ url: url.toString() });
+    if (referer) {
+      searchParams.set("referer", referer);
+    }
+
     // A relative path rather than an absolute URL: the client already knows which
     // origin it is talking to, and a configured public base URL would be one more
     // thing that can be wrong in a multi-host deployment.
     return {
       delivery: "proxied",
-      proxyUrl: `/api/v1/playback/manifest?url=${encodeURIComponent(url.toString())}`,
+      proxyUrl: `/api/v1/playback/manifest?${searchParams.toString()}`,
     };
   }
 
   /**
-   * Relay a manifest through this service.
+   * Rewrite child URIs in an HLS playlist.
    *
-   * Only playlists are relayed: proxying an unbounded media stream would turn
-   * this process into a bandwidth sink and let one viewer cost thousands of
-   * upstream requests.
+   * Resolves relative and root-relative URLs against the parent manifest URL.
+   * If the child URL has no query parameters, but the parent manifest does (and
+   * both share the same origin), propagates parent query parameters to ensure
+   * signed tokens are not stripped away.
+   *
+   * Normalizes CRLF line endings consistently before rewriting.
+   *
+   * Security & SSRF boundary policy for child URLs:
+   * Resources on the same origin as the parent manifest or explicitly allowlisted
+   * on the server are rewritten through the relay to ensure player delivery.
+   * Cross-origin absolute URLs pointing to domains outside the allowlist are NOT
+   * proxied (preserving strict SSRF boundaries); they remain direct URLs for client-side resolution.
    */
-  async fetchManifest(
-    url: string,
-    options: {
-      enabled?: boolean;
-      allowlist?: string[];
-      fetchImpl?: typeof fetch;
-      assertImpl?: typeof assertSafeUrl;
-    } = {},
-  ): Promise<{ body: string; contentType: string }> {
-    const enabled = options.enabled ?? config.ENABLE_PLAYBACK_PROXY;
-    if (!enabled) {
-      throw AppError.badRequest("playback proxy is disabled");
+  rewriteManifest(
+    body: string,
+    manifestUrl: string,
+    options: { relayPrefix?: string; referer?: string; allowlist?: string[] } = {},
+  ): string {
+    let parentUrl: URL;
+    try {
+      parentUrl = new URL(manifestUrl);
+    } catch {
+      return body;
     }
 
-    const response = await fetchWithRedirectValidation(url, {
-      allowlist: options.allowlist ?? config.playbackProxyAllowlist,
-      fetchImpl: options.fetchImpl,
-      assertImpl: options.assertImpl,
-    });
+    const normalizedBody = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-    if (!response.ok) {
-      throw new AppError("upstream_error", `upstream returned ${response.status}`, 502);
-    }
+    const resolveChild = (child: string): string => {
+      try {
+        const resolved = new URL(child, parentUrl);
+        // If the child URL has no query string, but the parent manifest URL does,
+        // and both share the same origin, propagate parent query parameters (e.g. auth tokens).
+        if (!resolved.search && parentUrl.search && resolved.origin === parentUrl.origin) {
+          resolved.search = parentUrl.search;
+        }
+        const resolvedStr = resolved.toString();
 
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!ALLOWED_CONTENT_TYPES.some((allowed) => contentType.includes(allowed))) {
-      throw AppError.badRequest(`unsupported content type: ${contentType || "unknown"}`);
-    }
+        if (!options.relayPrefix) {
+          return resolvedStr;
+        }
 
-    const body = await response.text();
-    if (body.length > MANIFEST_MAX_BYTES) {
-      throw AppError.badRequest("manifest exceeds the size limit");
-    }
+        if (child.startsWith(options.relayPrefix)) {
+          return child;
+        }
 
-    const rewrittenBody = body
+        // Cross-origin absolute URLs pointing outside the allowlist are NOT proxied;
+        // they remain direct absolute URLs for client-side resolution.
+        const isHostAllowed =
+          resolved.origin === parentUrl.origin ||
+          (options.allowlist && options.allowlist.length > 0
+            ? hostAllowed(resolved.hostname.toLowerCase(), options.allowlist)
+            : false);
+
+        if (!isHostAllowed) {
+          return resolvedStr;
+        }
+
+        const searchParams = new URLSearchParams();
+        searchParams.set("url", resolvedStr);
+        if (options.referer) {
+          searchParams.set("referer", options.referer);
+        }
+        return `${options.relayPrefix}?${searchParams.toString()}`;
+      } catch {
+        return child;
+      }
+    };
+
+    return normalizedBody
       .split("\n")
       .map((line) => {
         const trimmed = line.trim();
         if (!trimmed) return line;
 
         if (trimmed.startsWith("#")) {
-          return line.replace(/URI="([^"]+)"/g, (match, uri) => {
-            if (/^https?:\/\//i.test(uri)) return match;
-            try {
-              const abs = new URL(uri, url).toString();
-              return `URI="${abs}"`;
-            } catch {
-              return match;
-            }
+          return line.replace(/URI=(?:"([^"]+)"|'([^']+)'|([^\s,]+))/g, (match, q1, q2, q3) => {
+            const uri = q1 ?? q2 ?? q3;
+            if (!uri) return match;
+            const rewritten = resolveChild(uri);
+            return `URI="${rewritten}"`;
           });
         }
 
-        if (!/^https?:\/\//i.test(trimmed)) {
-          try {
-            return new URL(trimmed, url).toString();
-          } catch {
-            return line;
-          }
-        }
-        return line;
+        return resolveChild(trimmed);
       })
       .join("\n");
+  }
 
-    return { body: rewrittenBody, contentType };
+  /**
+   * Relay an HLS playlist or binary media resource through this service.
+   *
+   * If the target is a playlist, rewrites child URLs to route through the relay.
+   * If the target is a binary resource (segment, init map, encryption key),
+   * streams the body directly without buffering into memory or converting to text.
+   *
+   * Validates that an allowlist is configured (fails closed when allowlist is empty).
+   * Deliberately handles HTTP 416 Range Not Satisfiable by preserving status and Content-Range.
+   */
+  async fetchResource(
+    url: string,
+    options: FetchResourceOptions = {},
+  ): Promise<ResourceResult> {
+    const enabled = options.enabled ?? config.ENABLE_PLAYBACK_PROXY;
+    if (!enabled) {
+      throw AppError.badRequest("playback proxy is disabled");
+    }
+
+    const allowlist = options.allowlist ?? config.playbackProxyAllowlist;
+    if (!allowlist || allowlist.length === 0) {
+      throw AppError.badRequest("playback proxy allowlist is empty");
+    }
+
+    const response = await fetchWithRedirectValidation(url, {
+      allowlist,
+      fetchImpl: options.fetchImpl,
+      assertImpl: options.assertImpl,
+      timeoutMs: options.timeoutMs,
+      range: options.range,
+      referer: options.referer,
+    });
+
+    const isOk = response.ok;
+    const isRangeNotSatisfiable = response.status === 416;
+
+    if (!isOk && !isRangeNotSatisfiable) {
+      throw new AppError("upstream_error", `upstream returned ${response.status}`, 502);
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+
+    if (isRangeNotSatisfiable) {
+      const rawContentRange = response.headers.get("content-range");
+      const isValidContentRange =
+        rawContentRange !== null &&
+        /^bytes (?:\d+-\d+|\*)\/(?:\d+|\*)$/i.test(rawContentRange.trim()) &&
+        !/[\r\n\0]/.test(rawContentRange);
+
+      if (!isValidContentRange) {
+        throw new AppError(
+          "upstream_error",
+          "upstream returned 416 without valid Content-Range header",
+          502,
+        );
+      }
+
+      return {
+        isPlaylist: false,
+        body: response.body,
+        contentType: contentType || "application/octet-stream",
+        status: 416,
+        contentLength: response.headers.get("content-length") ?? undefined,
+        contentRange: rawContentRange.trim(),
+        acceptRanges: response.headers.get("accept-ranges") ?? undefined,
+      };
+    }
+
+    const isM3u8Extension = /\.m3u8(?:$|\?)/i.test(url);
+    const isMpegUrl = /mpegurl/i.test(contentType);
+    const isPlaylist = options.forcePlaylist || isM3u8Extension || isMpegUrl;
+
+    if (isPlaylist) {
+      if (
+        contentType.includes("text/html") ||
+        contentType.includes("application/xhtml+xml") ||
+        (contentType && !ALLOWED_PLAYLIST_CONTENT_TYPES.some((allowed) => contentType.toLowerCase().includes(allowed)))
+      ) {
+        throw AppError.badRequest(`unsupported content type: ${contentType || "unknown"}`);
+      }
+
+      const body = await response.text();
+      if (body.length > MANIFEST_MAX_BYTES) {
+        throw AppError.badRequest("manifest exceeds the size limit");
+      }
+
+      const rewrittenBody = this.rewriteManifest(body, url, {
+        relayPrefix: options.relayPrefix,
+        referer: options.referer,
+        allowlist,
+      });
+
+      return {
+        isPlaylist: true,
+        body: rewrittenBody,
+        contentType: contentType || "application/vnd.apple.mpegurl",
+        status: response.status,
+      };
+    }
+
+    // Binary media resource (e.g. video segments, audio chunks, encryption keys, init segments)
+    if (
+      contentType.includes("text/html") ||
+      contentType.includes("application/xhtml+xml") ||
+      (contentType && !ALLOWED_CONTENT_TYPES.some((allowed) => contentType.toLowerCase().includes(allowed)))
+    ) {
+      throw AppError.badRequest(`unsupported content type: ${contentType || "unknown"}`);
+    }
+
+    return {
+      isPlaylist: false,
+      body: response.body,
+      contentType: contentType || "application/octet-stream",
+      status: response.status,
+      contentLength: response.headers.get("content-length") ?? undefined,
+      contentRange: response.headers.get("content-range") ?? undefined,
+      acceptRanges: response.headers.get("accept-ranges") ?? undefined,
+    };
+  }
+
+  /**
+   * Relay a manifest through this service.
+   *
+   * Retained for backward-compatible manifest-specific callers.
+   */
+  async fetchManifest(
+    url: string,
+    options: FetchResourceOptions = {},
+  ): Promise<{ body: string; contentType: string }> {
+    const result = await this.fetchResource(url, { ...options, forcePlaylist: true });
+    return {
+      body: typeof result.body === "string" ? result.body : "",
+      contentType: result.contentType,
+    };
   }
 
   /**
@@ -531,8 +794,13 @@ export class PlaybackGateway {
       throw AppError.badRequest("playback proxy is disabled");
     }
 
+    const allowlist = options.allowlist ?? config.playbackProxyAllowlist;
+    if (!allowlist || allowlist.length === 0) {
+      throw AppError.badRequest("playback proxy allowlist is empty");
+    }
+
     const response = await fetchWithRedirectValidation(url, {
-      allowlist: options.allowlist ?? config.playbackProxyAllowlist,
+      allowlist,
       fetchImpl: options.fetchImpl,
       assertImpl: options.assertImpl,
     });

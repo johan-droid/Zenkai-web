@@ -9,6 +9,7 @@
  * empty state and a wrongly cached failure.
  */
 
+import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { AppError } from "../../http/errors.js";
@@ -284,26 +285,59 @@ export function registerPlaybackRoutes(
   }));
 
   /**
-   * Manifest relay (P9).
+   * Manifest and media resource relay (P9).
    *
    * Disabled unless `ENABLE_PLAYBACK_PROXY` is set. The URL is validated by the
    * SSRF guard inside the gateway, so this cannot be turned into an open proxy.
    *
-   * This is the relay a `delivery: "proxied"` plan points at. It is not how a
-   * playback URL is chosen: a plan's URL always comes from a canonical source, and
-   * this endpoint only ever serves the manifest that plan already named.
+   * This serves both HLS manifests (rewriting child playlist and media segment URLs
+   * so they remain on this secure relay) and binary media resources (streaming them
+   * directly without text conversion or in-memory buffering, forwarding Range headers
+   * and 206 Partial Content).
    */
   app.get("/api/v1/playback/manifest", async (request, reply) => {
-    const { url } = parseOrThrow(
-      z.object({ url: z.string().trim().min(1) }),
+    const { url, referer } = parseOrThrow(
+      z.object({
+        url: z.string().trim().min(1),
+        referer: z.string().trim().min(1).optional(),
+      }),
       request.query,
     );
 
-    const manifest = await playbackGateway.fetchManifest(url);
-    reply.header("content-type", manifest.contentType);
+    const range = typeof request.headers.range === "string" ? request.headers.range : undefined;
+
+    const resource = await playbackGateway.fetchResource(url, {
+      referer,
+      range,
+      relayPrefix: "/api/v1/playback/manifest",
+    });
+
+    reply.header("content-type", resource.contentType);
     // Signed upstream URLs must never outlive this response in a shared cache.
     reply.header("cache-control", "no-store");
-    return reply.send(manifest.body);
+
+    if (resource.isPlaylist) {
+      return reply.send(resource.body);
+    }
+
+    reply.status(resource.status);
+    if (resource.contentLength) {
+      reply.header("content-length", resource.contentLength);
+    }
+    if (resource.contentRange) {
+      reply.header("content-range", resource.contentRange);
+    }
+    if (resource.acceptRanges) {
+      reply.header("accept-ranges", resource.acceptRanges);
+    }
+
+    if (!resource.body) {
+      return reply.send("");
+    }
+    if (typeof (resource.body as any).pipe === "function") {
+      return reply.send(resource.body);
+    }
+    return reply.send(Readable.fromWeb(resource.body as any));
   });
 
   /**

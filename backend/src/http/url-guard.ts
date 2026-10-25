@@ -66,7 +66,7 @@ export interface UrlGuardOptions {
   allowlist?: string[];
 }
 
-function hostAllowed(host: string, allowlist: string[]): boolean {
+export function hostAllowed(host: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return false;
   return allowlist.some((entry) => host === entry || host.endsWith(`.${entry}`));
 }

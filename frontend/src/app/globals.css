@@ -242,3 +242,28 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/*
+ * Vidstack Player Layout Corrections (Phase 3B-A)
+ *
+ * 1. Small layout (<576px / <380px): Vidstack sets `pointer-events: none` on
+ * `.vds-controls-group:nth-last-child(2)` in `video.css`. In small layout, this group
+ * contains `<DefaultFullscreenButton />`. Restore `pointer-events: auto` strictly on the
+ * fullscreen button so it is interactive without unintentionally enabling pointer events
+ * on surrounding title, time, or background gestures.
+ *
+ * 2. Large layout (>=576px): The time slider group (`:nth-last-child(2)`) has
+ * `margin-bottom: -16px; z-index: 11;`, while the bottom controls group (`:last-child`)
+ * has `z-index: 10;`. The 16px bottom padding of the slider element hangs over the top
+ * 12px of the fullscreen button, causing upper-edge clicks to be intercepted by the slider.
+ * Elevate the bottom controls group to `z-index: 12;` (strictly scoped to `:not([data-sm])`
+ * so it never matches the time slider in small layout).
+ */
+[data-media-player] .vds-video-layout[data-sm] .vds-fullscreen-button {
+  pointer-events: auto;
+}
+
+[data-media-player] .vds-video-layout:not([data-sm]) .vds-controls-group:last-child {
+  z-index: 12;
+}
+

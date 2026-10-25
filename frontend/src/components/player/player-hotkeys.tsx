@@ -1,7 +1,6 @@
 "use client";
 
 import { Keyboard } from "lucide-react";
-import { useHotkeys } from "react-hotkeys-hook";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,30 +21,18 @@ const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ["F"], action: "Fullscreen" },
   { keys: ["T"], action: "Theater mode" },
   { keys: ["N"], action: "Next episode" },
+  { keys: ["P"], action: "Previous episode" },
 ];
 
 /**
- * Keyboard shortcuts for the player.
+ * Keyboard shortcuts dialog for the player.
  *
- * `t` toggles theater mode, `n` advances to the next episode. Vidstack already
- * handles Space/K (play/pause), arrows (seek), M (mute), F (fullscreen) in its
- * own control layout, so those are covered there.
+ * Vidstack handles Space/K (play/pause), arrows (seek), M (mute), F (fullscreen)
+ * in its own control layout. Custom navigation shortcuts (T for theater, N for next,
+ * P for previous) are registered authoritatively in WatchView to prevent duplicate
+ * global event listener execution.
  */
-export function PlayerHotkeys({
-  onTheater,
-  onNext,
-}: {
-  onTheater: () => void;
-  onNext: () => void;
-}) {
-
-  useHotkeys("t", () => {
-    onTheater();
-  }, { preventDefault: true });
-  useHotkeys("n", () => {
-    onNext();
-  }, { preventDefault: true });
-
+export function PlayerHotkeys() {
   return (
     <Dialog>
       <DialogTrigger asChild>
