@@ -182,6 +182,16 @@ export async function saveLibraryEntry(input: {
     updatedAt: Date.now(),
   });
   await db.library.put(record);
+
+  // Background cloud sync for authenticated sessions (non-blocking, local-first)
+  if (typeof window !== "undefined") {
+    import("@/lib/api/auth")
+      .then(({ saveRemoteLibraryEntry }) =>
+        saveRemoteLibraryEntry(input.kind, input.mediaId, { status: input.status }),
+      )
+      .catch(() => {});
+  }
+
   return record;
 }
 
@@ -197,6 +207,15 @@ export async function removeLibraryEntry(input: {
   mediaId: string;
 }): Promise<void> {
   await db.library.delete(libraryId(input.kind, input.mediaId));
+
+  // Background cloud deletion for authenticated sessions (non-blocking, local-first)
+  if (typeof window !== "undefined") {
+    import("@/lib/api/auth")
+      .then(({ deleteRemoteLibraryEntry }) =>
+        deleteRemoteLibraryEntry(input.kind, input.mediaId),
+      )
+      .catch(() => {});
+  }
 }
 
 export async function getLibraryCount(): Promise<number> {

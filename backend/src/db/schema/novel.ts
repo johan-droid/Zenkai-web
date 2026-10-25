@@ -18,7 +18,7 @@ export const novel = pgTable(
   "novel",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    slug: varchar("slug", { length: 255 }).notNull().unique(),
+    slug: varchar("slug", { length: 255 }).notNull(),
     anilistId: integer("anilist_id"),
     title: varchar("title", { length: 500 }).notNull(),
     romajiTitle: varchar("romaji_title", { length: 500 }),

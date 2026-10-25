@@ -1,6 +1,3 @@
-/**
- * Library / watch-progress module (P17).
- *
- * Placeholder until library tracking is implemented.
- */
-export {};
+export * from "./repository.js";
+export * from "./service.js";
+export * from "./routes.js";

@@ -1,22 +1,31 @@
 "use client";
 
-import { Download, History, Menu, Search, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Brand } from "@/components/layout/brand";
 import { usePWA } from "@/components/providers/pwa-provider";
+import { useAuth } from "@/components/providers/auth-provider";
 import { SearchCommand } from "@/components/search/search-command";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { navSections, isActivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
+import { Bookmark, Download, History, LogOut, Menu, RefreshCw, Search, Settings, User } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const { isInstallable, isStandalone, installPWA } = usePWA();
+  const { user, isAuthenticated, isSyncing, syncNow, logout } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -119,6 +128,78 @@ export function Navbar() {
               <Settings className="size-4 text-muted-foreground hover:text-foreground" />
             </Link>
           </Button>
+
+          {/* User Account / Sign In Pill */}
+          {isAuthenticated && user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="User Account Menu"
+                  className="flex size-9 items-center justify-center rounded-xl border border-glass-border bg-[#c8102e]/20 text-[#ff4d6a] transition-all hover:bg-[#c8102e]/30 hover:ring-2 hover:ring-[#c8102e]/40"
+                >
+                  <span className="text-xs font-bold uppercase">
+                    {user.username.slice(0, 2)}
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="glass-strong min-w-52 border-glass-border p-1.5">
+                <div className="flex flex-col px-2 py-1.5">
+                  <span className="text-sm font-semibold text-foreground">
+                    {user.displayName || user.username}
+                  </span>
+                  <span className="text-xs text-muted-foreground">@{user.username}</span>
+                </div>
+                <DropdownMenuSeparator className="bg-glass-border" />
+                <DropdownMenuItem asChild>
+                  <Link href={`/user/${user.username}`} className="flex cursor-pointer items-center gap-2">
+                    <User className="size-4 text-muted-foreground" />
+                    <span>Public Profile</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/library" className="flex cursor-pointer items-center gap-2">
+                    <Bookmark className="size-4 text-muted-foreground" />
+                    <span>My Library</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => void syncNow()}
+                  disabled={isSyncing}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <RefreshCw className={cn("size-4 text-muted-foreground", isSyncing && "animate-spin text-[#ff4d6a]")} />
+                  <span>{isSyncing ? "Syncing…" : "Sync Cloud Now"}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="flex cursor-pointer items-center gap-2">
+                    <Settings className="size-4 text-muted-foreground" />
+                    <span>Preferences</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-glass-border" />
+                <DropdownMenuItem
+                  onClick={() => void logout()}
+                  className="flex cursor-pointer items-center gap-2 text-rose-400 focus:bg-rose-500/10 focus:text-rose-300"
+                >
+                  <LogOut className="size-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              className="glass hidden items-center gap-2 rounded-xl border-glass-border px-3 text-xs font-medium hover:bg-white/10 lg:flex"
+            >
+              <Link href="/settings">
+                <User className="size-3.5 text-muted-foreground" />
+                <span>Sign In</span>
+              </Link>
+            </Button>
+          )}
 
           <MobileMenu pathname={pathname} />
         </div>

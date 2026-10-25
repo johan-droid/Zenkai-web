@@ -56,10 +56,26 @@ export function useHasAnyProgress(): boolean {
  * `timeupdate` fires several times a second, so writes are coalesced: at most one
  * IndexedDB write per `intervalMs`, plus a final flush on unmount.
  */
-export function useThrottledProgressSaver(intervalMs = 5_000) {
+export function useThrottledProgressSaver(intervalMs = 5_000, remoteSyncIntervalMs = 15_000) {
   const lastWrite = useRef(0);
+  const lastRemoteWrite = useRef(0);
   const pending = useRef<SaveProgressInput | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncRemote = useCallback((input: SaveProgressInput) => {
+    if (typeof window === "undefined") return;
+    lastRemoteWrite.current = Date.now();
+    import("@/lib/api/auth")
+      .then(({ saveRemoteProgress }) =>
+        saveRemoteProgress(input.kind, input.mediaId, input.unit, {
+          positionSeconds: input.positionSeconds,
+          durationSeconds: input.durationSeconds,
+          page: input.page,
+          totalUnits: input.totalUnits,
+        }),
+      )
+      .catch(() => {});
+  }, []);
 
   const flush = useCallback(async () => {
     const input = pending.current;
@@ -67,15 +83,22 @@ export function useThrottledProgressSaver(intervalMs = 5_000) {
     pending.current = null;
     lastWrite.current = Date.now();
     await saveProgress(input);
-  }, []);
+    syncRemote(input);
+  }, [syncRemote]);
 
   const save = useCallback(
     (input: SaveProgressInput) => {
-      const elapsed = Date.now() - lastWrite.current;
+      const now = Date.now();
+      const elapsed = now - lastWrite.current;
+      const remoteElapsed = now - lastRemoteWrite.current;
 
       if (elapsed >= intervalMs) {
         void saveProgress(input);
-        lastWrite.current = Date.now();
+        lastWrite.current = now;
+
+        if (remoteElapsed >= remoteSyncIntervalMs) {
+          syncRemote(input);
+        }
         return;
       }
 

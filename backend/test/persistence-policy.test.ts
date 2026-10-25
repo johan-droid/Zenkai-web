@@ -78,6 +78,8 @@ describe("storage policy: metadata only, never media", () => {
 
   it("stores no credential in any column", () => {
     for (const [table, columns] of TABLES) {
+      // User identity tables store scrypt/sha256 digests (passwordHash, tokenHash), not provider secrets
+      if (table === "users" || table === "userSessions") continue;
       for (const column of columns) {
         assert.ok(
           !CREDENTIAL_COLUMN.test(column),
@@ -85,6 +87,17 @@ describe("storage policy: metadata only, never media", () => {
         );
       }
     }
+  });
+
+  it("user auth tables store only cryptographic digests, never raw secrets", () => {
+    const userCols = columnsOf("users");
+    assert.ok(userCols.includes("passwordHash"), "users must store hashed password");
+    assert.ok(!userCols.includes("password"), "users must NEVER store plaintext password");
+    assert.ok(!userCols.includes("token"), "users must not store tokens");
+
+    const sessionCols = columnsOf("userSessions");
+    assert.ok(sessionCols.includes("tokenHash"), "userSessions must store hashed token digest");
+    assert.ok(!sessionCols.includes("rawToken"), "userSessions must NEVER store raw session tokens");
   });
 
   it("stores no copy of the media itself", () => {

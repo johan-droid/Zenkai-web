@@ -10,6 +10,9 @@
 
 export type ErrorReason =
   | "bad_request"
+  | "unauthorized"
+  | "forbidden"
+  | "conflict"
   | "not_found"
   | "no_sources"
   | "selection_stale"
@@ -34,6 +37,18 @@ export class AppError extends Error {
 
   static badRequest(message: string, details?: unknown): AppError {
     return new AppError("bad_request", message, 400, details);
+  }
+
+  static unauthorized(message = "unauthorized", details?: unknown): AppError {
+    return new AppError("unauthorized", message, 401, details);
+  }
+
+  static forbidden(message = "forbidden", details?: unknown): AppError {
+    return new AppError("forbidden", message, 403, details);
+  }
+
+  static conflict(message: string, details?: unknown): AppError {
+    return new AppError("conflict", message, 409, details);
   }
 
   static notFound(message: string, details?: unknown): AppError {

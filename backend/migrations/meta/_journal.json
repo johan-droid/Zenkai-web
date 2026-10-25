@@ -22,6 +22,27 @@
       "when": 1791190072733,
       "tag": "0002_polite_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792378200000,
+      "tag": "0003_novel_and_multisource_manga",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792917868138,
+      "tag": "0004_users_and_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792918800000,
+      "tag": "0005_user_library_and_progress",
+      "breakpoints": true
     }
   ]
 }

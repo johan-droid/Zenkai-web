@@ -48,6 +48,15 @@ import { registerScheduleRoutes } from "./modules/schedule/routes.js";
 import { PlaybackResolver } from "./modules/playback/service.js";
 import { PlaybackMetadataService } from "./modules/playback/metadata.js";
 import { registerPlaybackRoutes } from "./modules/playback/routes.js";
+import { AuthRepository } from "./modules/auth/repository.js";
+import { AuthService } from "./modules/auth/service.js";
+import { registerAuthRoutes } from "./modules/auth/routes.js";
+import { LibraryRepository } from "./modules/library/repository.js";
+import { LibraryService } from "./modules/library/service.js";
+import { registerLibraryRoutes } from "./modules/library/routes.js";
+import { ProgressRepository } from "./modules/progress/repository.js";
+import { ProgressService } from "./modules/progress/service.js";
+import { registerProgressRoutes } from "./modules/progress/routes.js";
 
 export interface AppDependencies {
   db: Db;
@@ -257,6 +266,16 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     cleared: healthRegistry.resetQuarantined(),
   }));
 
+  const authRepo = new AuthRepository(deps.db);
+  const authService = new AuthService(authRepo);
+  const libraryRepo = new LibraryRepository(deps.db);
+  const libraryService = new LibraryService(libraryRepo);
+  const progressRepo = new ProgressRepository(deps.db);
+  const progressService = new ProgressService(progressRepo);
+
+  registerAuthRoutes(app, authService);
+  registerLibraryRoutes(app, libraryService);
+  registerProgressRoutes(app, progressService, libraryService);
   registerAnimeRoutes(app, animeService, discoveryService, episodeService);
   registerMangaRoutes(app, mangaService);
   registerNovelRoutes(app, novelService);

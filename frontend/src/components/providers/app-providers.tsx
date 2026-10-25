@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { AuthProvider } from "@/components/providers/auth-provider";
 import { PWAProvider } from "@/components/providers/pwa-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -13,10 +14,12 @@ export function AppProviders({ children }: { children: ReactNode }) {
     <ThemeProvider>
       <PWAProvider>
         <QueryProvider>
-          <TooltipProvider delayDuration={200}>
-            {children}
-            <Toaster position="bottom-right" theme="dark" />
-          </TooltipProvider>
+          <AuthProvider>
+            <TooltipProvider delayDuration={200}>
+              {children}
+              <Toaster position="bottom-right" theme="dark" />
+            </TooltipProvider>
+          </AuthProvider>
         </QueryProvider>
       </PWAProvider>
     </ThemeProvider>

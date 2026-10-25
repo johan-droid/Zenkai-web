@@ -5,3 +5,6 @@ export * from "./manga.js";
 export * from "./novel.js";
 export * from "./providers.js";
 export * from "./schedule.js";
+export * from "./users.js";
+export * from "./library.js";
+export * from "./progress.js";
