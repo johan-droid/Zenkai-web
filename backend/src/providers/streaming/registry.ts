@@ -18,6 +18,7 @@ import { ConsumetProvider } from "./consumet.provider.js";
 import { healthRegistry } from "./health.js";
 import { HiAnimeEmbedProvider } from "./hianime-embed.provider.js";
 import { InProcessProvider } from "./inprocess.provider.js";
+import { NovusCloudProvider } from "./novus.provider.js";
 import { TemplateProvider, type TemplateEndpoint } from "./template.provider.js";
 import type { AudioTrack, StreamingProvider } from "./types.js";
 
@@ -81,82 +82,30 @@ export const STATIC_FALLBACK_ENDPOINTS: TemplateEndpoint[] = [
     priority: 31,
   },
   {
-    id: "yumezone-megaplay-sub",
-    providerSlug: "yumezone",
-    providerName: "YumeZone",
-    endpointSlug: "megaplay-sub",
-    displayName: "YumeZone",
+    id: "flixera-sub",
+    providerSlug: "flixera",
+    providerName: "FlixEra",
+    endpointSlug: "sub",
+    displayName: "FlixEra",
     language: "sub",
     accessType: "embed",
-    badge: "Embed HD",
-    urlTemplate: "https://yumezone.qzz.io/embed/megaplay/ani/{anilist_id}/{episode}/sub",
+    badge: "Embed Server 2",
+    urlTemplate: "https://flixera.co/embed/ani/{anilist_id}/{episode}/sub?k=1",
     requiredIdType: "anilist",
     priority: 32,
   },
   {
-    id: "yumezone-megaplay-dub",
-    providerSlug: "yumezone",
-    providerName: "YumeZone",
-    endpointSlug: "megaplay-dub",
-    displayName: "YumeZone Dub",
+    id: "flixera-dub",
+    providerSlug: "flixera",
+    providerName: "FlixEra",
+    endpointSlug: "dub",
+    displayName: "FlixEra Dub",
     language: "dub",
     accessType: "embed",
-    badge: "Embed HD",
-    urlTemplate: "https://yumezone.qzz.io/embed/megaplay/ani/{anilist_id}/{episode}/dub",
+    badge: "Embed Server 2",
+    urlTemplate: "https://flixera.co/embed/ani/{anilist_id}/{episode}/dub?k=1",
     requiredIdType: "anilist",
     priority: 33,
-  },
-  {
-    id: "yumezone-animesalt-multi",
-    providerSlug: "yumezone",
-    providerName: "YumeZone",
-    endpointSlug: "animesalt-multi",
-    displayName: "YumeZone Multi",
-    language: "multi",
-    accessType: "embed",
-    badge: "Multi-Audio",
-    urlTemplate: "https://yumezone.qzz.io/embed/animesalt/ani/{anilist_id}/{episode}/sub",
-    requiredIdType: "anilist",
-    priority: 34,
-  },
-  {
-    id: "vidnest-sub",
-    providerSlug: "vidnest",
-    providerName: "Vidnest",
-    endpointSlug: "sub",
-    displayName: "Vidnest",
-    language: "sub",
-    accessType: "embed",
-    badge: "Embed HD",
-    urlTemplate: "https://vidnest.fun/anime/{id}/{e}/sub",
-    requiredIdType: "none",
-    priority: 35,
-  },
-  {
-    id: "vidnest-dub",
-    providerSlug: "vidnest",
-    providerName: "Vidnest",
-    endpointSlug: "dub",
-    displayName: "Vidnest Dub",
-    language: "dub",
-    accessType: "embed",
-    badge: "Embed HD",
-    urlTemplate: "https://vidnest.fun/anime/{id}/{e}/dub",
-    requiredIdType: "none",
-    priority: 36,
-  },
-  {
-    id: "vidnest-multi",
-    providerSlug: "vidnest",
-    providerName: "Vidnest",
-    endpointSlug: "multi",
-    displayName: "Vidnest Multi",
-    language: "multi",
-    accessType: "embed",
-    badge: "Embed HD",
-    urlTemplate: "https://vidnest.fun/anime/{id}/{e}/sub",
-    requiredIdType: "none",
-    priority: 37,
   },
 ];
 
@@ -215,6 +164,12 @@ export function buildProviders(): StreamingProvider[] {
         new TemplateProvider(endpoint.providerSlug, endpoint.providerName, endpoint.priority, endpoint),
       );
     }
+  }
+
+  // NovusCloud HD-2 stream extraction is the primary native HLS path:
+  // Extracts real HLS master playlists, multi-track captions, and skip markers from cdn.4animo.xyz.
+  if (config.NOVUS_ENABLED) {
+    providers.push(new NovusCloudProvider());
   }
 
   // HiAnime embeds are the primary path: the mirror is reachable without a
@@ -329,7 +284,13 @@ export async function loadProvidersFromDb(db?: Db): Promise<StreamingProvider[]>
         loaded.push(new InProcessProvider("AnimePahe", p.name, p.priority));
       } else if (p.isCustomAdapter && p.slug === "hianime-embed" && config.HIANIME_EMBED_ENABLED) {
         loaded.push(new HiAnimeEmbedProvider("hianime-embed", p.name, p.priority));
+      } else if (p.isCustomAdapter && p.slug === "novuscloud" && config.NOVUS_ENABLED) {
+        loaded.push(new NovusCloudProvider("novuscloud", p.name, p.priority));
       }
+    }
+
+    if (config.NOVUS_ENABLED && !loaded.some((p) => p.slug === "novuscloud")) {
+      loaded.push(new NovusCloudProvider());
     }
 
     if (config.HIANIME_EMBED_ENABLED && !loaded.some((p) => p.slug === "hianime-embed")) {

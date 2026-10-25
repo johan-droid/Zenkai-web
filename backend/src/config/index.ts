@@ -65,8 +65,18 @@ const schema = z.object({
 
   /** Remote Consumet instance, used only when in-process scraping is off. */
   CONSUMET_URL: z.string().url().optional(),
-  /** Use the in-process @consumet/extensions scrapers. */
-  CONSUMET_INPROCESS: booleanish.default(true),
+  /** Use the in-process @consumet/extensions scrapers (disabled by default due to dead upstream domains). */
+  CONSUMET_INPROCESS: booleanish.default(false),
+
+  /**
+   * NovusCloud streaming provider (cdn.4animo.xyz).
+   *
+   * Primary streaming path: extracts real HLS master playlists, multi-language
+   * captions, and auto-detected episode skip markers from canonical AniList IDs,
+   * with automatic iframe embed fallback.
+   */
+  NOVUS_BASE_URL: z.string().url().default("https://cdn.4animo.xyz"),
+  NOVUS_ENABLED: booleanish.default(true),
 
   /** Self-hosted / licensed endpoints. These need no scraping. */
   SELF_HOSTED_BASE_URL: z.string().url().optional(),
@@ -76,11 +86,10 @@ const schema = z.object({
    *
    * Returns ready-to-play iframe embeds; the browser plays them, so the
    * backend never resolves an m3u8 and stays inside serverless timeouts.
-   * On by default: the mirror is reachable without a VPN and the adapter
-   * fails fast (empty list) when it is not.
+   * Off by default: upstream zangetsu.cc Cloudflare blocks server-side AJAX.
    */
   HIANIME_BASE_URL: z.string().url().default("https://zangetsu.cc"),
-  HIANIME_EMBED_ENABLED: booleanish.default(true),
+  HIANIME_EMBED_ENABLED: booleanish.default(false),
 
   /**
    * Scrape providers host unlicensed copies. Enabling one is a licensing
@@ -95,7 +104,9 @@ const schema = z.object({
   /** Proxy upstream media through this service (needed for CORS/referer walls). */
   ENABLE_PLAYBACK_PROXY: booleanish.default(false),
   /** Hosts the playback gateway is permitted to fetch from. */
-  PLAYBACK_PROXY_ALLOWLIST: z.string().optional(),
+  PLAYBACK_PROXY_ALLOWLIST: z
+    .string()
+    .default("cdn.4animo.xyz,novuscloud.buzz,flixera.co,test-streams.mux.dev"),
 
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),

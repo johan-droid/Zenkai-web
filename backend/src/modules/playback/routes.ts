@@ -241,17 +241,16 @@ export function registerPlaybackRoutes(
     const episode = await animeRepo.getEpisode(episodeId);
     if (!episode) {
       // Synthetic ids ("ep-<anilist>-<n>") resolve via the identity fallback
-      // for sources but have no stored row: empty markers, not a 500.
+      // for sources and derive markers directly from skip-capable providers.
       // A truly malformed id is still a 404.
       const synthetic = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
       if (synthetic) {
-        return {
-          episodeId,
-          subtitles: [],
-          intro: undefined,
-          outro: undefined,
-          sourceUpdatedAt: null,
-        };
+        return metadata.get(episodeId, {
+          animeId: synthetic[1],
+          anilistId: synthetic[1],
+          episodeNumber: Number(synthetic[2]),
+          language: "sub",
+        });
       }
       throw AppError.notFound(`episode ${episodeId} not found`);
     }

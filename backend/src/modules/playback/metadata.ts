@@ -77,10 +77,19 @@ export class PlaybackMetadataService {
     episodeId: string,
     request: ResolveRequest,
   ): Promise<EpisodeMetadata> {
-    // Non-UUID episode ids (e.g. "ep-114129-1") cannot have stored metadata —
-    // the column is a UUID type. Return an empty result instead of crashing.
+    // Non-UUID episode ids (e.g. "ep-114129-1") cannot have stored metadata in the
+    // database table — the column is a UUID foreign key.
+    // Derive ephemeral markers and subtitles from skip-capable providers instead of returning empty.
     if (!UUID_PATTERN.test(episodeId)) {
-      return { episodeId, subtitles: [], intro: undefined, outro: undefined, sourceUpdatedAt: null };
+      const derived = await this.#deriveMarkers(request);
+      const subtitles = await this.#collectSubtitles(request);
+      return {
+        episodeId,
+        subtitles,
+        intro: derived.intro,
+        outro: derived.outro,
+        sourceUpdatedAt: null,
+      };
     }
 
     const stored = await this.#read(episodeId);
