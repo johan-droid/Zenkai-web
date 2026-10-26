@@ -47,84 +47,120 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  --color-brand-50: oklch(0.97 0.03 25.5);
-  --color-brand-200: oklch(0.85 0.12 25.5);
-  --color-brand-400: oklch(0.70 0.22 25.5);
-  --color-brand-500: oklch(0.60 0.24 25.5);
-  --color-brand-600: oklch(0.52 0.24 25.5);
-  --color-brand-700: oklch(0.42 0.20 25.5);
+  /* Brand palette — muted crimson with dusty tones */
+  --color-brand-50:  oklch(0.97 0.02 20);
+  --color-brand-200: oklch(0.82 0.09 20);
+  --color-brand-400: oklch(0.68 0.18 20);
+  --color-brand-500: oklch(0.56 0.22 20);
+  --color-brand-600: oklch(0.48 0.22 20);
+  --color-brand-700: oklch(0.38 0.18 20);
 
-  --animate-aurora: aurora 24s ease-in-out infinite alternate;
-  --animate-shimmer: shimmer 2.4s linear infinite;
-  --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Animations */
+  --animate-aurora:        aurora 28s ease-in-out infinite alternate;
+  --animate-shimmer:       shimmer 2.8s linear infinite;
+  --animate-fade-up:       fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-float:         float 6s ease-in-out infinite;
+  --animate-pulse-glow:    pulse-glow 3s ease-in-out infinite;
+  --animate-slide-in-left: slide-in-left 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-card-rise:     card-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 :root {
-  --background: #000000;
-  --foreground: #f8fafc;
-  --card: #08080a;
-  --card-foreground: #f8fafc;
-  --popover: #08080a;
-  --popover-foreground: #f8fafc;
-  --primary: #c8102e;
-  --primary-foreground: #ffffff;
-  --secondary: #101014;
-  --secondary-foreground: #f8fafc;
-  --muted: #14141a;
-  --muted-foreground: #94a3b8;
-  --accent: #200408;
-  --accent-foreground: #f8fafc;
-  --destructive: #ef4444;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #c8102e;
-  --chart-1: #e50914;
-  --chart-2: #38bdf8;
-  --chart-3: #f43f5e;
-  --chart-4: #eab308;
+  /* ── Core Surfaces ─────────────────────────────────────── */
+  --background:          #060608;
+  --foreground:          #eef0f4;
+  --card:                #0b0b0f;
+  --card-foreground:     #eef0f4;
+  --popover:             #0d0d12;
+  --popover-foreground:  #eef0f4;
+
+  /* ── Brand ─────────────────────────────────────────────── */
+  --primary:             #b8102a;
+  --primary-foreground:  #fff;
+
+  /* ── Neutrals ──────────────────────────────────────────── */
+  --secondary:           #111118;
+  --secondary-foreground:#eef0f4;
+  --muted:               #16161f;
+  --muted-foreground:    #8891a4;
+  --accent:              #1c0609;
+  --accent-foreground:   #eef0f4;
+  --destructive:         #e03e3e;
+
+  /* ── Borders / Inputs ──────────────────────────────────── */
+  --border:              rgba(255,255,255,0.07);
+  --input:               rgba(255,255,255,0.09);
+  --ring:                #b8102a;
+  --radius:              0.75rem;
+
+  /* ── Sidebar ───────────────────────────────────────────── */
+  --sidebar:                   #040406;
+  --sidebar-foreground:        #eef0f4;
+  --sidebar-primary:           #b8102a;
+  --sidebar-primary-foreground:#fff;
+  --sidebar-accent:            #1a0507;
+  --sidebar-accent-foreground: #eef0f4;
+  --sidebar-border:            rgba(255,255,255,0.06);
+  --sidebar-ring:              #b8102a;
+
+  /* ── Charts ────────────────────────────────────────────── */
+  --chart-1: #d42020;
+  --chart-2: #37bdf8;
+  --chart-3: #e83a5a;
+  --chart-4: #e8b308;
   --chart-5: #10b981;
-  --radius: 0.75rem;
-  --sidebar: #040406;
-  --sidebar-foreground: #f8fafc;
-  --sidebar-primary: #c8102e;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e0508;
-  --sidebar-accent-foreground: #f8fafc;
-  --sidebar-border: rgba(255, 255, 255, 0.07);
-  --sidebar-ring: #c8102e;
 
-  --glass-bg: rgba(255, 255, 255, 0.025);
-  --glass-bg-strong: rgba(6, 6, 9, 0.92);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-highlight: rgba(255, 255, 255, 0.12);
-  --glass-blur: 24px;
+  /* ── Glass System — matte-frosted layers ───────────────── */
+  --glass-bg:          rgba(255,255,255,0.018);   /* barely-there film */
+  --glass-bg-hover:    rgba(255,255,255,0.032);
+  --glass-bg-active:   rgba(255,255,255,0.048);
+  --glass-bg-strong:   rgba(7,7,12,0.88);          /* opaque nav / modal */
+  --glass-bg-card:     rgba(12,12,18,0.72);         /* media cards */
+  --glass-bg-overlay:  rgba(4,4,8,0.82);
+  --glass-border:      rgba(255,255,255,0.065);
+  --glass-border-soft: rgba(255,255,255,0.04);
+  --glass-highlight:   rgba(255,255,255,0.10);
+  --glass-highlight-sm:rgba(255,255,255,0.06);
+  --glass-blur:        20px;
+  --glass-blur-sm:     12px;
+  --glass-blur-lg:     32px;
+
+  /* ── Matte Brand Accent Glass ──────────────────────────── */
+  --glass-brand-bg:    rgba(184,16,42,0.08);
+  --glass-brand-border:rgba(184,16,42,0.22);
+  --glass-brand-glow:  rgba(184,16,42,0.35);
+
+  /* ── Noise texture (adds matte depth) ─────────────────── */
+  --noise-opacity: 0.025;
 }
 
+/* Force dark always */
 .dark, .light {
-  --background: #000000;
-  --foreground: #f8fafc;
-  --card: #08080a;
-  --card-foreground: #f8fafc;
-  --popover: #08080a;
-  --popover-foreground: #f8fafc;
-  --primary: #c8102e;
-  --primary-foreground: #ffffff;
-  --secondary: #101014;
-  --secondary-foreground: #f8fafc;
-  --muted: #14141a;
-  --muted-foreground: #94a3b8;
-  --accent: #200408;
-  --accent-foreground: #f8fafc;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #c8102e;
+  --background:          #060608;
+  --foreground:          #eef0f4;
+  --card:                #0b0b0f;
+  --card-foreground:     #eef0f4;
+  --popover:             #0d0d12;
+  --popover-foreground:  #eef0f4;
+  --primary:             #b8102a;
+  --primary-foreground:  #fff;
+  --secondary:           #111118;
+  --secondary-foreground:#eef0f4;
+  --muted:               #16161f;
+  --muted-foreground:    #8891a4;
+  --accent:              #1c0609;
+  --accent-foreground:   #eef0f4;
+  --border:              rgba(255,255,255,0.07);
+  --input:               rgba(255,255,255,0.09);
+  --ring:                #b8102a;
 
-  --glass-bg: rgba(255, 255, 255, 0.025);
-  --glass-bg-strong: rgba(6, 6, 9, 0.92);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --glass-bg:           rgba(255,255,255,0.018);
+  --glass-bg-strong:    rgba(7,7,12,0.88);
+  --glass-border:       rgba(255,255,255,0.065);
+  --glass-highlight:    rgba(255,255,255,0.10);
 }
 
+/* ─── Base ────────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -132,111 +168,167 @@
   body {
     @apply bg-background text-foreground;
     min-height: 100dvh;
+    font-feature-settings: "cv02","cv03","cv04","cv11";
   }
   html {
     @apply font-sans;
     scrollbar-gutter: stable;
   }
   ::selection {
-    background: color-mix(in oklch, var(--primary) 35%, transparent);
+    background: color-mix(in oklch, var(--primary) 30%, transparent);
+    color: #fff;
   }
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar       { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--foreground) 16%, transparent);
+    background: rgba(255,255,255,0.10);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--foreground) 26%, transparent);
+    background: rgba(255,255,255,0.18);
     background-clip: padding-box;
   }
 }
 
+/* ─── Glass Utilities ─────────────────────────────────────── */
+
+/* Thin matte film — almost transparent, blurred */
 @utility glass {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(120%) brightness(0.96);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(120%) brightness(0.96);
 }
 
+/* Heavy frosted panel — opaque-ish surface */
 @utility glass-strong {
   background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(140%) brightness(0.94);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(140%) brightness(0.94);
 }
 
+/* Matte panel with inset highlight + depth shadow */
 @utility glass-panel {
   position: relative;
-  background: var(--glass-bg);
+  background: var(--glass-bg-card);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(130%) brightness(0.96);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(130%) brightness(0.96);
   box-shadow:
-    0 1px 0 0 var(--glass-highlight) inset,
-    0 20px 40px -24px oklch(0 0 0 / 70%);
+    0 1px 0 0 var(--glass-highlight-sm) inset,
+    0 -1px 0 0 rgba(0,0,0,0.35) inset,
+    0 24px 48px -20px rgba(0,0,0,0.85),
+    0 4px 16px -8px rgba(0,0,0,0.60);
 }
 
+/* Matte panel hover transition */
 @utility glass-hover {
   transition:
-    background-color 200ms ease,
-    border-color 200ms ease,
-    transform 200ms ease;
+    background-color 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Card surface for media cards */
+@utility glass-card {
+  background: var(--glass-bg-card);
+  border: 1px solid var(--glass-border-soft);
+  backdrop-filter: blur(var(--glass-blur-sm)) saturate(120%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(120%);
+  box-shadow:
+    0 1px 0 0 var(--glass-highlight-sm) inset,
+    0 8px 24px -12px rgba(0,0,0,0.80);
+}
+
+/* Brand-tinted glass chip / badge */
+@utility glass-brand {
+  background: var(--glass-brand-bg);
+  border: 1px solid var(--glass-brand-border);
+  backdrop-filter: blur(var(--glass-blur-sm)) saturate(130%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(130%);
+}
+
+/* Hide scrollbar */
 @utility no-scrollbar {
   scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
+  &::-webkit-scrollbar { display: none; }
 }
 
+/* ─── Keyframes ───────────────────────────────────────────── */
 @keyframes aurora {
-  0% {
-    transform: translate3d(-6%, -4%, 0) scale(1);
-    opacity: 0.55;
-  }
-  50% {
-    transform: translate3d(4%, 6%, 0) scale(1.15);
-    opacity: 0.75;
-  }
-  100% {
-    transform: translate3d(8%, -2%, 0) scale(1.05);
-    opacity: 0.6;
-  }
+  0%   { transform: translate3d(-8%, -5%, 0) scale(1.0);   opacity: 0.50; }
+  33%  { transform: translate3d(5%, 8%, 0)   scale(1.12);  opacity: 0.68; }
+  66%  { transform: translate3d(-3%, 3%, 0)  scale(1.08);  opacity: 0.58; }
+  100% { transform: translate3d(9%, -3%, 0)  scale(1.04);  opacity: 0.55; }
 }
 
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 
 @keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
 }
 
+@keyframes float {
+  0%, 100% { transform: translateY(0px);   }
+  50%       { transform: translateY(-6px);  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.45; filter: blur(0px);   }
+  50%       { opacity: 0.80; filter: blur(2px);   }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0);      }
+}
+
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)     scale(1);   }
+}
+
+/* ─── Shimmer skeleton ────────────────────────────────────── */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.8s linear infinite;
+}
+
+/* ─── Noise overlay (matte texture) ──────────────────────── */
+.matte-noise::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  opacity: var(--noise-opacity);
+}
+
+/* ─── Reduced motion ──────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
@@ -245,19 +337,6 @@
 
 /*
  * Vidstack Player Layout Corrections (Phase 3B-A)
- *
- * 1. Small layout (<576px / <380px): Vidstack sets `pointer-events: none` on
- * `.vds-controls-group:nth-last-child(2)` in `video.css`. In small layout, this group
- * contains `<DefaultFullscreenButton />`. Restore `pointer-events: auto` strictly on the
- * fullscreen button so it is interactive without unintentionally enabling pointer events
- * on surrounding title, time, or background gestures.
- *
- * 2. Large layout (>=576px): The time slider group (`:nth-last-child(2)`) has
- * `margin-bottom: -16px; z-index: 11;`, while the bottom controls group (`:last-child`)
- * has `z-index: 10;`. The 16px bottom padding of the slider element hangs over the top
- * 12px of the fullscreen button, causing upper-edge clicks to be intercepted by the slider.
- * Elevate the bottom controls group to `z-index: 12;` (strictly scoped to `:not([data-sm])`
- * so it never matches the time slider in small layout).
  */
 [data-media-player] .vds-video-layout[data-sm] .vds-fullscreen-button {
   pointer-events: auto;
@@ -266,4 +345,3 @@
 [data-media-player] .vds-video-layout:not([data-sm]) .vds-controls-group:last-child {
   z-index: 12;
 }
-
