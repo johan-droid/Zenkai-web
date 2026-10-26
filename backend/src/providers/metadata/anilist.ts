@@ -385,7 +385,10 @@ export class AnilistProvider implements AnimeMetadataProvider {
       // AniList exposes no per-episode connection for anime (only a count), so
       // the catalog is seeded from that count and enriched by the streaming
       // provider in P4. Manga has no episode list at all.
-      episodes: type === "ANIME" ? this.#placeholderEpisodes(summary) : undefined,
+      episodes:
+        type === "ANIME"
+          ? this.#placeholderEpisodes(summary, node.nextAiringEpisode ?? null)
+          : undefined,
     };
   }
 
@@ -397,8 +400,13 @@ export class AnilistProvider implements AnimeMetadataProvider {
    * Seeding them here means `/anime/:id/episodes` returns a complete list
    * immediately instead of an empty list for every title.
    */
-  #placeholderEpisodes(summary: AnimeSummary): ProviderEpisode[] | undefined {
-    const nextAiring = (summary as { nextAiringEpisode?: { episode: number } }).nextAiringEpisode;
+  #placeholderEpisodes(
+    summary: AnimeSummary,
+    nextAiring: { episode: number } | null,
+  ): ProviderEpisode[] | undefined {
+    // `nextAiringEpisode` lives on the detail node, not the summary, so it has to
+    // be passed in. Reading it off the summary always yielded undefined, which
+    // left airing shows with no stated total with zero episodes.
     const total =
       summary.totalEpisodes ??
       (nextAiring && nextAiring.episode > 1

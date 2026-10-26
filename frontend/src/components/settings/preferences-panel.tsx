@@ -91,9 +91,13 @@ export function PreferencesPanel() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const prefs = getDevicePreferences();
+      // Hydrate from localStorage after mount; reading it during render would
+      // cause an SSR/client mismatch.
+      /* eslint-disable react-hooks/set-state-in-effect */
       setDensityState(prefs.cardDensity);
       setReaderLayoutState(prefs.readerLayout);
       setMotionState(prefs.motionPreference);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, []);
 
@@ -514,7 +518,7 @@ export function PreferencesPanel() {
             })}
           </div>
           <p className="text-xs text-muted-foreground">
-            Respects system accessibility settings. Setting to "Reduce motion" disables nonessential backdrop animations and carousels.
+            Respects system accessibility settings. Setting to &ldquo;Reduce motion&rdquo; disables nonessential backdrop animations and carousels.
           </p>
         </div>
       </section>

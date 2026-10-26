@@ -161,7 +161,9 @@ function EpisodeSection({
           Episodes
           {catalogue ? (
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              {catalogue.catalogueCount} available
+              {catalogue.knownTotal && catalogue.knownTotal !== catalogue.catalogueCount
+                ? `${catalogue.catalogueCount} of ${catalogue.knownTotal} available`
+                : `${catalogue.catalogueCount} available`}
             </span>
           ) : null}
         </h2>

@@ -32,6 +32,8 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
   const isOwnProfile = currentUser && currentUser.username.toLowerCase() === username.toLowerCase();
 
   useEffect(() => {
+    // Reset loading state when navigating between profiles.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
 

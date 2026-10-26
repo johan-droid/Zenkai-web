@@ -112,7 +112,9 @@ export class EpisodeService {
         // DB offline
       }
 
-      const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 100) : 1;
+      // No cap below the stated total: a 100-row cap silently truncated long
+      // runners (e.g. 1000+ episodes) so the list disagreed with the title's count.
+      const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 3000) : 1;
       episodes = Array.from({ length: count }, (_, i) => {
         const episodeNumber = i + 1;
         return {

@@ -78,7 +78,7 @@ export function MediaCard({
           {/* Top badges */}
           <div className="relative z-10 flex items-start justify-between gap-2 p-2">
             <span className="rounded-md border border-white/[0.08] bg-black/65 px-1.5 py-0.5 text-[0.58rem] font-bold tracking-wider text-white/85 backdrop-blur-sm">
-              {media.kind === "anime" ? "ANIME" : "MANGA"}
+              {media.kind === "anime" ? "ANIME" : media.kind === "novel" ? "NOVEL" : "MANGA"}
             </span>
             {score ? (
               <span className="flex items-center gap-1 rounded-md border border-amber-400/20 bg-black/65 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-300 backdrop-blur-sm">
@@ -101,7 +101,11 @@ export function MediaCard({
               {title}
             </p>
             <p className="text-[0.63rem] font-medium text-zinc-400/90">
-              {[media.format !== "UNKNOWN" ? media.format : null, media.seasonYear]
+              {[
+                media.format !== "UNKNOWN" ? media.format : null,
+                media.seasonYear,
+                media.kind === "anime" && media.episodes ? `${media.episodes} EP` : null,
+              ]
                 .filter(Boolean)
                 .join(" · ")}
             </p>
