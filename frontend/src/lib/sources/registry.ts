@@ -1,14 +1,14 @@
 import type { Source } from "@/lib/sources/types";
 
 /**
- * The source registry.
+ * ⚠️ LEGACY / ORPHANED ⚠️
  *
- * This mirrors what will become a database table. Until the backend exists it is
- * a typed, in-memory list.
- *
- * Every entry here is either a public test asset or a clearly-marked example.
- * Point these at licensed or public-domain providers, or your own library.
- * Unlicensed aggregators are deliberately not included.
+ * This file is pre-P14 browser-side source resolution code that was abandoned
+ * when server-side provider resolution was introduced. Zero inbound imports
+ * exist across the active frontend UI (all views use
+ * `frontend/src/lib/api/zenkai.ts`). Kept for reference; do not add new
+ * imports, logic, or registered sources here. Future work: remove or move to
+ * a `legacy/` directory after confirming no external consumers.
  */
 export const SOURCES: Source[] = [
   {

@@ -1,11 +1,13 @@
 /**
- * Provider-agnostic source layer types.
+ * ⚠️ LEGACY / ORPHANED ⚠️
  *
- * A `Source` is just a template: a URL pattern plus metadata. It says nothing
- * about *who* hosts the stream, which is what keeps this registry neutral. Point
- * it at licensed or public-domain providers, or a self-hosted library.
+ * Type definitions for the pre-P14 browser-side source layer. No active UI
+ * imports these types; all client-facing types are defined in
+ * `frontend/src/lib/api/zenkai.ts` and `frontend/src/lib/sources/types.ts`
+ * is kept only for backward compatibility. Do not add new types or interfaces
+ * here without confirming no existing consumer depends on them.
  *
- * No unlicensed aggregators are registered. See `registry.ts`.
+ * See: ZENKAI-ARC-P2-01
  */
 
 export type SourceKind = "direct" | "embed";

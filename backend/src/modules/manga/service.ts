@@ -277,14 +277,21 @@ export class MangaService {
     options: ChapterListOptions = {},
   ): Promise<Record<string, any>[]> {
     let targetProviderId = providerId;
+    // If the providerId looks like a numeric AniList ID, attempt to bridge
+    // to a MangaDex UUID so downstream providers can resolve the chapters.
     if (Number.isFinite(Number(providerId))) {
       try {
         const manga = await this.getByAnilistId(providerId);
-        if (manga && (manga.mangadexId || manga.id)) {
-          targetProviderId = manga.mangadexId ?? manga.id;
+        if (manga && manga.mangadexId) {
+          targetProviderId = manga.mangadexId;
+        } else {
+          // No MangaDex bridge available for this title; skip provider fetch
+          // to avoid sending an AniList numeric ID to a MangaDex-backed provider.
+          return [];
         }
       } catch {
-        // Fall back to providerId as is
+        // Unable to look up AniList title; skip provider fetch.
+        return [];
       }
     }
 
@@ -300,15 +307,16 @@ export class MangaService {
 
     const key = `manga:chapters:${targetProviderId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
-      let incoming: ProviderChapter[] = [];
-      const isZenkaiId = targetProviderId.length === 26 || targetProviderId.startsWith("01");
+      if (!isMangaDexId(targetProviderId)) {
+        // Not a MangaDex UUID; cannot fetch chapters from provider.
+        return [];
+      }
 
-      if (!isZenkaiId) {
-        try {
-          incoming = await this.provider.getChapters(targetProviderId, { language, limit: 100 });
-        } catch {
-          incoming = [];
-        }
+      let incoming: ProviderChapter[] = [];
+      try {
+        incoming = await this.provider.getChapters(targetProviderId, { language, limit: 100 });
+      } catch {
+        incoming = [];
       }
 
       if (incoming.length === 0) {
@@ -345,6 +353,7 @@ export class MangaService {
     }));
   }
 
+  /** Check if a providerId string is a MangaDex UUID (v4 format: 8-4-4-4-12 hex). */
   /** The newest chapter, for a "read latest" shortcut. */
   async getLatestChapter(providerId: string, options: ChapterListOptions = {}) {
     const chapters = await this.getChapters(providerId, options);
@@ -466,4 +475,9 @@ function shape(
           : `${baseUrl}/data/${page.fileName}`,
     })),
   };
+}
+
+/** Check if a providerId string is a MangaDex UUID (v4 format: 8-4-4-4-12 hex). */
+function isMangaDexId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 }

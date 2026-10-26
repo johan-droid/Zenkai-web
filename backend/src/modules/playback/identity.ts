@@ -120,16 +120,22 @@ export async function resolveEpisodeIdentity(
     // Database connection refused or query error; proceed to synthetic resolution.
   }
 
-  // Synthetic resolution fallback when DB is offline or uncached (e.g. "ep-15125-1" or "15125-1")
+  // Synthetic resolution fallback when DB is offline or uncached
+  // Only match explicit "ep-<anilistId>-<episodeNumber>" patterns.
+  // Reject ambiguous IDs without a clear episode number instead of fabricating Episode 1.
   let anilistId: string | null = null;
   let episodeNumber: number | null = null;
 
-  const match = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
-  if (match) {
-    anilistId = match[1]!;
-    episodeNumber = parseInt(match[2]!, 10);
+  // Strict pattern: optional "ep-" prefix, then anilistId-number
+  const strictMatch = episodeId.match(/^(?:ep-)?(\d+)-(\d+)$/);
+  if (strictMatch) {
+    anilistId = strictMatch[1]!;
+    episodeNumber = parseInt(strictMatch[2]!, 10);
   }
 
+  // If we don't have both a valid AniList ID and a valid episode number from the
+  // identifier itself, do not fabricate episode 1. Return null so the caller
+  // (partitionProviders / resolveEpisodeIdentity) can proceed to DB or error.
   if (!anilistId || episodeNumber == null || Number.isNaN(episodeNumber) || episodeNumber < 1) {
     return null;
   }

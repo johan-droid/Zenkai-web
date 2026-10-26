@@ -7,11 +7,14 @@ import {
 } from "@/lib/sources/types";
 
 /**
- * Resolves a playable source for a title/episode.
+ * ⚠️ LEGACY / ORPHANED ⚠️
  *
- * Flow: fill each active source's pattern with the available ids, keep the ones
- * that fully resolve, then probe the `direct` ones in `order` until one responds.
- * Anything that fails or exceeds the timeout falls through to the next source.
+ * This file is pre-P14 browser-side source resolution code that was abandoned
+ * when server-side provider resolution was introduced. Zero inbound imports
+ * exist across the active frontend UI (all views use
+ * `frontend/src/lib/api/zenkai.ts`). Kept for reference; do not add new
+ * imports, logic, or registered sources here. Future work: remove or move to
+ * a `legacy/` directory after confirming no external consumers.
  */
 
 const DEFAULT_TIMEOUT_MS = 8_000;

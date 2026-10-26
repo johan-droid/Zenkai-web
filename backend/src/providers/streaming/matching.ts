@@ -244,7 +244,7 @@ export function matchShowTitle(
     }
   }
 
-  // 2. Feature-aware matching
+  // 2. Feature-aware matching (strict: same base + same features only)
   for (const c of candidates) {
     if (!c.title) continue;
     const cFeatures = extractEditionFeatures(c.title);
@@ -257,12 +257,10 @@ export function matchShowTitle(
       // Distinguishing edition features must match exactly
       if (!setsEqual(cFeatures, vtFeatures)) continue;
 
+      // BOTH the base name AND the edition features must match exactly;
+      // no startsWith leniency and no "close enough" length diff.
       if (cBase === vtBase && cBase.length > 0) {
         return c.id;
-      }
-      if (cBase.startsWith(vtBase) || vtBase.startsWith(cBase)) {
-        const diff = Math.abs(cBase.length - vtBase.length);
-        if (diff <= 3) return c.id;
       }
     }
   }

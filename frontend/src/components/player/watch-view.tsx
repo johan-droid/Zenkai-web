@@ -140,6 +140,9 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   // A new episode, anime title, or language change clears the override, falling back to the
   // backend's top-ranked plan. Adjusted during render so React can re-render
   // before committing, rather than synchronising state from an effect.
+  // selectionEpoch now includes the canonical anime id and episode number so that
+  // a change in route id or episode number is immediately detected, even before
+  // the async source query resolves.
   const selectionEpoch = `${id}:${episodeNumber}:${episodeCard?.id ?? ""}:${language}`;
   const [lastSelectionEpoch, setLastSelectionEpoch] = useState(selectionEpoch);
   if (lastSelectionEpoch !== selectionEpoch) {

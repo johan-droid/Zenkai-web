@@ -79,13 +79,15 @@ export class ConsumetProvider implements StreamingProvider {
     canonicalTitle: string,
     titles?: { english?: string | null; romaji?: string | null; native?: string | null; synonyms?: string[] } | null,
   ): string | null {
-    return matchShowTitle(candidates, {
+    const matched = matchShowTitle(candidates, {
       canonicalTitle,
       english: titles?.english,
       romaji: titles?.romaji,
       native: titles?.native,
       synonyms: titles?.synonyms,
     });
+    // Never fall back to candidates[0]; if no verified match, return null.
+    return matched ?? null;
   }
 
   async listEpisodes(

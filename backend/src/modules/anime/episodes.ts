@@ -112,7 +112,7 @@ export class EpisodeService {
         // DB offline
       }
 
-      const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 100) : 12;
+      const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 100) : 1;
       episodes = Array.from({ length: count }, (_, i) => {
         const episodeNumber = i + 1;
         return {
