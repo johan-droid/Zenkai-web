@@ -152,6 +152,8 @@ describe("anilist adapter: omitted versus empty", () => {
 
     assert.equal(s.description, null, "an explicit null must clear, not preserve");
     assert.deepEqual(s.genres, [], "an explicit empty array must clear, not preserve");
+  });
+});
 describe("genre normalisation", () => {
   it("collapses case variants within one payload", () => {
     // The primary key is (animeId, genre) and is case-sensitive, so without this
@@ -224,7 +226,5 @@ describe("image urls", () => {
 
   it("returns null when there is no url", () => {
     assert.equal(imageUrl(undefined, 300), null);
-  });
-});
   });
 });
