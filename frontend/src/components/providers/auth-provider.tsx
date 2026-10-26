@@ -56,6 +56,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Load last sync timestamp from local device storage
     const stored = localStorage.getItem(LAST_SYNC_KEY);
     if (stored) {
+      // Post-mount hydration from localStorage (SSR-safe).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLastSyncedAt(new Date(stored));
     }
 

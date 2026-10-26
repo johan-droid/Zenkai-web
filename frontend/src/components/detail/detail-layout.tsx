@@ -252,6 +252,11 @@ export function DetailLayout({
                   {media.status.replaceAll("_", " ")}
                 </Badge>
               ) : null}
+              {kind === "anime" && media.episodes ? (
+                <Badge variant="secondary" className="rounded-lg">
+                  {media.episodes} {media.episodes === 1 ? "episode" : "episodes"}
+                </Badge>
+              ) : null}
               {score ? (
                 <Badge variant="secondary" className="gap-1 rounded-lg">
                   <Star className="size-3 fill-amber-400 text-amber-400" />

@@ -9,6 +9,8 @@ export default function MainTemplate({ children }: { children: React.ReactNode }
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
+    // Skip the enter animation on first paint only.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasMounted(true);
   }, []);
 

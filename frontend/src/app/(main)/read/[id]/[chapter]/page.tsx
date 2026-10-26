@@ -41,7 +41,7 @@ export default function ReadPage() {
   const title =
     media.data?.titles?.primary ??
     media.data?.canonicalTitle ??
-    (media.data as any)?.title ??
+    (media.data as { title?: string } | undefined)?.title ??
     "";
 
   const mangaId = media.data?.mangadexId ?? media.data?.id ?? null;
