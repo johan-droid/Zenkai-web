@@ -325,6 +325,10 @@ export const episodeCatalogueSchema = z.object({
   catalogueCount: z.number(),
   airedCount: z.number(),
   knownTotal: z.number().nullish(),
+  page: z.number().optional(),
+  perPage: z.number().optional(),
+  totalPages: z.number().optional(),
+  total: z.number().optional(),
 });
 
 export type EpisodeCatalogue = z.infer<typeof episodeCatalogueSchema>;
@@ -1099,9 +1103,16 @@ export function fetchAnimeDetail(id: string): Promise<AnimeDetail> {
 }
 
 /** The canonical episode catalogue for a title (P4 contract, P13 client). */
-export function fetchAnimeEpisodes(id: string): Promise<EpisodeCatalogue> {
+export function fetchAnimeEpisodes(
+  id: string,
+  options?: { page?: number; perPage?: number },
+): Promise<EpisodeCatalogue> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set("page", String(options.page));
+  if (options?.perPage) params.set("perPage", String(options.perPage));
+  const query = params.toString() ? `?${params.toString()}` : "";
   return getValidated(
-    `/api/v1/anime/${encodeURIComponent(id)}/episodes`,
+    `/api/v1/anime/${encodeURIComponent(id)}/episodes${query}`,
     episodeCatalogueSchema,
   );
 }

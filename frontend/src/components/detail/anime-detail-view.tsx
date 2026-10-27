@@ -105,9 +105,14 @@ function EpisodeSection({
     if (!continueUnit || totalCount <= EPISODES_PER_CHUNK) return 0;
     const idx = episodes.findIndex((ep) => ep.episodeNumber === continueUnit);
     return idx >= 0 ? Math.floor(idx / EPISODES_PER_CHUNK) : 0;
-  }, [continueUnit, episodes, totalCount]);
+  }, [continueUnit, totalCount, episodes]);
 
   const [selectedChunk, setSelectedChunk] = useState<number>(initialChunkIndex);
+
+  React.useEffect(() => {
+    setSelectedChunk(initialChunkIndex);
+    setFilterQuery("");
+  }, [id, initialChunkIndex]);
 
   const watchedSet = useMemo(() => {
     const set = new Set<number>();

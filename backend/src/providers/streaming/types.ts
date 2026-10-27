@@ -183,6 +183,9 @@ export interface ProviderEpisodeInfo {
   title?: string | null;
   thumbnailUrl?: string | null;
   isFiller?: boolean;
+  description?: string | null;
+  durationSeconds?: number | null;
+  airDate?: number | null;
 }
 
 /**

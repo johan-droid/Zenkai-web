@@ -57,6 +57,7 @@ export interface EpisodeCard {
 
 export interface EpisodeCatalogue {
   anilistId: string;
+  animeId?: string;
   episodes: EpisodeCard[];
   /** Rows we hold. Not the same as the provider's stated total. */
   catalogueCount: number;
@@ -70,6 +71,11 @@ export interface EpisodeCatalogue {
    * than "we were not told".
    */
   knownTotal: number | null;
+  /** Pagination metadata when pagination parameters are provided. */
+  page?: number;
+  perPage?: number;
+  totalPages?: number;
+  total?: number;
 }
 
 export class EpisodeService {
@@ -82,12 +88,14 @@ export class EpisodeService {
   /**
    * The full episode list for a title.
    *
-   * Not paginated by default. Zenkai's episode list is a single scrollable
-   * column, and forcing a client to page through a 24-episode show to render it
-   * would be pagination applied for its own sake. A caller that genuinely needs
-   * a window can slice `episodes` client-side without another round trip.
+   * Returns all episodes by default, or paginated cards when pagination options
+   * are provided.
    */
-  async catalogue(anilistId: string): Promise<EpisodeCatalogue | null> {
+  async catalogue(
+    anilistId: string,
+    options?: { page?: number; perPage?: number },
+    fallbackEpisodes?: Record<string, any>[],
+  ): Promise<EpisodeCatalogue | null> {
     let animeId: string | null = null;
     let rows: Record<string, any>[] = [];
     try {
@@ -99,19 +107,24 @@ export class EpisodeService {
       // DB offline
     }
 
+    let knownTotalCount: number | null = null;
+    try {
+      knownTotalCount = await this.repo.getTotalEpisodes(anilistId);
+    } catch {
+      // DB offline
+    }
+
     const now = this.now();
     let episodes: EpisodeCard[] = [];
 
     if (rows.length > 0) {
       episodes = rows.map((row) => toCard(row, now));
-    } else {
-      let knownTotalCount: number | null = null;
-      try {
-        knownTotalCount = await this.repo.getTotalEpisodes(anilistId);
-      } catch {
-        // DB offline
+    } else if (fallbackEpisodes && fallbackEpisodes.length > 0) {
+      episodes = fallbackEpisodes.map((row) => toCard(row, now));
+      if (!knownTotalCount) {
+        knownTotalCount = fallbackEpisodes.length;
       }
-
+    } else {
       // No cap below the stated total: a 100-row cap silently truncated long
       // runners (e.g. 1000+ episodes) so the list disagreed with the title's count.
       const count = knownTotalCount && knownTotalCount > 0 ? Math.min(knownTotalCount, 3000) : 1;
@@ -134,14 +147,29 @@ export class EpisodeService {
       });
     }
 
-    const total = await this.repo.getTotalEpisodes(anilistId).catch(() => null);
+    const totalCount = episodes.length;
+    const airedCount = episodes.filter((episode) => episode.airingState === "aired").length;
+
+    let pagedEpisodes = episodes;
+    let page: number | undefined;
+    let perPage: number | undefined;
+    let totalPages: number | undefined;
+
+    if (options?.page || options?.perPage) {
+      page = Math.max(1, options.page ?? 1);
+      perPage = Math.max(1, Math.min(options.perPage ?? 50, 500));
+      totalPages = Math.ceil(totalCount / perPage);
+      pagedEpisodes = episodes.slice((page - 1) * perPage, page * perPage);
+    }
 
     return {
       anilistId,
-      episodes,
-      catalogueCount: episodes.length,
-      airedCount: episodes.filter((episode) => episode.airingState === "aired").length,
-      knownTotal: total ?? null,
+      animeId: anilistId,
+      episodes: pagedEpisodes,
+      catalogueCount: totalCount,
+      airedCount,
+      knownTotal: knownTotalCount ?? null,
+      ...(page !== undefined ? { page, perPage, totalPages, total: totalCount } : {}),
     };
   }
 
@@ -195,10 +223,18 @@ export class EpisodeService {
 
 /** Project a joined episode+slot row into the client-facing card. */
 function toCard(row: Record<string, any>, now: Date): EpisodeCard {
-  const airingAt: Date | null = row.airingAt ?? null;
+  const rawAir = row.airingAt ?? row.airDate;
+  const airingAt: Date | null =
+    rawAir instanceof Date
+      ? rawAir
+      : typeof rawAir === "number"
+      ? new Date(rawAir * 1000)
+      : typeof rawAir === "string"
+      ? new Date(rawAir)
+      : null;
 
   return {
-    id: row.id,
+    id: row.id ?? `ep-${row.episodeNumber}`,
     episodeNumber: row.episodeNumber,
     absoluteNumber: row.absoluteNumber ?? null,
     title: row.title ?? null,
@@ -207,10 +243,9 @@ function toCard(row: Record<string, any>, now: Date): EpisodeCard {
     thumbnailUrl: row.thumbnailUrl ?? null,
     isFiller: Boolean(row.isFiller),
     airingAt: airingAt ? airingAt.toISOString() : null,
-    // No slot means unknown scheduling, which is not the same as "not yet".
-    airingState: airingAt ? airingStateAt(airingAt, now) : "unknown",
-    airingSource: row.slotSource ?? null,
-    providerStatus: row.slotStatus ?? null,
+    airingState: airingAt ? airingStateAt(airingAt, now) : (row.airingState ?? "aired"),
+    airingSource: row.slotSource ?? row.airingSource ?? null,
+    providerStatus: row.slotStatus ?? row.providerStatus ?? null,
   };
 }
 

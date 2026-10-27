@@ -47,7 +47,8 @@ export function EpisodeList({
 
   useEffect(() => {
     setSelectedChunk(initialChunk);
-  }, [initialChunk]);
+    setSearchQuery("");
+  }, [id, initialChunk]);
 
   const totalChunks = Math.ceil(totalCount / CHUNK_SIZE);
   const visible = useMemo(() => {

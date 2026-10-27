@@ -163,10 +163,17 @@ export function registerAnimeRoutes(
    */
   app.get("/api/v1/anime/:id/episodes", async (request, reply) => {
     const { id } = parseOrThrow(animeIdParam, request.params);
+    const query = parseOrThrow(
+      z.object({
+        page: z.coerce.number().int().min(1).optional(),
+        perPage: z.coerce.number().int().min(1).max(500).optional(),
+      }),
+      request.query,
+    );
 
-    await service.getEpisodes(id);
+    const synced = await service.syncEpisodes(id);
 
-    const catalogue = await episodes.catalogue(id);
+    const catalogue = await episodes.catalogue(id, query, synced);
     if (!catalogue) throw AppError.notFound(`anime ${id} not found`);
 
     reply.header("cache-control", "public, max-age=180, s-maxage=300, stale-while-revalidate=600");

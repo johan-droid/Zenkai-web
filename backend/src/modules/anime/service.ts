@@ -11,7 +11,8 @@ import { cache } from "../../cache/index.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
-import type { BrowseQuery, ProviderEpisode } from "../../providers/metadata/types.js";
+import type { AnimeDetail, BrowseQuery, ProviderEpisode } from "../../providers/metadata/types.js";
+import type { ProviderEpisodeInfo, ResolveRequest, StreamingProvider } from "../../providers/streaming/types.js";
 import { AnimeRepository, type AnimeListOptions } from "./repository.js";
 import { toCard, type DiscoveryCard } from "./discovery.js";
 
@@ -34,9 +35,15 @@ export interface DiscoveryOptions {
 }
 
 export class AnimeService {
-  readonly #anilist = new AnilistProvider();
+  readonly #anilist: AnilistProvider;
 
-  constructor(private readonly repo: AnimeRepository) {}
+  constructor(
+    private readonly repo: AnimeRepository,
+    private readonly providers: StreamingProvider[] = [],
+    anilist?: AnilistProvider,
+  ) {
+    this.#anilist = anilist ?? new AnilistProvider();
+  }
 
   /**
    * Ensure a title is in the database, fetching it if it is not.
@@ -248,34 +255,255 @@ export class AnimeService {
     return page.items.map((summary, index) => toCard(summary, localIds[index] ?? null));
   }
 
-  /** Episode catalog for a title, cached with metadata TTL, seeding from AniList if empty or DB offline. */
-  async getEpisodes(anilistId: string): Promise<Record<string, any>[]> {
+  /**
+   * Synchronize episode catalog for a title using the provider architecture.
+   *
+   * Fetches available episode records from metadata (AniList) and registered streaming providers.
+   * Follows provider pagination, merges richer provider metadata without destroying stored fields,
+   * ensures expected episode counts are met, persists the resulting catalogue idempotently,
+   * and refreshes stale caches.
+   */
+  async syncEpisodes(anilistId: string): Promise<Record<string, any>[]> {
     const key = `anime:episodes:${anilistId}`;
-    const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
+
+    let localId: string | null = null;
+    try {
+      localId = await this.ensureCached(anilistId).catch(() => null);
+    } catch {
+      // DB offline
+    }
+
+    let existingRows: Record<string, any>[] = [];
+    if (localId) {
       try {
-        const localId = await this.ensureCached(anilistId).catch(() => null);
-        if (localId) {
-          const existing = await this.repo.listEpisodes(localId).catch(() => []);
-          if (existing.length > 0) return existing;
+        existingRows = await this.repo.listEpisodes(localId).catch(() => []);
+      } catch {
+        existingRows = [];
+      }
+    }
+
+    let detail: AnimeDetail | null = null;
+    try {
+      detail = await this.#anilist.getByAnilistId(anilistId);
+      if (detail && localId) {
+        await this.repo.upsert(detail).catch(() => {});
+      }
+    } catch {
+      // Upstream AniList transient error
+    }
+
+    const totalEpisodes = detail?.totalEpisodes ?? null;
+    const nextAiring = detail?.nextAiringEpisode ?? null;
+    const expectedCount =
+      totalEpisodes && totalEpisodes > 0
+        ? totalEpisodes
+        : nextAiring && nextAiring.episode > 1
+        ? nextAiring.episode - 1
+        : null;
+
+    // Build the merged episode map by episodeNumber
+    const episodeMap = new Map<number, ProviderEpisode>();
+
+    // 1. Seed from AniList placeholder episodes if available
+    const seeded: ProviderEpisode[] = detail?.episodes ?? [];
+    for (const ep of seeded) {
+      episodeMap.set(ep.episodeNumber, {
+        episodeNumber: ep.episodeNumber,
+        absoluteNumber: ep.absoluteNumber,
+        title: ep.title,
+        description: ep.description,
+        durationSeconds: ep.durationSeconds,
+        thumbnailUrl: ep.thumbnailUrl,
+        airDate: ep.airDate,
+        isFiller: ep.isFiller ?? false,
+      });
+    }
+
+    // 2. Query streaming providers for verified episode info and handle pagination
+    const resolveReq: ResolveRequest = {
+      animeId: localId ?? anilistId,
+      anilistId,
+      animeTitle: detail?.canonicalTitle,
+      language: "sub",
+      episodeNumber: 1,
+    };
+
+    for (const provider of this.providers) {
+      const fetchFn =
+        typeof provider.listEpisodes === "function"
+          ? (provider.listEpisodes as any).bind(provider)
+          : typeof (provider as any).getEpisodes === "function"
+          ? ((provider as any).getEpisodes as any).bind(provider)
+          : null;
+
+      if (fetchFn) {
+        try {
+          const providerEpisodes = await this.#fetchEpisodesFromProvider(fetchFn, resolveReq);
+          for (const ep of providerEpisodes) {
+            const current = episodeMap.get(ep.episodeNumber);
+            episodeMap.set(ep.episodeNumber, {
+              episodeNumber: ep.episodeNumber,
+              title: ep.title ?? current?.title,
+              thumbnailUrl: ep.thumbnailUrl ?? current?.thumbnailUrl,
+              description: ep.description ?? current?.description,
+              durationSeconds: ep.durationSeconds ?? current?.durationSeconds,
+              airDate: ep.airDate ?? current?.airDate,
+              isFiller: ep.isFiller ?? current?.isFiller ?? false,
+              externalId: ep.providerEpisodeId ?? current?.externalId,
+            });
+          }
+        } catch {
+          // One provider failure must not break synchronization
         }
+      }
+    }
+
+    // 3. Ensure all numbers up to expectedCount exist
+    if (expectedCount && expectedCount > 0) {
+      const cap = Math.min(expectedCount, 3000);
+      for (let num = 1; num <= cap; num++) {
+        if (!episodeMap.has(num)) {
+          episodeMap.set(num, {
+            episodeNumber: num,
+            title: `Episode ${num}`,
+            isFiller: false,
+          });
+        }
+      }
+    }
+
+    // 4. Merge existing database records, ensuring richer existing metadata is never destroyed
+    for (const row of existingRows) {
+      const num = row.episodeNumber;
+      const incoming = episodeMap.get(num);
+      if (!incoming) {
+        // Keep stored episode that wasn't in provider list
+        episodeMap.set(num, {
+          episodeNumber: num,
+          absoluteNumber: row.absoluteNumber ?? undefined,
+          title: row.title ?? undefined,
+          description: row.description ?? undefined,
+          durationSeconds: row.durationSeconds ?? undefined,
+          thumbnailUrl: row.thumbnailUrl ?? undefined,
+          airDate: row.airDate ? Math.floor(new Date(row.airDate).getTime() / 1000) : undefined,
+          isFiller: Boolean(row.isFiller),
+        });
+      } else {
+        const isIncomingGenericTitle = !incoming.title || /^Episode \d+$/i.test(incoming.title.trim());
+        const isStoredRichTitle = row.title && !/^Episode \d+$/i.test(row.title.trim());
+
+        episodeMap.set(num, {
+          episodeNumber: num,
+          absoluteNumber: incoming.absoluteNumber ?? row.absoluteNumber ?? undefined,
+          title: isStoredRichTitle && isIncomingGenericTitle ? row.title : (incoming.title ?? row.title ?? undefined),
+          description: incoming.description ?? row.description ?? undefined,
+          durationSeconds: incoming.durationSeconds ?? row.durationSeconds ?? undefined,
+          thumbnailUrl: incoming.thumbnailUrl ?? row.thumbnailUrl ?? undefined,
+          airDate: incoming.airDate ?? (row.airDate ? Math.floor(new Date(row.airDate).getTime() / 1000) : undefined),
+          isFiller: incoming.isFiller ?? Boolean(row.isFiller),
+          externalId: incoming.externalId,
+        });
+      }
+    }
+
+    const mergedEpisodes = Array.from(episodeMap.values()).sort(
+      (a, b) => a.episodeNumber - b.episodeNumber,
+    );
+
+    // 5. Persist to repository if we have a local ID
+    if (localId && mergedEpisodes.length > 0) {
+      try {
+        await this.repo.upsertEpisodes(localId, mergedEpisodes);
+      } catch {
+        // DB offline or transient write issue
+      }
+    }
+
+    // 6. Invalidate caches
+    await cache.delete(key).catch(() => {});
+    await cache.delete(`anime:full:${anilistId}`).catch(() => {});
+
+    // 7. If DB is online, return fresh rows from DB; otherwise return synthesized records
+    if (localId) {
+      try {
+        const fresh = await this.repo.listEpisodes(localId);
+        if (fresh.length > 0) return fresh;
       } catch {
         // DB offline fallback
       }
+    }
 
-      const detail = await this.#anilist.getByAnilistId(anilistId);
-      const seeded: ProviderEpisode[] = detail?.episodes ?? [];
-      return seeded.map((ep) => ({
-        id: `ep-${anilistId}-${ep.episodeNumber}`,
-        animeId: anilistId,
-        episodeNumber: ep.episodeNumber,
-        title: ep.title ?? `Episode ${ep.episodeNumber}`,
-        thumbnailUrl: ep.thumbnailUrl ?? null,
-        airDate: ep.airDate ? new Date(ep.airDate * 1000) : null,
-        isFiller: ep.isFiller ?? false,
-      }));
-    });
+    return mergedEpisodes.map((ep) => ({
+      id: `ep-${anilistId}-${ep.episodeNumber}`,
+      animeId: anilistId,
+      episodeNumber: ep.episodeNumber,
+      title: ep.title ?? `Episode ${ep.episodeNumber}`,
+      thumbnailUrl: ep.thumbnailUrl ?? null,
+      airDate: ep.airDate ? new Date(ep.airDate * 1000) : null,
+      isFiller: ep.isFiller ?? false,
+    }));
+  }
 
-    return value;
+  /** Retrieve paginated episodes from a provider supporting single-array or paged results. */
+  async #fetchEpisodesFromProvider(
+    fetchFn: (request: ResolveRequest, page?: number) => Promise<any>,
+    request: ResolveRequest,
+  ): Promise<ProviderEpisodeInfo[]> {
+    const episodes: ProviderEpisodeInfo[] = [];
+    const seenNumbers = new Set<number>();
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore && page <= 50) {
+      const pageRequest = { ...request, page };
+      let result: any = null;
+      try {
+        result = await fetchFn(pageRequest, page);
+      } catch {
+        break;
+      }
+
+      if (!result) break;
+
+      let items: any[] = [];
+      if (Array.isArray(result)) {
+        items = result;
+        hasMore = false;
+      } else if (typeof result === "object") {
+        const rawItems = result.items ?? result.episodes ?? [];
+        if (Array.isArray(rawItems)) items = rawItems;
+        hasMore = Boolean(
+          result.hasNextPage ||
+          (result.totalPages && page < result.totalPages) ||
+          (result.total && items.length > 0 && episodes.length + items.length < result.total)
+        );
+      }
+
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const epNum = item?.episodeNumber ?? item?.number;
+        if (item && Number.isFinite(epNum) && !seenNumbers.has(epNum)) {
+          seenNumbers.add(epNum);
+          episodes.push({
+            providerEpisodeId: item.providerEpisodeId ?? item.id ?? String(epNum),
+            episodeNumber: epNum,
+            title: item.title ?? null,
+            thumbnailUrl: item.thumbnailUrl ?? item.image ?? null,
+            isFiller: Boolean(item.isFiller),
+          });
+        }
+      }
+
+      page++;
+    }
+
+    return episodes;
+  }
+
+  /** Episode catalog for a title, synchronizing from providers and database. */
+  async getEpisodes(anilistId: string): Promise<Record<string, any>[]> {
+    return this.syncEpisodes(anilistId);
   }
 
   /** Single episode by local id. */

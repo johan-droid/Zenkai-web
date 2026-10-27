@@ -271,6 +271,62 @@ function episodePatch(episode: ProviderEpisode): Partial<typeof episodes.$inferI
   return patch as Partial<typeof episodes.$inferInsert>;
 }
 
+/**
+ * Patch existing episode row while ensuring richer existing metadata is preserved
+ * when incoming provider data only supplies generic placeholder values.
+ */
+function episodePatchWithExisting(
+  episode: ProviderEpisode,
+  currentRow: typeof episodes.$inferSelect,
+): Partial<typeof episodes.$inferInsert> {
+  const patch: Record<string, unknown> = {};
+
+  if (episode.title !== undefined) {
+    const isIncomingGeneric = !episode.title || /^Episode \d+$/i.test(episode.title.trim());
+    const isStoredRich = currentRow.title && !/^Episode \d+$/i.test(currentRow.title.trim());
+    if (isStoredRich && isIncomingGeneric) {
+      // Do not downgrade a stored rich title with a generic placeholder like "Episode 1"
+    } else if (episode.title !== currentRow.title) {
+      patch.title = episode.title;
+    }
+  }
+
+  if (episode.description !== undefined && episode.description !== currentRow.description) {
+    patch.description = episode.description;
+  }
+
+  if (episode.durationSeconds !== undefined && episode.durationSeconds !== currentRow.durationSeconds) {
+    patch.durationSeconds = episode.durationSeconds;
+  }
+
+  if (episode.thumbnailUrl !== undefined && episode.thumbnailUrl !== currentRow.thumbnailUrl) {
+    patch.thumbnailUrl = episode.thumbnailUrl;
+  }
+
+  if (episode.absoluteNumber !== undefined && episode.absoluteNumber !== currentRow.absoluteNumber) {
+    patch.absoluteNumber = episode.absoluteNumber;
+  }
+
+  if (episode.airDate !== undefined) {
+    const date = episode.airDate ? new Date(episode.airDate * 1000) : null;
+    const currentMs = currentRow.airDate ? new Date(currentRow.airDate).getTime() : null;
+    const incomingMs = date ? date.getTime() : null;
+    if (incomingMs !== currentMs) {
+      patch.airDate = date;
+    }
+  }
+
+  if (typeof episode.isFiller === "boolean" && episode.isFiller !== currentRow.isFiller) {
+    patch.isFiller = episode.isFiller;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = new Date();
+  }
+
+  return patch as Partial<typeof episodes.$inferInsert>;
+}
+
 export class AnimeRepository {
   constructor(private readonly db: Db) {}
 
@@ -725,24 +781,24 @@ export class AnimeRepository {
     // this is empty, so the common case stays a single insert. A re-sync pays
     // one update per episode, which is acceptable here because this is a write
     // path driven by sync, not a read path on a request.
-    for (const episode of existing) {
-      const patch = episodePatch(episode);
-      if (Object.keys(patch).length === 0) continue;
-
-      await this.db
-        .update(episodes)
-        .set(patch)
-        .where(and(eq(episodes.animeId, animeId), eq(episodes.episodeNumber, episode.episodeNumber)));
-    }
-
     const byNumber = new Map(inserted.map((row) => [row.episodeNumber, row.id]));
     for (const episode of existing) {
-      const [row] = await this.db
-        .select({ id: episodes.id })
+      const [currentRow] = await this.db
+        .select()
         .from(episodes)
         .where(and(eq(episodes.animeId, animeId), eq(episodes.episodeNumber, episode.episodeNumber)))
         .limit(1);
-      if (row) byNumber.set(episode.episodeNumber, row.id);
+
+      if (currentRow) {
+        byNumber.set(episode.episodeNumber, currentRow.id);
+        const patch = episodePatchWithExisting(episode, currentRow);
+        if (Object.keys(patch).length > 0) {
+          await this.db
+            .update(episodes)
+            .set(patch)
+            .where(eq(episodes.id, currentRow.id));
+        }
+      }
     }
 
     // Link provider-native episode ids so playback skips a re-lookup per play.

@@ -148,7 +148,11 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
 
   const animeRepo = new AnimeRepository(deps.db);
-  const animeService = new AnimeService(animeRepo);
+  const providers =
+    deps.providers ??
+    (await loadProvidersFromDb(deps.db));
+
+  const animeService = new AnimeService(animeRepo, providers);
   // Discovery owns the metadata provider and the cache, so routes never reach
   // for a provider directly and provider swaps stay confined to this file.
   // Schedule first, because home takes the upcoming shelf from it. The two
@@ -173,9 +177,6 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   const mangaService = new MangaService(mangaRepo);
   const novelRepo = new NovelRepository(deps.db);
   const novelService = new NovelService(new NovelProvider(), novelRepo);
-  const providers =
-    deps.providers ??
-    (await loadProvidersFromDb(deps.db));
 
   const resolver = new PlaybackResolver(providers, animeRepo);
   const metadata = new PlaybackMetadataService(deps.db, providers);
