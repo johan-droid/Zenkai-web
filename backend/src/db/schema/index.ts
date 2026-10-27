@@ -6,5 +6,6 @@ export * from "./novel.js";
 export * from "./providers.js";
 export * from "./schedule.js";
 export * from "./users.js";
+export * from "./userSessions.ts";
 export * from "./library.js";
 export * from "./progress.js";

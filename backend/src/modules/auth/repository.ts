@@ -76,7 +76,30 @@ export class AuthRepository {
         settings: users.settings,
       });
 
-    return row;
+    // Decrypt settings if encrypted blob exists
+    let decryptedSettings: Record<string, any> = {};
+    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
+      try {
+        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
+      } catch {
+        decryptedSettings = {};
+      }
+    } else if (row.settings && typeof row.settings === "object") {
+      decryptedSettings = row.settings as Record<string, any>;
+    }
+
+    return {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      settings: decryptedSettings,
+    } as UserRow;
   }
 
   async findUserById(id: string): Promise<UserRow | null> {
@@ -101,20 +124,25 @@ export class AuthRepository {
     // Decrypt settings if encrypted blob exists
     let decryptedSettings: Record<string, any> = {};
     if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      // It's an encrypted blob (we'll prefix with $encrypted for detection)
       try {
         decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
       } catch {
-        // If decryption fails, return empty settings
         decryptedSettings = {};
       }
     } else if (row.settings && typeof row.settings === "object") {
-      // Already decrypted (for testing or direct DB access)
       decryptedSettings = row.settings as Record<string, any>;
     }
 
     return {
-      ...row,
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
       settings: decryptedSettings,
     } as UserRow;
   }
@@ -151,7 +179,15 @@ export class AuthRepository {
     }
 
     return {
-      ...row,
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
       settings: decryptedSettings,
     } as UserRow;
   }
@@ -188,7 +224,15 @@ export class AuthRepository {
     }
 
     return {
-      ...row,
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
       settings: decryptedSettings,
     } as UserRow;
   }
@@ -220,9 +264,17 @@ export class AuthRepository {
     }
 
     return {
-      ...row,
-      passwordHash: (row as any).passwordHash,
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
       settings: decryptedSettings,
+      passwordHash: (row as any).passwordHash,
     } as UserWithPasswordRow;
   }
 
@@ -403,7 +455,15 @@ export class AuthRepository {
     }
 
     return {
-      ...row,
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      bio: row.bio,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
       settings: decryptedSettings,
     } as UserRow;
   }
