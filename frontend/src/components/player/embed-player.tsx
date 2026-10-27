@@ -96,15 +96,17 @@ function EmbedPlayerInner({
           >
             <RefreshCw className="size-3.5" />
           </button>
-          <a
-            href={execution.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Open in new window"
-            className="flex size-7 items-center justify-center rounded-lg bg-black/60 text-zinc-400 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
-          >
-            <ExternalLink className="size-3.5" />
-          </a>
+          {execution.url && !execution.url.startsWith("file:") && (
+            <a
+              href={execution.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open in new window"
+              className="flex size-7 items-center justify-center rounded-lg bg-black/60 text-zinc-400 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          )}
           <button
             type="button"
             onClick={handleFullscreen}
@@ -149,28 +151,32 @@ function EmbedPlayerInner({
               >
                 Reload Mirror
               </button>
-              <a
-                href={execution.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-xl border border-[#c8102e]/50 bg-[#c8102e]/20 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-[#c8102e]/40 transition-colors"
-              >
-                Open in New Tab
-              </a>
+              {execution.url && !execution.url.startsWith("file:") && (
+                <a
+                  href={execution.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl border border-[#c8102e]/50 bg-[#c8102e]/20 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-[#c8102e]/40 transition-colors"
+                >
+                  Open in New Tab
+                </a>
+              )}
             </div>
           )}
         </div>
       )}
 
       {/* The Iframe */}
-      <iframe
-        src={execution.url}
-        title={title ? `${title} - Episode ${episodeNumber ?? ""}` : "Zenkai CinePlayer"}
-        className="absolute inset-0 h-full w-full border-0"
-        allowFullScreen
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-        onLoad={() => setLoaded(true)}
-      />
+      {execution.url && !execution.url.startsWith("file:") ? (
+        <iframe
+          src={execution.url}
+          title={title ? `${title} - Episode ${episodeNumber ?? ""}` : "Zenkai CinePlayer"}
+          className="absolute inset-0 h-full w-full border-0"
+          allowFullScreen
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          onLoad={() => setLoaded(true)}
+        />
+      ) : null}
     </div>
   );
 }
