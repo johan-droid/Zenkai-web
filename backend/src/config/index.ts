@@ -44,7 +44,7 @@ const schema = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
 
-  DATABASE_URL: z.string().min(1).default("postgresql://zenkai:zenkai_password@localhost:5432/zenkai_db?sslmode=disable"),
+  DATABASE_URL: z.string().min(1).default("postgresql://zenkai:zenkai_password@localhost:5432/zenkai_db?sslmode=require"),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 
   /** Redis is optional: the cache degrades to an in-process LRU when absent. */

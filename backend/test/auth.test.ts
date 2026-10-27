@@ -19,10 +19,7 @@ import type {
 } from "../src/modules/auth/repository.js";
 import { AppError } from "../src/http/errors.js";
 
-/**
- * In-memory test repository to test AuthService and Fastify auth routes
- * deterministically without requiring a live external PostgreSQL instance.
- */
+/** In-memory test repository to test AuthService and Fastify auth routes deterministically without requiring a live external PostgreSQL instance. */
 class MockAuthRepository implements Partial<AuthRepository> {
   private users: Map<string, UserWithPasswordRow> = new Map();
   private sessions: Map<string, SessionRow> = new Map();
@@ -167,19 +164,19 @@ class MockAuthRepository implements Partial<AuthRepository> {
 }
 
 describe("Auth Cryptography", () => {
-  it("hashes password with scrypt and verifies correctly", () => {
+  it("hashes password with Argon2id and verifies correctly", async () => {
     const password = "SuperSecretPassword123!";
-    const hash = hashPassword(password);
+    const hash = await hashPassword(password);
 
-    assert.ok(hash.startsWith("scrypt$"), "Hash should start with scrypt identifier");
-    assert.equal(verifyPassword(password, hash), true, "Correct password must verify as true");
-    assert.equal(verifyPassword("WrongPassword123!", hash), false, "Wrong password must verify as false");
-    assert.equal(verifyPassword("", hash), false, "Empty password must verify as false");
+    assert.ok(hash.startsWith("$argon2id$"), "Hash should start with $argon2id$ identifier");
+    assert.equal(await verifyPassword(password, hash), true, "Correct password must verify as true");
+    assert.equal(await verifyPassword("WrongPassword123!", hash), false, "Wrong password must verify as false");
+    assert.equal(await verifyPassword("", hash), false, "Empty password must verify as false");
   });
 
-  it("handles malformed hash string gracefully without crashing", () => {
-    assert.equal(verifyPassword("password", "invalid_hash_string"), false);
-    assert.equal(verifyPassword("password", "scrypt$invalid"), false);
+  it("handles malformed hash string gracefully without crashing", async () => {
+    assert.equal(await verifyPassword("password", "invalid_hash_string"), false);
+    assert.equal(await verifyPassword("password", ""), false);
   });
 
   it("generates 256-bit secure session token and computes SHA-256 hash", () => {
@@ -226,34 +223,31 @@ describe("AuthService Domain Logic", () => {
 
     // Invalid username (short)
     await assert.rejects(
-      () =>
-        service.register({
-          username: "ab",
-          email: "valid@example.com",
-          password: "password123",
-        }),
+      () => service.register({
+        username: "ab",
+        email: "valid@example.com",
+        password: "password123",
+      }),
       (err: AppError) => err.statusCode === 400,
     );
 
     // Invalid email
     await assert.rejects(
-      () =>
-        service.register({
-          username: "valid_name",
-          email: "not-an-email",
-          password: "password123",
-        }),
+      () => service.register({
+        username: "valid_name",
+        email: "not-an-email",
+        password: "password123",
+      }),
       (err: AppError) => err.statusCode === 400,
     );
 
     // Short password (< 8 chars)
     await assert.rejects(
-      () =>
-        service.register({
-          username: "valid_name",
-          email: "valid@example.com",
-          password: "short",
-        }),
+      () => service.register({
+        username: "valid_name",
+        email: "valid@example.com",
+        password: "short",
+      }),
       (err: AppError) => err.statusCode === 400,
     );
   });
@@ -269,12 +263,11 @@ describe("AuthService Domain Logic", () => {
     });
 
     await assert.rejects(
-      () =>
-        service.register({
-          username: "DUPLICATE_USER", // case-insensitive check
-          email: "second@example.com",
-          password: "password123",
-        }),
+      () => service.register({
+        username: "DUPLICATE_USER", // case-insensitive check
+        email: "second@example.com",
+        password: "password123",
+      }),
       (err: AppError) => err.statusCode === 409 && err.reason === "conflict",
     );
   });
@@ -290,12 +283,11 @@ describe("AuthService Domain Logic", () => {
     });
 
     await assert.rejects(
-      () =>
-        service.register({
-          username: "user_two",
-          email: "SHARED@example.com",
-          password: "password123",
-        }),
+      () => service.register({
+        username: "user_two",
+        email: "SHARED@example.com",
+        password: "password123",
+      }),
       (err: AppError) => err.statusCode === 409 && err.reason === "conflict",
     );
   });
@@ -326,21 +318,19 @@ describe("AuthService Domain Logic", () => {
 
     // Invalid password
     await assert.rejects(
-      () =>
-        service.login({
-          login: "login_test",
-          password: "WrongPassword!",
-        }),
+      () => service.login({
+        login: "login_test",
+        password: "WrongPassword!",
+      }),
       (err: AppError) => err.statusCode === 401 && err.reason === "unauthorized",
     );
 
     // Nonexistent user
     await assert.rejects(
-      () =>
-        service.login({
-          login: "ghost_user",
-          password: "Password123!",
-        }),
+      () => service.login({
+        login: "ghost_user",
+        password: "Password123!",
+      }),
       (err: AppError) => err.statusCode === 401 && err.reason === "unauthorized",
     );
   });

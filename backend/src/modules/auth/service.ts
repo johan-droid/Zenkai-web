@@ -65,7 +65,7 @@ export class AuthService {
       throw AppError.conflict("Email address is already registered", { field: "email" });
     }
 
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
     const user = await this.repo.createUser({
       username,
       email,
@@ -102,7 +102,7 @@ export class AuthService {
       throw AppError.unauthorized("Invalid username or password");
     }
 
-    const valid = verifyPassword(password, user.passwordHash);
+    const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       throw AppError.unauthorized("Invalid username or password");
     }
