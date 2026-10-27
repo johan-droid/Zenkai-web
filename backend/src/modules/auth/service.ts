@@ -128,6 +128,13 @@ export class AuthService {
     await this.repo.deleteSession(tokenHash);
   }
 
+  async cleanupExpiredSessions(): Promise<number> {
+    if (typeof this.repo.deleteExpiredSessions === "function") {
+      return this.repo.deleteExpiredSessions();
+    }
+    return 0;
+  }
+
   async validateSession(
     rawToken: string,
   ): Promise<{ user: UserRow; session: SessionRow } | null> {

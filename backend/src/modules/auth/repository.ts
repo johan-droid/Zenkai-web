@@ -205,6 +205,15 @@ export class AuthRepository {
       .where(eq(userSessions.userId, userId));
   }
 
+  async deleteExpiredSessions(): Promise<number> {
+    const now = new Date();
+    const rows = await this.db
+      .delete(userSessions)
+      .where(sql`${userSessions.expiresAt} <= ${now}`)
+      .returning({ id: userSessions.id });
+    return rows.length;
+  }
+
   async updateUserProfile(
     userId: string,
     updates: { displayName?: string; bio?: string; avatarUrl?: string | null },
