@@ -4,7 +4,7 @@ import { Play, Star } from "lucide-react";
 import Link from "next/link";
 import { motion } from "motion/react";
 
-import { displayTitle, formatScore, mediaHref, type MediaSummary } from "@/lib/media";
+import { displayTitle, formatScore, mediaHref, resolveEpisodeCounts, type MediaSummary } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 export function MediaCard({
@@ -20,6 +20,12 @@ export function MediaCard({
 }) {
   const title = displayTitle(media.title);
   const score = formatScore(media.averageScore);
+  const epInfo = resolveEpisodeCounts({
+    format: media.format,
+    status: media.status,
+    episodes: media.episodes,
+    totalEpisodes: media.episodes,
+  });
 
   return (
     <motion.div
@@ -78,7 +84,7 @@ export function MediaCard({
           {/* Top badges */}
           <div className="relative z-10 flex items-start justify-between gap-2 p-2">
             <span className="rounded-md border border-white/[0.08] bg-black/65 px-1.5 py-0.5 text-[0.58rem] font-bold tracking-wider text-white/85 backdrop-blur-sm">
-              {media.kind === "anime" ? "ANIME" : media.kind === "novel" ? "NOVEL" : "MANGA"}
+              {media.kind === "anime" ? epInfo.badgeLabel : media.kind === "novel" ? "NOVEL" : "MANGA"}
             </span>
             {score ? (
               <span className="flex items-center gap-1 rounded-md border border-amber-400/20 bg-black/65 px-1.5 py-0.5 text-[0.58rem] font-semibold text-amber-300 backdrop-blur-sm">

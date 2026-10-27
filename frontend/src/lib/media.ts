@@ -175,3 +175,146 @@ export function readNovelHref(id: string | number, chapter: string | number): st
 
 /** Placeholder used when a provider has no artwork for a title. */
 export const FALLBACK_COVER_COLOR = "#1f2937";
+
+export type TitleLanguagePreference = "english" | "romaji" | "native";
+
+export interface RawMediaTitle {
+  english?: string | null;
+  romaji?: string | null;
+  native?: string | null;
+  userPreferred?: string | null;
+  preferred?: string | null;
+}
+
+export interface NormalizedEpisodeInfo {
+  aired: number | null;
+  total: number | null;
+  badgeLabel: string;
+}
+
+export function resolveMediaTitle(
+  title: string | RawMediaTitle | MediaTitle | null | undefined,
+  preference: TitleLanguagePreference = "english",
+): string {
+  if (!title) return "Untitled";
+  if (typeof title === "string") return title.trim() || "Untitled";
+
+  if (preference === "romaji") {
+    return (
+      (title as RawMediaTitle).romaji?.trim() ||
+      (title as RawMediaTitle).english?.trim() ||
+      (title as RawMediaTitle).userPreferred?.trim() ||
+      (title as RawMediaTitle).preferred?.trim() ||
+      (title as RawMediaTitle).native?.trim() ||
+      "Untitled"
+    );
+  }
+
+  if (preference === "native") {
+    return (
+      (title as RawMediaTitle).native?.trim() ||
+      (title as RawMediaTitle).romaji?.trim() ||
+      (title as RawMediaTitle).english?.trim() ||
+      (title as RawMediaTitle).preferred?.trim() ||
+      "Untitled"
+    );
+  }
+
+  return (
+    (title as RawMediaTitle).english?.trim() ||
+    (title as RawMediaTitle).preferred?.trim() ||
+    (title as RawMediaTitle).userPreferred?.trim() ||
+    (title as RawMediaTitle).romaji?.trim() ||
+    (title as RawMediaTitle).native?.trim() ||
+    "Untitled"
+  );
+}
+
+export function resolveEpisodeCounts(media: {
+  format?: string | null;
+  status?: string | null;
+  episodes?: number | null;
+  totalEpisodes?: number | null;
+  airedEpisodes?: number | null;
+  availableEpisodes?: number | null;
+  latestEpisode?: number | null;
+  nextAiringEpisode?: { episode?: number | null } | null;
+  chapters?: number | null;
+}): NormalizedEpisodeInfo {
+  const format = (media.format || "").toUpperCase();
+  const status = (media.status || "").toUpperCase();
+
+  if (format === "MANGA" || format === "NOVEL" || format === "ONE_SHOT") {
+    const ch = media.chapters && media.chapters > 0 ? media.chapters : null;
+    return {
+      aired: ch,
+      total: ch,
+      badgeLabel: ch ? `${ch} Ch` : status === "RELEASING" ? "Ongoing" : "Manga",
+    };
+  }
+
+  if (format === "MOVIE") {
+    return {
+      aired: 1,
+      total: 1,
+      badgeLabel: "Movie",
+    };
+  }
+
+  const rawTotal = media.totalEpisodes ?? media.episodes ?? null;
+  const total = typeof rawTotal === "number" && rawTotal > 0 ? rawTotal : null;
+
+  const fromNextAiring =
+    media.nextAiringEpisode?.episode && media.nextAiringEpisode.episode > 1
+      ? media.nextAiringEpisode.episode - 1
+      : null;
+
+  const rawAvailable =
+    media.availableEpisodes ??
+    media.airedEpisodes ??
+    media.latestEpisode ??
+    fromNextAiring ??
+    null;
+
+  let aired =
+    typeof rawAvailable === "number" && rawAvailable > 0 ? rawAvailable : null;
+
+  if ((status === "FINISHED" || status === "COMPLETED") && !aired && total) {
+    aired = total;
+  }
+
+  if (total && aired && aired > total && status === "FINISHED") {
+    aired = total;
+  }
+
+  let badgeLabel = "TBA";
+  if (status === "NOT_YET_RELEASED" || status === "UPCOMING") {
+    badgeLabel = total ? `${total} Eps • Upcoming` : "Upcoming";
+  } else if (status === "RELEASING" || status === "ONGOING") {
+    if (aired && total) {
+      badgeLabel = `Ep ${aired} / ${total}`;
+    } else if (aired) {
+      badgeLabel = `Ep ${aired} • Airing`;
+    } else if (total) {
+      badgeLabel = `${total} Eps`;
+    } else {
+      badgeLabel = "Airing";
+    }
+  } else {
+    const count = total ?? aired;
+    badgeLabel = count ? `${count} ${count === 1 ? "Ep" : "Eps"}` : "TV";
+  }
+
+  return { aired, total, badgeLabel };
+}
+
+export function sanitizeSynopsis(raw?: string | null): string {
+  if (!raw) return "No synopsis available.";
+  return raw
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?[^>]+(>|$)/g, "")
+    .replace(/\(Source:.*?\)/gi, "")
+    .replace(/\[Written by.*?\]/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

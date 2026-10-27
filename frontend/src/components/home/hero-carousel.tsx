@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContinueWatching } from "@/hooks/use-progress";
 import type { MediaSummary } from "@/lib/media";
-import { displayTitle, formatScore, mediaHref, seasonLabel } from "@/lib/media";
+import { displayTitle, formatScore, mediaHref, seasonLabel, sanitizeSynopsis, resolveEpisodeCounts } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 const ROTATE_MS = 7500;
@@ -47,6 +47,14 @@ export function HeroCarousel({
     active.kind === "anime"
       ? animeProgress?.find((p) => p.mediaId === active.id)
       : mangaProgress?.find((p) => p.mediaId === active.id);
+
+  const epInfo = resolveEpisodeCounts({
+    format: active.format,
+    status: active.status,
+    episodes: active.episodes,
+    totalEpisodes: active.episodes,
+    chapters: active.chapters,
+  });
 
   const watchUrl = activeContinue
     ? (active.kind === "anime"
@@ -126,6 +134,9 @@ export function HeroCarousel({
                 <span className="inline-flex items-center rounded-lg border border-[#b8102a]/40 bg-[#b8102a]/20 px-2.5 py-1 text-[0.65rem] font-bold tracking-[0.14em] text-rose-200 backdrop-blur-sm">
                   #{(index + 1).toString().padStart(2, "0")} TRENDING
                 </span>
+                <span className="inline-flex items-center rounded-lg border border-white/[0.12] bg-white/[0.08] px-2.5 py-1 text-[0.65rem] font-medium text-white/80 backdrop-blur-sm">
+                  {epInfo.badgeLabel}
+                </span>
                 {seasonLabel(active.season, active.seasonYear) ? (
                   <span className="inline-flex items-center rounded-lg border border-white/[0.12] bg-white/[0.08] px-2.5 py-1 text-[0.65rem] font-medium text-white/80 backdrop-blur-sm">
                     {seasonLabel(active.season, active.seasonYear)}
@@ -147,7 +158,7 @@ export function HeroCarousel({
 
               {active.description ? (
                 <p className="line-clamp-2 max-w-xl text-sm leading-relaxed text-zinc-300/90 sm:line-clamp-3 sm:text-base">
-                  {active.description}
+                  {sanitizeSynopsis(active.description)}
                 </p>
               ) : null}
 

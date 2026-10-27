@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Search } from "lucide-react";
 import Link from "next/link";
 
 import { watchHref } from "@/lib/media";
@@ -23,20 +23,47 @@ export function EpisodeList({
   watchedEpisodes: Set<number>;
   maxEpisodes?: number;
 }) {
-  const totalCount = episodes.length;
+  const sortedEpisodes = useMemo(() => {
+    const map = new Map<number, EpisodeCard>();
+    for (const ep of episodes) {
+      if (typeof ep.episodeNumber === "number" && !Number.isNaN(ep.episodeNumber)) {
+        if (!map.has(ep.episodeNumber)) {
+          map.set(ep.episodeNumber, ep);
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.episodeNumber - b.episodeNumber);
+  }, [episodes]);
+
+  const totalCount = sortedEpisodes.length;
   const initialChunk = useMemo(() => {
     if (totalCount <= CHUNK_SIZE) return 0;
-    const idx = episodes.findIndex((e) => e.episodeNumber === currentEpisode);
+    const idx = sortedEpisodes.findIndex((e) => e.episodeNumber === currentEpisode);
     return idx >= 0 ? Math.floor(idx / CHUNK_SIZE) : 0;
-  }, [currentEpisode, episodes, totalCount]);
+  }, [currentEpisode, sortedEpisodes, totalCount]);
 
   const [selectedChunk, setSelectedChunk] = useState<number>(initialChunk);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    setSelectedChunk(initialChunk);
+  }, [initialChunk]);
 
   const totalChunks = Math.ceil(totalCount / CHUNK_SIZE);
-  const visible =
-    totalCount > CHUNK_SIZE
-      ? episodes.slice(selectedChunk * CHUNK_SIZE, (selectedChunk + 1) * CHUNK_SIZE)
-      : episodes;
+  const visible = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      return sortedEpisodes.filter(
+        (ep) =>
+          String(ep.episodeNumber).includes(q) ||
+          ep.title?.toLowerCase().includes(q),
+      );
+    }
+    if (totalCount > CHUNK_SIZE) {
+      return sortedEpisodes.slice(selectedChunk * CHUNK_SIZE, (selectedChunk + 1) * CHUNK_SIZE);
+    }
+    return sortedEpisodes;
+  }, [searchQuery, sortedEpisodes, selectedChunk, totalCount]);
 
   return (
     <div className="glass-panel flex max-h-[32rem] flex-col gap-3 rounded-2xl p-4">
@@ -45,7 +72,7 @@ export function EpisodeList({
         <span className="text-xs text-muted-foreground">{totalCount} total</span>
       </div>
 
-      {totalChunks > 1 && (
+      {totalChunks > 1 && !searchQuery && (
         <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
           {Array.from({ length: totalChunks }).map((_, idx) => {
             const start = idx * CHUNK_SIZE + 1;
@@ -69,6 +96,17 @@ export function EpisodeList({
           })}
         </div>
       )}
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Jump to episode #..."
+          className="w-full rounded-lg bg-zinc-950/80 py-1.5 pl-8 pr-3 text-xs text-zinc-200 placeholder:text-zinc-500 ring-1 ring-white/10 focus:outline-none focus:ring-[#c8102e]"
+        />
+      </div>
 
       <div className="no-scrollbar -mr-2 flex flex-col gap-1 overflow-y-auto pr-2">
         {visible.map((episode) => {

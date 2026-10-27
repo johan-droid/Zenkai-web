@@ -296,13 +296,17 @@ export class DiscoveryService {
     // Persist before returning so the catalogue grows from discovery traffic. A
     // write failure must not fail the response: the caller already holds usable
     // data and the next request will retry.
-    const localIds = await Promise.all(
+    const upsertResults = await Promise.all(
       result.items.map((summary) => this.repo.upsert(summary).catch(() => null)),
     );
+    const localIdMap = new Map<string, string | null>();
+    for (let index = 0; index < result.items.length; index++) {
+      localIdMap.set(result.items[index].anilistId, upsertResults[index] ?? null);
+    }
 
     return {
       items: dedupeByIdentity(
-        result.items.map((summary, index) => toCard(summary, localIds[index] ?? null)),
+        result.items.map((summary) => toCard(summary, localIdMap.get(summary.anilistId) ?? null)),
       ),
       page: result.page,
       perPage: result.perPage,
