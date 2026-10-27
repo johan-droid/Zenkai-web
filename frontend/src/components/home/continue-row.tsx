@@ -8,6 +8,7 @@ import { motion } from "motion/react";
 import { Progress } from "@/components/ui/progress";
 import { useHasAnyProgress, useContinueWatching } from "@/hooks/use-progress";
 import { removeProgress, type ContinueEntry } from "@/lib/db/progress";
+import { cleanImageUrl } from "@/lib/api/zenkai";
 
 function ContinueCard({ entry, index }: { entry: ContinueEntry; index: number }) {
   const href =
@@ -46,10 +47,10 @@ function ContinueCard({ entry, index }: { entry: ContinueEntry; index: number })
             "group-hover:shadow-[0_16px_40px_rgba(0,0,0,0.9),0_4px_16px_rgba(184,16,42,0.22)]",
           ].join(" ")}
         >
-          {entry.coverUrl ? (
+          {cleanImageUrl(entry.coverUrl) ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={entry.coverUrl}
+              src={cleanImageUrl(entry.coverUrl)!}
               alt={entry.title}
               className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.07]"
             />

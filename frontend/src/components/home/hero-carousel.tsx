@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useContinueWatching } from "@/hooks/use-progress";
 import type { MediaSummary } from "@/lib/media";
 import { displayTitle, formatScore, mediaHref, seasonLabel, sanitizeSynopsis, resolveEpisodeCounts } from "@/lib/media";
+import { cleanImageUrl } from "@/lib/api/zenkai";
 import { cn } from "@/lib/utils";
 
 const ROTATE_MS = 7500;
@@ -90,15 +91,16 @@ export function HeroCarousel({
             transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
             className="absolute inset-0"
           >
-            {active.banner ?? active.cover.url ? (
+            {cleanImageUrl(active.banner) ?? cleanImageUrl(active.cover.url) ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={active.banner ?? active.cover.url!}
+                src={(cleanImageUrl(active.banner) ?? cleanImageUrl(active.cover.url))!}
                 alt=""
                 referrerPolicy="no-referrer"
                 onError={(e) => {
-                  if (active.cover.url && e.currentTarget.src !== active.cover.url) {
-                    e.currentTarget.src = active.cover.url;
+                  const fallback = cleanImageUrl(active.cover.url);
+                  if (fallback && e.currentTarget.src !== fallback) {
+                    e.currentTarget.src = fallback;
                   }
                 }}
                 className="size-full object-cover object-center"

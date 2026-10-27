@@ -64,7 +64,7 @@ function LibraryCard({
     <div className="group glass-panel relative flex gap-3 rounded-2xl p-3 transition-all hover:bg-white/5">
       <Link href={href} className="flex min-w-0 flex-1 gap-3">
         <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-xl bg-white/5">
-          {record.coverUrl ? (
+          {record.coverUrl && !record.coverUrl.startsWith("file:") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={record.coverUrl} alt={record.title} className="size-full object-cover" />
           ) : (

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  cleanImageUrl,
   discoveryCardToMedia,
   fetchAnimeSearch,
   fetchDiscovery,
@@ -148,10 +149,10 @@ function MediaCommandItem({
   const title = displayTitle(media.title);
   return (
     <CommandItem value={`${title} ${media.id}`} onSelect={() => onSelect(media)}>
-      {media.cover.url ? (
+      {cleanImageUrl(media.cover.url) ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={media.cover.url}
+          src={cleanImageUrl(media.cover.url)!}
           alt=""
           referrerPolicy="no-referrer"
           className="size-9 shrink-0 rounded-md object-cover"

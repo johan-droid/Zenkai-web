@@ -47,7 +47,7 @@ function HistoryCard({
       <Link href={href} className="flex min-w-0 flex-1 items-center gap-4">
         {/* Cover */}
         <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-xl bg-white/5">
-          {entry.coverUrl ? (
+          {entry.coverUrl && !entry.coverUrl.startsWith("file:") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={entry.coverUrl}
