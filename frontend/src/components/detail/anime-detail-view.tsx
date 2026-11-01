@@ -107,12 +107,17 @@ function EpisodeSection({
     return idx >= 0 ? Math.floor(idx / EPISODES_PER_CHUNK) : 0;
   }, [continueUnit, totalCount, episodes]);
 
-  const [selectedChunk, setSelectedChunk] = useState<number>(initialChunkIndex);
+  const [prevResetKey, setPrevResetKey] = useState({ id, initialChunkIndex });
+  const [userSelectedChunk, setUserSelectedChunk] = useState<number | null>(null);
 
-  React.useEffect(() => {
-    setSelectedChunk(initialChunkIndex);
+  if (prevResetKey.id !== id || prevResetKey.initialChunkIndex !== initialChunkIndex) {
+    setPrevResetKey({ id, initialChunkIndex });
+    setUserSelectedChunk(null);
     setFilterQuery("");
-  }, [id, initialChunkIndex]);
+  }
+
+  const selectedChunk = userSelectedChunk ?? initialChunkIndex;
+  const setSelectedChunk = setUserSelectedChunk;
 
   const watchedSet = useMemo(() => {
     const set = new Set<number>();

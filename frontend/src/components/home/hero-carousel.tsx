@@ -4,7 +4,6 @@ import { Info, Play, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { Skeleton } from "@/components/ui/skeleton";
 import { useContinueWatching } from "@/hooks/use-progress";
 import type { MediaSummary } from "@/lib/media";
 import {

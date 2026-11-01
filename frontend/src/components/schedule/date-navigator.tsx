@@ -22,12 +22,17 @@ export function DateNavigator({
   onToday,
 }: DateNavigatorProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [jumpDate, setJumpDate] = useState(() => currentDate.toISOString().split("T")[0]);
+  const currentDateString = currentDate.toISOString().split("T")[0];
+  const [prevCurrentDate, setPrevCurrentDate] = useState(currentDateString);
+  const [userJumpDate, setUserJumpDate] = useState<string | null>(null);
 
-  // Sync jumpDate with currentDate
-  useEffect(() => {
-    setJumpDate(currentDate.toISOString().split("T")[0]);
-  }, [currentDate]);
+  if (prevCurrentDate !== currentDateString) {
+    setPrevCurrentDate(currentDateString);
+    setUserJumpDate(null);
+  }
+
+  const jumpDate = userJumpDate ?? currentDateString;
+  const setJumpDate = (date: string) => setUserJumpDate(date);
 
   // Handle escape key
   const handleKeyDown = useCallback(
@@ -44,7 +49,7 @@ export function DateNavigator({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  const { from, to, label } = useMemo(() => {
+  const { label } = useMemo(() => {
     switch (viewMode) {
       case "today": {
         const dayStart = startOfDay(currentDate, timeZone);

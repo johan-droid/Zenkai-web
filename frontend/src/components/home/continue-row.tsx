@@ -10,7 +10,7 @@ import { removeProgress, type ContinueEntry } from "@/lib/db/progress";
 import { cleanImageUrl } from "@/lib/api/zenkai";
 import { cn } from "@/lib/utils";
 
-function ContinueCard({ entry, index }: { entry: ContinueEntry; index: number }) {
+function ContinueCard({ entry }: { entry: ContinueEntry }) {
   const href =
     entry.kind === "anime"
       ? `/watch/${entry.mediaId}/${entry.unit}`
@@ -33,9 +33,12 @@ function ContinueCard({ entry, index }: { entry: ContinueEntry; index: number })
         {/* Cover */}
         <div className="relative aspect-[2/3] overflow-hidden rounded-xl">
           {cleanImageUrl(entry.coverUrl) ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={cleanImageUrl(entry.coverUrl)!}
               alt={entry.title}
+              loading="lazy"
+              referrerPolicy="no-referrer"
               className="size-full object-cover"
             />
           ) : (
@@ -157,11 +160,10 @@ export function ContinueRow() {
           ref={scrollRef}
           className="no-scrollbar -mx-1 flex snap-x gap-3.5 overflow-x-auto px-1 pb-2"
         >
-          {allEntries.map((entry, i) => (
+          {allEntries.map((entry) => (
             <ContinueCard
               key={`${entry.kind}-${entry.mediaId}-${entry.unit}`}
               entry={entry}
-              index={i}
             />
           ))}
         </div>

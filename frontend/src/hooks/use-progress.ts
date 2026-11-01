@@ -110,7 +110,7 @@ export function useThrottledProgressSaver(intervalMs = 5_000, remoteSyncInterval
         }, intervalMs - elapsed);
       }
     },
-    [flush, intervalMs],
+    [flush, intervalMs, remoteSyncIntervalMs, syncRemote],
   );
 
   useEffect(

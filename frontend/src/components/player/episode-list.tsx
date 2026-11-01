@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, Search } from "lucide-react";
 import Link from "next/link";
 
@@ -42,13 +42,18 @@ export function EpisodeList({
     return idx >= 0 ? Math.floor(idx / CHUNK_SIZE) : 0;
   }, [currentEpisode, sortedEpisodes, totalCount]);
 
-  const [selectedChunk, setSelectedChunk] = useState<number>(initialChunk);
+  const [prevResetKey, setPrevResetKey] = useState({ id, initialChunk });
+  const [userSelectedChunk, setUserSelectedChunk] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    setSelectedChunk(initialChunk);
+  if (prevResetKey.id !== id || prevResetKey.initialChunk !== initialChunk) {
+    setPrevResetKey({ id, initialChunk });
+    setUserSelectedChunk(null);
     setSearchQuery("");
-  }, [id, initialChunk]);
+  }
+
+  const selectedChunk = userSelectedChunk ?? initialChunk;
+  const setSelectedChunk = setUserSelectedChunk;
 
   const totalChunks = Math.ceil(totalCount / CHUNK_SIZE);
   const visible = useMemo(() => {

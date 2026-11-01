@@ -2,10 +2,9 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
-import { User, Calendar, BookOpen, Film, Edit3, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
+import { User, Calendar, Edit3, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

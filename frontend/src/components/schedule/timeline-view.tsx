@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, AlertCircle, RefreshCw } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -31,28 +31,33 @@ interface TimelineViewProps {
   initialTimeZone?: string;
 }
 
+const emptySubscribe = () => () => {};
+
+function useBrowserTimeZone(): string {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      } catch {
+        return "UTC";
+      }
+    },
+    () => "UTC",
+  );
+}
+
 export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
-  const [timeZone, setTimeZone] = useState(initialTimeZone);
+  const browserTimeZone = useBrowserTimeZone();
+  const [userTimeZone, setUserTimeZone] = useState<string | null>(null);
+  const timeZone = userTimeZone ?? (initialTimeZone !== "UTC" ? initialTimeZone : browserTimeZone);
+  const setTimeZone = (tz: string) => setUserTimeZone(tz);
+
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [searchQuery, setSearchQuery] = useState("");
   const [watchlistFilter, setWatchlistFilter] = useState(false);
-  const [selectedMonthDateKey, setSelectedMonthDateKey] = useState<string | null>(null);
-
-  // Detect and apply browser timezone
-  const browserTimeZone = useMemo(() => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch {
-      return "UTC";
-    }
-  }, []);
-
-  useEffect(() => {
-    if (initialTimeZone === "UTC" && browserTimeZone && browserTimeZone !== "UTC") {
-      setTimeZone(browserTimeZone);
-    }
-  }, [browserTimeZone, initialTimeZone]);
+  const [userSelectedMonthDateKey, setUserSelectedMonthDateKey] = useState<string | null>(null);
 
   // Read personal watchlist from Dexie
   const library = useLiveQuery(() => db.library.toArray());
@@ -115,12 +120,12 @@ export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
   // Flatten returned entries
   const allEntries = useMemo(() => {
     if (!data) return [];
-    const d = data as Record<string, any>;
+    const d = data as { days?: Array<{ entries?: ScheduleEntry[] }>; items?: ScheduleEntry[] };
     if (Array.isArray(d.days)) {
-      return d.days.flatMap((day: any) => day.entries as ScheduleEntry[]);
+      return d.days.flatMap((day) => day.entries ?? []);
     }
     if (Array.isArray(d.items)) {
-      return d.items as ScheduleEntry[];
+      return d.items ?? [];
     }
     return [];
   }, [data]);
@@ -241,21 +246,20 @@ export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
     return days;
   }, [viewMode, currentDate, timeZone]);
 
-  // Set default selected month day when entering month view
-  useEffect(() => {
-    if (viewMode === "month") {
-      const currentMonthKey = localDateKey(currentDate, timeZone);
-      if (!selectedMonthDateKey || !selectedMonthDateKey.startsWith(monthKey)) {
-        // Select today if in this month, otherwise the first day that has events
-        if (currentMonthKey.startsWith(monthKey)) {
-          setSelectedMonthDateKey(currentMonthKey);
-        } else {
-          const firstWithEvents = Array.from(monthDensity.keys())[0];
-          setSelectedMonthDateKey(firstWithEvents ?? `${monthKey}-01`);
-        }
-      }
+  const defaultMonthDateKey = useMemo(() => {
+    const currentMonthKey = localDateKey(currentDate, timeZone);
+    if (currentMonthKey.startsWith(monthKey)) {
+      return currentMonthKey;
     }
-  }, [viewMode, monthKey, currentDate, timeZone, monthDensity, selectedMonthDateKey]);
+    const firstWithEvents = Array.from(monthDensity.keys())[0];
+    return firstWithEvents ?? `${monthKey}-01`;
+  }, [currentDate, timeZone, monthKey, monthDensity]);
+
+  const selectedMonthDateKey =
+    userSelectedMonthDateKey && userSelectedMonthDateKey.startsWith(monthKey)
+      ? userSelectedMonthDateKey
+      : defaultMonthDateKey;
+  const setSelectedMonthDateKey = setUserSelectedMonthDateKey;
 
   const todayDateKey = useMemo(() => localDateKey(new Date(), timeZone), [timeZone]);
 

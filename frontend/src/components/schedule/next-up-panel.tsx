@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, Play, ArrowRight, Sparkles, Bookmark } from "lucide-react";
+import { Play, ArrowRight, Sparkles, Bookmark } from "lucide-react";
 import { ScheduleEntry } from "@/lib/api/zenkai";
 import { mediaHref } from "@/lib/media";
 import { cleanImageUrl } from "@/lib/api/zenkai";

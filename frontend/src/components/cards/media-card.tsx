@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import Link from "next/link";
 import { displayTitle, formatScore, mediaHref, resolveEpisodeCounts, type MediaSummary } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,6 @@ export function MediaCard({
   media,
   className,
   priority = false,
-  index = 0,
 }: {
   media: MediaSummary;
   className?: string;
