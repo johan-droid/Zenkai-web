@@ -2,7 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchGenres, fetchHome, fetchMangaCatalogue } from "@/lib/api/zenkai";
+import {
+  fetchAnimeBrowse,
+  fetchGenres,
+  fetchHome,
+  fetchMangaCatalogue,
+  fetchScheduleToday,
+} from "@/lib/api/zenkai";
 
 /**
  * Home data hooks.
@@ -35,6 +41,24 @@ export function useMangaShelf(limit = 14) {
   return useQuery({
     queryKey: ["zenkai", "manga-shelf", limit],
     queryFn: () => fetchMangaCatalogue(limit),
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
+  });
+}
+
+export function useAnimeMovies(limit = 14) {
+  return useQuery({
+    queryKey: ["zenkai", "anime-movies", limit],
+    queryFn: () => fetchAnimeBrowse({ format: "MOVIE", perPage: limit, sort: "POPULARITY_DESC" }),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+  });
+}
+
+export function useAiringToday() {
+  return useQuery({
+    queryKey: ["zenkai", "airing-today"],
+    queryFn: () => fetchScheduleToday(),
     staleTime: 5 * 60_000,
     gcTime: 15 * 60_000,
   });

@@ -3,7 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Bookmark, Download, History, LogOut, Menu, RefreshCw, Search, Settings, User } from "lucide-react";
+import {
+  Bookmark,
+  Download,
+  History,
+  LogOut,
+  Menu,
+  RefreshCw,
+  Search,
+  Settings,
+  User,
+} from "lucide-react";
 
 import { Brand } from "@/components/layout/brand";
 import { usePWA } from "@/components/providers/pwa-provider";
@@ -17,7 +27,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { navSections, isActivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
 
@@ -29,14 +44,17 @@ export function Navbar() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 w-full bg-surface-1 border-b border-surface-2/90",
+        "sticky top-0 z-50 w-full border-b border-white/[0.08] bg-[#101014]/85 backdrop-blur-xl transition-all",
       )}
     >
-      <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-4 px-4 sm:px-6">
         <Brand />
 
         {/* Desktop Nav Links */}
-        <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Primary">
+        <nav
+          className="hidden items-center gap-1 lg:flex ml-2"
+          aria-label="Primary Navigation"
+        >
           {navSections[0]!.items.map((item) => {
             const active = isActivePath(pathname, item.href);
             return (
@@ -44,30 +62,29 @@ export function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "relative rounded-xl px-3.5 py-2 text-sm font-medium",
-                  active ? "text-foreground hover:text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
+                  "relative rounded-xl px-3.5 py-1.5 text-xs font-semibold tracking-wide transition-all duration-200",
+                  active
+                    ? "text-white bg-white/[0.08] shadow-sm ring-1 ring-white/10"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.05]",
                 )}
               >
-                {active && (
-                  <span className="absolute inset-0 rounded-xl bg-signal/10 ring-1 ring-signal/10" />
-                )}
                 <span className="relative z-10">{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5">
-          {/* Install PWA */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Install PWA Button */}
           {isInstallable && !isStandalone ? (
             <Button
               variant="outline"
               size="sm"
               onClick={installPWA}
               aria-label="Install Zenkai App"
-              className="hidden items-center gap-2 rounded-xl border-signal/35 bg-signal/08 px-3 text-signal-ink/90 hover:bg-signal/18 hover:text-white hover:border-signal/60 md:flex transition-colors duration-200"
+              className="hidden items-center gap-2 rounded-xl border-[#C51F3A]/40 bg-[#C51F3A]/10 px-3 text-xs font-semibold text-white hover:bg-[#C51F3A]/20 hover:border-[#C51F3A]/70 md:flex transition-all duration-200"
             >
-              <Download className="size-3.5" />
+              <Download className="size-3.5 text-[#ff4a68]" />
               <span>Install App</span>
             </Button>
           ) : null}
@@ -77,22 +94,22 @@ export function Navbar() {
             <Button
               variant="ghost"
               size="sm"
-              className="hidden h-9 w-52 justify-start gap-2 rounded-xl px-3 text-muted-foreground hover:text-foreground hover:bg-surface-2/60 sm:flex lg:w-60"
+              className="hidden h-9 w-48 sm:flex lg:w-60 justify-start gap-2.5 rounded-xl border border-white/[0.08] bg-[#16161c]/80 px-3 text-xs text-zinc-400 hover:border-white/20 hover:bg-[#1e1e26] hover:text-white transition-all backdrop-blur-md"
             >
-              <Search className="size-4" />
-              <span className="text-sm">Search…</span>
-              <kbd className="ml-auto rounded-md border border-surface-2 bg-surface-1 px-1.5 py-0.5 text-[0.65rem] font-medium">
+              <Search className="size-3.5 text-zinc-400" />
+              <span>Search anime, manga…</span>
+              <kbd className="ml-auto rounded-md border border-white/10 bg-[#101014] px-1.5 py-0.5 text-[0.62rem] font-semibold text-zinc-400">
                 ⌘K
               </kbd>
             </Button>
           </SearchCommand>
 
-          {/* Mobile search icon — goes directly to /search */}
+          {/* Mobile search icon */}
           <Button
             variant="ghost"
             size="icon"
             aria-label="Search"
-            className="sm:hidden rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-2/60"
+            className="sm:hidden rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08]"
             asChild
           >
             <Link href="/search">
@@ -106,7 +123,7 @@ export function Navbar() {
             size="icon"
             aria-label="History"
             title="History"
-            className="hidden lg:flex rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-2/60 transition-colors duration-200"
+            className="hidden lg:flex rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors duration-200"
             asChild
           >
             <Link href="/history">
@@ -120,7 +137,7 @@ export function Navbar() {
             size="icon"
             aria-label="Settings"
             title="Settings"
-            className="hidden lg:flex rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-2/60 transition-colors duration-200"
+            className="hidden lg:flex rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors duration-200"
             asChild
           >
             <Link href="/settings">
@@ -135,56 +152,64 @@ export function Navbar() {
                 <button
                   type="button"
                   aria-label="User Account Menu"
-                  className="flex size-9 items-center justify-center rounded-xl border-surface-2/90 bg-surface-1/12 text-signal/90 transition-colors duration-200 hover:bg-surface-1/22 hover:ring-2 hover:ring-signal/35 hover:border-signal/50"
+                  className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-[#16161c] text-white transition-all duration-200 hover:border-[#C51F3A]/60 hover:ring-2 hover:ring-[#C51F3A]/30"
                 >
-                  <span className="text-xs font-bold">
+                  <span className="text-xs font-bold uppercase">
                     {user.username.slice(0, 2)}
                   </span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="glass-strong min-w-56 border-surface-2/70 p-1.5 rounded-2xl"
+                className="w-56 rounded-2xl border border-white/10 bg-[#16161c]/95 p-1.5 shadow-2xl backdrop-blur-xl"
               >
-                <div className="flex flex-col px-2.5 py-2">
-                  <span className="text-sm font-semibold text-foreground">
+                <div className="flex flex-col px-3 py-2.5">
+                  <span className="text-sm font-bold text-white">
                     {user.displayName || user.username}
                   </span>
-                  <span className="text-xs text-muted-foreground">@{user.username}</span>
+                  <span className="text-xs text-zinc-400">@{user.username}</span>
                 </div>
-                <DropdownMenuSeparator className="bg-surface-2/70" />
+                <DropdownMenuSeparator className="bg-white/10" />
                 <DropdownMenuItem asChild>
-                  <Link href={`/user/${user.username}`} className="flex cursor-pointer items-center gap-2.5 rounded-xl">
-                    <User className="size-4 text-muted-foreground" />
+                  <Link
+                    href={`/user/${user.username}`}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
+                  >
+                    <User className="size-3.5 text-zinc-400" />
                     <span>Public Profile</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/library" className="flex cursor-pointer items-center gap-2.5 rounded-xl">
-                    <Bookmark className="size-4 text-muted-foreground" />
+                  <Link
+                    href="/library"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
+                  >
+                    <Bookmark className="size-3.5 text-zinc-400" />
                     <span>My Library</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => void syncNow()}
-                  disabled={false}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-xl"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
                 >
-                  <RefreshCw className="size-4 text-muted-foreground" />
+                  <RefreshCw className="size-3.5 text-zinc-400" />
                   <span>Sync Cloud Now</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/settings" className="flex cursor-pointer items-center gap-2.5 rounded-xl">
-                    <Settings className="size-4 text-muted-foreground" />
+                  <Link
+                    href="/settings"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
+                  >
+                    <Settings className="size-3.5 text-zinc-400" />
                     <span>Preferences</span>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-surface-2/70" />
+                <DropdownMenuSeparator className="bg-white/10" />
                 <DropdownMenuItem
                   onClick={() => void logout()}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-xl text-signal-400 focus:bg-rose-500/10 focus:text-signal-300"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-[#ff4a68] hover:bg-[#C51F3A]/20 hover:text-white"
                 >
-                  <LogOut className="size-4" />
+                  <LogOut className="size-3.5" />
                   <span>Log out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -194,7 +219,7 @@ export function Navbar() {
               variant="outline"
               size="sm"
               asChild
-              className="hidden items-center gap-2 rounded-xl border-surface-2/80 bg-white/04 px-3 text-xs font-medium text-muted-foreground hover:bg-surface-2/09 hover:text-foreground hover:border-surface-2/14 lg:flex transition-colors duration-200"
+              className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/[0.08] hover:text-white lg:flex transition-all duration-200"
             >
               <Link href="/settings">
                 <User className="size-3.5" />
@@ -221,33 +246,45 @@ function MobileMenu({ pathname }: { pathname: string }) {
           variant="ghost"
           size="icon"
           aria-label="Open menu"
-          className="lg:hidden rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface-2/60"
+          className="lg:hidden rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08]"
         >
           <Menu className="size-4" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="glass-strong w-72 border-surface-2/70 p-0">
+      <SheetContent
+        side="right"
+        className="w-72 border-white/10 bg-[#101014]/95 p-0 backdrop-blur-2xl"
+      >
         <div className="flex flex-col h-full">
-          <SheetTitle className="px-5 pt-5 pb-4 border-b border-surface-2/70">
+          <SheetTitle className="px-5 pt-5 pb-4 border-b border-white/10">
             <Brand />
           </SheetTitle>
-          <nav className="flex-1 flex flex-col gap-5 overflow-y-auto px-4 py-5" aria-label="Mobile">
+          <nav
+            className="flex-1 flex flex-col gap-5 overflow-y-auto px-4 py-5"
+            aria-label="Mobile Navigation"
+          >
             {isInstallable && !isStandalone ? (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => { setOpen(false); installPWA(); }}
-                className="flex w-full items-center justify-start gap-3 rounded-xl border-signal/35 bg-signal/08 px-3 py-2.5 text-sm font-medium text-signal/90 hover:bg-signal/18 hover:text-white"
+                onClick={() => {
+                  setOpen(false);
+                  installPWA();
+                }}
+                className="flex w-full items-center justify-start gap-3 rounded-xl border-[#C51F3A]/40 bg-[#C51F3A]/10 px-3 py-2.5 text-sm font-semibold text-white hover:bg-[#C51F3A]/20"
               >
-                <Download className="size-4" />
+                <Download className="size-4 text-[#ff4a68]" />
                 <span>Install Zenkai App</span>
               </Button>
             ) : null}
 
             {navSections.map((section, index) => (
-              <div key={section.title ?? index} className="flex flex-col gap-0.5">
+              <div
+                key={section.title ?? index}
+                className="flex flex-col gap-0.5"
+              >
                 {section.title ? (
-                  <p className="px-3 pb-1.5 text-[0.65rem] font-semibold text-muted-foreground/70">
+                  <p className="px-3 pb-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-zinc-500">
                     {section.title}
                   </p>
                 ) : null}
@@ -260,15 +297,14 @@ function MobileMenu({ pathname }: { pathname: string }) {
                       href={item.href}
                       onClick={() => setOpen(false)}
                       className={cn(
-                        "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium",
-                        active ? "text-foreground hover:text-foreground hover:bg-surface-2" : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
+                        "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                        active
+                          ? "text-white bg-[#C51F3A]/20 border border-[#C51F3A]/30"
+                          : "text-zinc-400 hover:text-white hover:bg-white/[0.06]",
                       )}
                     >
-                      {active && (
-                        <span className="absolute inset-0 rounded-xl bg-signal/10 ring-1 ring-signal/10" />
-                      )}
-                      <Icon className="relative z-10 size-4" />
-                      <span className="relative z-10">{item.label}</span>
+                      <Icon className="size-4" />
+                      <span>{item.label}</span>
                     </Link>
                   );
                 })}

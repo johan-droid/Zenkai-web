@@ -87,7 +87,6 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   // Track playback position in real-time to preserve position across server switches
   const currentPlaybackTimeRef = useRef<number>(0);
   const [switchResumeTime, setSwitchResumeTime] = useState<number | null>(null);
-  const [failedSourceIds, setFailedSourceIds] = useState<string[]>([]);
   const [isRefreshingServers, setIsRefreshingServers] = useState(false);
 
   // Canonical anime for the sidebar. Uses the SAME queryFn as the detail view:
@@ -171,7 +170,6 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     setRetryNonce(0);
     setExecution(null);
     setPlaybackFailure(null);
-    setFailedSourceIds([]);
     setSwitchResumeTime(null);
   }
 
@@ -417,7 +415,6 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   useHotkeys("p", goPrev, { preventDefault: true });
 
   const retry = useCallback(() => {
-    setFailedSourceIds([]);
     setPlaybackFailure(null);
     setExecution(null);
     setUserSelection(null);
