@@ -47,6 +47,7 @@ import { ScheduleService } from "./modules/schedule/service.js";
 import { registerScheduleRoutes } from "./modules/schedule/routes.js";
 import { PlaybackResolver } from "./modules/playback/service.js";
 import { PlaybackMetadataService } from "./modules/playback/metadata.js";
+import { ServerAvailabilityService } from "./modules/playback/servers.js";
 import { registerPlaybackRoutes } from "./modules/playback/routes.js";
 import { AuthRepository } from "./modules/auth/repository.js";
 import { AuthService } from "./modules/auth/service.js";
@@ -311,7 +312,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerMangaRoutes(app, mangaService);
   registerNovelRoutes(app, novelService);
   registerScheduleRoutes(app, scheduleService);
-  registerPlaybackRoutes(app, resolver, metadata, animeRepo);
+  const serverService = new ServerAvailabilityService(resolver, providers);
+  registerPlaybackRoutes(app, resolver, metadata, animeRepo, serverService);
 
   const execFileAsync = promisify(execFile);
 

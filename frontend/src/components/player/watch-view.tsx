@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CalendarClock, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { useThrottledProgressSaver, useUnitProgress, useTitleProgress } from "@/hooks/use-progress";
 import {
@@ -17,6 +18,7 @@ import {
   fetchAnimeEpisodes,
   fetchEpisodeMetadata,
   fetchEpisodeNavigation,
+  fetchEpisodeServers,
   fetchEpisodeSources,
   initialPlanSelection,
   isUnreleased,
@@ -30,10 +32,16 @@ import { EpisodeList } from "@/components/player/episode-list";
 import { NextEpisodeOverlay } from "@/components/player/next-episode-overlay";
 import { PlayerHotkeys } from "@/components/player/player-hotkeys";
 import { QualityMenu } from "@/components/player/quality-menu";
-import { SourceSwitcher } from "@/components/player/source-switcher";
+import { ServerSelectionPanel } from "@/components/player/server-selection-panel";
 import { computeResumePosition, VideoPlayer } from "@/components/player/video-player";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+function formatTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
 
 /**
  * Automatic retries after a 409 `selection_stale`. Bounded at one: the second
@@ -73,6 +81,14 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   const volume = usePlayerStore((s) => s.volume);
   const muted = usePlayerStore((s) => s.muted);
   const language = usePlayerStore((s) => s.audio);
+  const preferredServer = usePlayerStore((s) => s.preferredServer);
+  const autoServerFallback = usePlayerStore((s) => s.autoServerFallback);
+
+  // Track playback position in real-time to preserve position across server switches
+  const currentPlaybackTimeRef = useRef<number>(0);
+  const [switchResumeTime, setSwitchResumeTime] = useState<number | null>(null);
+  const [failedSourceIds, setFailedSourceIds] = useState<string[]>([]);
+  const [isRefreshingServers, setIsRefreshingServers] = useState(false);
 
   // Canonical anime for the sidebar. Uses the SAME queryFn as the detail view:
   // a shared cache key must always carry the same derived shape — a detail
@@ -126,17 +142,15 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   });
 
   const plans = useMemo(() => sourcesQuery.data?.plans ?? [], [sourcesQuery.data]);
+  const servers = sourcesQuery.data?.servers;
   // Stable across renders, safe as an effect dependency: destructure it out of
   // the (unstable) query result object.
   const { refetch: refetchSources } = sourcesQuery;
 
   // The selection is derived, not stored: it is the user's override when there
-  // is one, otherwise the backend's top-ranked plan. A new episode or language
-  // clears the override (below), so the shelf always matches the audio asked
-  // for — and because a new query key starts with no data, no stale plan is
-  // ever executed during the refetch.
+  // is one, otherwise the backend's preferred/top-ranked available plan.
   const [userSelection, setUserSelection] = useState<string | null>(null);
-  const selectedSourceId = userSelection ?? initialPlanSelection(plans);
+  const selectedSourceId = userSelection ?? initialPlanSelection(plans, preferredServer, servers);
   const [execution, setExecution] = useState<PlaybackExecution | null>(null);
   const [playbackFailure, setPlaybackFailure] = useState<string | null>(null);
   // Bumped exactly once (after a the first successful sources refetch), so one
@@ -157,7 +171,13 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     setRetryNonce(0);
     setExecution(null);
     setPlaybackFailure(null);
+    setFailedSourceIds([]);
+    setSwitchResumeTime(null);
   }
+
+  useEffect(() => {
+    currentPlaybackTimeRef.current = 0;
+  }, [selectionEpoch]);
 
   // Generation counter to ensure asynchronous playback execution cannot overwrite
   // a subsequent or cancelled selection.
@@ -198,17 +218,56 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     };
   }, [episodeCard, selectedSourceId, language, retryNonce, refetchSources]);
 
+  // Manual server switch with watch position preservation
+  const handleServerSwitch = useCallback(
+    (sourceId: string, serverName?: string) => {
+      const currentTime = currentPlaybackTimeRef.current;
+      if (currentTime > 1) {
+        setSwitchResumeTime(currentTime);
+      }
+      setUserSelection(sourceId);
+      setRetryNonce(0);
+      setPlaybackFailure(null);
+
+      const targetPlan = plans.find((p) => p.sourceId === sourceId);
+      const name = serverName || targetPlan?.providerName || "Server";
+      const timeStr =
+        currentTime > 1
+          ? ` at ${formatTimestamp(currentTime)}`
+          : "";
+      toast.info(`Switched to ${name}${timeStr}`);
+    },
+    [plans],
+  );
+
   // Source fallback: a plan that fails at the playback layer advances to the
-  // next canonical plan — bounded by the plan list, never an endless cycle.
+  // next healthy canonical plan — bounded by the plan list, preserving playback position
   const handlePlaybackError = useCallback(() => {
+    if (!autoServerFallback) {
+      setPlaybackFailure("This server failed to start playback. Automatic fallback is disabled in player settings.");
+      return;
+    }
+
     const next = fallbackPlanSelection(plans, selectedSourceId);
     if (next) {
-      setPlaybackFailure("This server failed to start playback. Trying the next server...");
+      const currentTime = currentPlaybackTimeRef.current;
+      if (currentTime > 1) {
+        setSwitchResumeTime(currentTime);
+      }
+      const failedPlan = plans.find((p) => p.sourceId === selectedSourceId);
+      const nextPlan = plans.find((p) => p.sourceId === next);
+      const nextName = nextPlan?.providerName || "next available server";
+      const failedName = failedPlan?.providerName || "Current server";
+
+      toast.warning(`${failedName} stream failed. Automatically switched to ${nextName}.`);
+      setPlaybackFailure(null);
       setUserSelection(next);
       return;
     }
+
     setPlaybackFailure("Every available server failed to start playback.");
-  }, [plans, selectedSourceId]);
+    toast.error("All available playback servers failed for this episode.");
+  }, [autoServerFallback, plans, selectedSourceId]);
 
   // Resume position & title progress.
   const progress = useUnitProgress("anime", id, episodeNumber);
@@ -241,6 +300,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
 
   const resumeProgress = useCallback(
     (positionSeconds: number, durationSeconds: number) => {
+      currentPlaybackTimeRef.current = positionSeconds;
       void saveProgress({
         kind: "anime",
         mediaId: id,
@@ -254,6 +314,20 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     },
     [id, detailQuery.data, episodeNumber, catalogue, saveProgress],
   );
+
+  const handleRefreshServers = useCallback(async () => {
+    if (!episodeCard) return;
+    setIsRefreshingServers(true);
+    try {
+      await fetchEpisodeServers(episodeCard.id, { language, refresh: true });
+      await refetchSources();
+      toast.success("Server health statuses refreshed");
+    } catch {
+      toast.error("Failed to refresh server status");
+    } finally {
+      setIsRefreshingServers(false);
+    }
+  }, [episodeCard, language, refetchSources]);
 
   // Airing-aware navigation: the next episode may exist but be unreleased —
   // show it, but never start playback on it.
@@ -343,10 +417,12 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   useHotkeys("p", goPrev, { preventDefault: true });
 
   const retry = useCallback(() => {
+    setFailedSourceIds([]);
     setPlaybackFailure(null);
     setExecution(null);
     setUserSelection(null);
-  }, []);
+    void refetchSources();
+  }, [refetchSources]);
 
   // Render.
   // Every hook above must run on every render, so these guards live here rather
@@ -410,22 +486,25 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   }
 
   const media = detailQuery.data?.summary ?? null;
-  const servers = sourcesQuery.data?.servers;
+
+  const effectiveInitialTime =
+    switchResumeTime !== null && switchResumeTime > 1
+      ? switchResumeTime
+      : initialTime;
 
   return (
     <div className={cn("flex flex-col gap-6", theaterMode ? "max-w-fit" : "max-w-6xl")}>
       <div className="flex items-center gap-2">
-        <SourceSwitcher
+        <ServerSelectionPanel
           plans={plans}
           servers={servers}
           selectedSourceId={selectedSourceId}
           loading={sourcesQuery.isLoading}
+          isRefreshing={isRefreshingServers}
           language={language}
-          onSelect={(sourceId) => {
-            setUserSelection(sourceId);
-            setRetryNonce(0);
-          }}
+          onSelect={handleServerSwitch}
           onLanguageChange={(value) => usePlayerStore.getState().setAudio(value)}
+          onRefresh={handleRefreshServers}
         />
         <QualityMenu rate={playbackRate} onRateChange={(rate) => {
           usePlayerStore.getState().setPlaybackRate(rate);
@@ -436,7 +515,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
       <div className={cn("grid gap-6", theaterMode ? "" : "lg:grid-cols-[1fr_360px]")}>
         <div className={cn("relative flex flex-col gap-4", theaterMode ? "lg:col-span-2" : "")}>
           <PlayerArea
-            key={`${id}-${episodeNumber}`}
+            key={`${id}-${episodeNumber}-${selectedSourceId}`}
             sourcesQuery={sourcesQuery}
             execution={execution}
             playbackFailure={playbackFailure}
@@ -444,7 +523,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
             poster={media?.cover.url ?? null}
             episodeId={episodeCard?.id ?? `${id}-${episodeNumber}`}
             episodeNumber={episodeNumber}
-            initialTime={initialTime}
+            initialTime={effectiveInitialTime}
             skipTimes={skipTimes}
             autoSkip={autoSkip}
             autoSkipIntro={autoSkipIntro}

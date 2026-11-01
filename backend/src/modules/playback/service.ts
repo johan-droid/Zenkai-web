@@ -126,7 +126,7 @@ export class PlaybackResolver {
    */
   async resolveEpisode(
     episodeId: string,
-    options: { language?: AudioTrack } = {},
+    options: { language?: AudioTrack; refresh?: boolean } = {},
   ): Promise<{ result: ResolveResult; episode: Record<string, any> } | null> {
     const resolved = await resolveEpisodeIdentity(this.animeRepo, episodeId);
     if (!resolved) return null;
@@ -170,6 +170,7 @@ export class PlaybackResolver {
         externalIds: externalIds as Record<string, string>,
       },
       resolved.identity.episode,
+      { refresh: options.refresh },
     );
 
     // Server availability rides along when a provider reported it during the
@@ -187,12 +188,16 @@ export class PlaybackResolver {
   async resolve(
     request: Omit<ResolveRequest, "language"> & { language?: AudioTrack },
     episodeIdentity: EpisodeIdentity = {},
+    options: { refresh?: boolean } = {},
   ): Promise<ResolveResult> {
     const language = request.language ?? "sub";
     const full: ResolveRequest = { ...request, language };
     const started = Date.now();
 
     const key = `sources:${request.anilistId}:${request.episodeNumber}:${language}`;
+    if (options.refresh) {
+      await cache.delete(key).catch(() => undefined);
+    }
     const { value: result } = await cache.remember<ResolveResult>(key, SOURCE_CACHE_TTL_S, async () => {
       const outcome = await this.#resolveUncached(full, episodeIdentity);
       return { ...outcome, resolutionTimeMs: Date.now() - started };

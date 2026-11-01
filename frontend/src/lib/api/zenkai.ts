@@ -427,6 +427,51 @@ const skippedProviderSchema = z.object({
   detail: z.string().optional(),
 });
 
+export const serverStatusSchema = z.enum([
+  "AVAILABLE",
+  "UNAVAILABLE",
+  "CHECKING",
+  "DEGRADED",
+  "UNKNOWN",
+  "ERROR",
+]);
+
+export type ServerStatus = z.infer<typeof serverStatusSchema>;
+
+export const serverAvailabilityItemSchema = z.object({
+  serverId: z.string().optional(),
+  sourceId: z.string().optional(),
+  serverName: z.string().optional(),
+  displayName: z.string().optional(),
+  status: serverStatusSchema.optional(),
+  statusMessage: z.string().optional(),
+  quality: z.string().optional(),
+  type: z.enum(["hls", "embed", "mp4"]).optional(),
+  selectable: z.boolean().optional(),
+  sub: z.boolean(),
+  dub: z.boolean(),
+  lastCheckedAt: z.string().optional(),
+  diagnosticCategory: z.string().optional(),
+  errorMessage: z.string().optional(),
+  name: z.string(),
+  label: z.string(),
+});
+
+export type ServerAvailabilityItem = z.infer<typeof serverAvailabilityItemSchema>;
+
+export const episodeServersResponseSchema = z.object({
+  episodeId: z.string(),
+  episodeNumber: z.number().int(),
+  language: playbackLanguageSchema,
+  servers: z.array(serverAvailabilityItemSchema),
+  availableCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+  checkedAt: z.string(),
+  cached: z.boolean(),
+});
+
+export type EpisodeServersResponse = z.infer<typeof episodeServersResponseSchema>;
+
 /**
  * `GET /api/v1/episodes/:episodeId/sources` response body (P7).
  *
@@ -455,16 +500,7 @@ export const playbackSourcesResponseSchema = z.object({
    * it. Optional so older responses still parse; absent means unknown, never
    * "no server serves this episode".
    */
-  servers: z
-    .array(
-      z.object({
-        name: z.string(),
-        label: z.string(),
-        sub: z.boolean(),
-        dub: z.boolean(),
-      }),
-    )
-    .optional(),
+  servers: z.array(serverAvailabilityItemSchema).optional(),
   resolutionTimeMs: z.number().nonnegative(),
 });
 
@@ -473,7 +509,7 @@ export type PlaybackPlan = z.infer<typeof playbackPlanSchema>;
 export type PlaybackSourcesResponse = z.infer<typeof playbackSourcesResponseSchema>;
 
 /** Per-server language availability for one episode, as the backend reports it. */
-export type ServerAvailability = NonNullable<PlaybackSourcesResponse["servers"]>[number];
+export type ServerAvailability = ServerAvailabilityItem;
 
 /**
  * What a client is allowed to play (P8 execution).
@@ -1230,6 +1266,25 @@ export function fetchEpisodeSources(
 }
 
 /**
+ * Fetch dynamic server availability report for an episode.
+ * Supports on-demand force refresh bypass of short-lived health cache.
+ */
+export function fetchEpisodeServers(
+  episodeId: string,
+  options: { language?: PlaybackLanguage; refresh?: boolean } = {},
+): Promise<EpisodeServersResponse> {
+  const query: Record<string, string> = {};
+  if (options.language) query.language = options.language;
+  if (options.refresh) query.refresh = "true";
+
+  return getValidated(
+    `/api/v1/episodes/${encodeURIComponent(episodeId)}/servers`,
+    episodeServersResponseSchema,
+    query,
+  );
+}
+
+/**
  * Execute a canonical selection (P8).
  *
  * The request body carries only `episodeId`, `sourceId` and `language` — the
@@ -1307,10 +1362,56 @@ export function isUnreleased(
 }
 
 /**
- * The backend's top-ranked plan is the default selection. List order is the
- * ranking (P7); the client applies no ranking of its own.
+ * The backend's top-ranked plan is the default selection, with preference and availability awareness.
+ * If preferredServer is configured and matches an AVAILABLE server, it is selected first.
+ * Otherwise, the top-ranked plan that is known to be AVAILABLE is chosen.
  */
-export function initialPlanSelection(plans: PlaybackPlan[]): string | null {
+export function initialPlanSelection(
+  plans: PlaybackPlan[],
+  preferredServer?: string | null,
+  availableServers?: ServerAvailabilityItem[],
+): string | null {
+  if (plans.length === 0) return null;
+
+  // 1. If preferredServer is set, find a matching plan that is AVAILABLE
+  if (preferredServer) {
+    const preferredPlan = plans.find((p) => {
+      const serverMatch =
+        p.endpointSlug === preferredServer ||
+        p.providerSlug === preferredServer ||
+        p.providerName.toLowerCase() === preferredServer.toLowerCase();
+      if (!serverMatch) return false;
+
+      if (availableServers && availableServers.length > 0) {
+        const item = availableServers.find(
+          (s) =>
+            s.sourceId === p.sourceId ||
+            s.serverId === p.endpointSlug ||
+            s.name === p.endpointSlug ||
+            (s.serverName && s.serverName.toLowerCase() === p.providerName.toLowerCase()),
+        );
+        return item ? item.status !== "UNAVAILABLE" && item.status !== "ERROR" && item.selectable !== false : true;
+      }
+      return true;
+    });
+
+    if (preferredPlan) return preferredPlan.sourceId;
+  }
+
+  // 2. If availableServers is provided, pick the first AVAILABLE plan
+  if (availableServers && availableServers.length > 0) {
+    const firstAvailable = plans.find((p) => {
+      const item = availableServers.find(
+        (s) =>
+          s.sourceId === p.sourceId ||
+          s.serverId === p.endpointSlug ||
+          s.name === p.endpointSlug,
+      );
+      return !item || (item.status === "AVAILABLE" && item.selectable !== false);
+    });
+    if (firstAvailable) return firstAvailable.sourceId;
+  }
+
   return plans[0]?.sourceId ?? null;
 }
 

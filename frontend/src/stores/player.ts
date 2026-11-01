@@ -33,6 +33,12 @@ export interface PlayerState {
   /** Whether to show manual skip buttons when auto-skip is disabled. */
   showSkipButtons: boolean;
   theaterMode: boolean;
+  /** Preferred playback server name or slug (e.g. "Novus HD-1", "novus", "recloud"). */
+  preferredServer: string | null;
+  /** Whether to automatically fallback to the next available server if playback fails. */
+  autoServerFallback: boolean;
+  /** Automatically select the highest-rated/available server when no preferred server is set. */
+  autoSelectBestServer: boolean;
 
   setAudio: (audio: AudioPreference) => void;
   setAutoplayNext: (value: boolean) => void;
@@ -47,6 +53,9 @@ export interface PlayerState {
   setShowSkipButtons: (value: boolean) => void;
   setTheaterMode: (value: boolean) => void;
   toggleTheaterMode: () => void;
+  setPreferredServer: (preferredServer: string | null) => void;
+  setAutoServerFallback: (value: boolean) => void;
+  setAutoSelectBestServer: (value: boolean) => void;
 }
 
 export const usePlayerStore = create<PlayerState>()(
@@ -64,6 +73,9 @@ export const usePlayerStore = create<PlayerState>()(
       nextEpisodeCountdown: 10,
       showSkipButtons: true,
       theaterMode: false,
+      preferredServer: null,
+      autoServerFallback: true,
+      autoSelectBestServer: true,
 
       setAudio: (audio) => set({ audio }),
       setAutoplayNext: (autoplayNext) => set({ autoplayNext, autoPlayNext: autoplayNext }),
@@ -79,6 +91,9 @@ export const usePlayerStore = create<PlayerState>()(
       setShowSkipButtons: (showSkipButtons) => set({ showSkipButtons }),
       setTheaterMode: (theaterMode) => set({ theaterMode }),
       toggleTheaterMode: () => set((state) => ({ theaterMode: !state.theaterMode })),
+      setPreferredServer: (preferredServer) => set({ preferredServer }),
+      setAutoServerFallback: (autoServerFallback) => set({ autoServerFallback }),
+      setAutoSelectBestServer: (autoSelectBestServer) => set({ autoSelectBestServer }),
     }),
     {
       name: STORAGE_KEYS.player,
@@ -95,6 +110,9 @@ export const usePlayerStore = create<PlayerState>()(
         nextEpisodeCountdown: state.nextEpisodeCountdown,
         showSkipButtons: state.showSkipButtons,
         theaterMode: state.theaterMode,
+        preferredServer: state.preferredServer,
+        autoServerFallback: state.autoServerFallback,
+        autoSelectBestServer: state.autoSelectBestServer,
       }),
     },
   ),

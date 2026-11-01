@@ -18,6 +18,7 @@ import { playbackExecutionRequestSchema, toExecution } from "./execution.js";
 import type { AnimeRepository } from "../anime/repository.js";
 import type { PlaybackMetadataService } from "./metadata.js";
 import type { PlaybackResolver } from "./service.js";
+import type { ServerAvailabilityService } from "./servers.js";
 
 const languageSchema = z.enum(["sub", "dub", "multi"]);
 
@@ -40,6 +41,7 @@ export function registerPlaybackRoutes(
   resolver: PlaybackResolver,
   metadata: PlaybackMetadataService,
   animeRepo: AnimeRepository,
+  serverService?: ServerAvailabilityService,
 ): void {
   /**
    * Sources for one episode.
@@ -68,6 +70,10 @@ export function registerPlaybackRoutes(
     if (!resolved) throw AppError.notFound(`episode ${episodeId} not found`);
 
     const { result, episode } = resolved;
+    const serverReport = serverService
+      ? serverService.buildReportFromResolved(resolved, query.language)
+      : null;
+    const computedServers = serverReport ? serverReport.servers : result.servers;
 
     if (result.sources.length === 0) {
       // Every provider errored: 503, because this may well be playable.
@@ -109,7 +115,7 @@ export function registerPlaybackRoutes(
         skipped: result.skipped ?? [],
         // Per-server availability when a provider reported it: lets the client
         // grey out dead servers instead of offering them. Absent when unknown.
-        ...(result.servers ? { servers: result.servers } : {}),
+        ...(computedServers ? { servers: computedServers } : {}),
         // Always present so the response shape does not change with the shelf.
         resolutionTimeMs: result.resolutionTimeMs,
       };
@@ -169,8 +175,78 @@ export function registerPlaybackRoutes(
       // can explain an empty shelf rather than guessing at it.
       skipped: result.skipped ?? [],
       // Per-server availability when a provider reported it.
-      ...(result.servers ? { servers: result.servers } : {}),
+      ...(computedServers ? { servers: computedServers } : {}),
       resolutionTimeMs: result.resolutionTimeMs,
+    };
+  });
+
+  /**
+   * Dedicated Dynamic Server Availability & Health API.
+   * Returns verified server availability, diagnostic categories, and playability states.
+   */
+  app.get("/api/v1/episodes/:episodeId/servers", async (request: FastifyRequest, reply: FastifyReply) => {
+    const { episodeId } = parseOrThrow(
+      z.object({ episodeId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const query = parseOrThrow(
+      z.object({
+        language: languageSchema.default("sub"),
+        refresh: z
+          .union([z.boolean(), z.string()])
+          .transform((v) => v === true || v === "true" || v === "1")
+          .default(false),
+      }),
+      request.query,
+    );
+
+    if (serverService) {
+      const report = await serverService.getAvailability(episodeId, {
+        language: query.language,
+        refresh: query.refresh,
+      });
+
+      if (report.cached) {
+        reply.header("x-zenkai-cache", "HIT");
+        reply.header("cache-control", "public, max-age=60, s-maxage=60, stale-while-revalidate=30");
+      } else {
+        reply.header("x-zenkai-cache", "MISS");
+        reply.header("cache-control", "no-cache");
+      }
+
+      return report;
+    }
+
+    const resolved = await resolver.resolveEpisode(episodeId, { language: query.language });
+    if (!resolved) throw AppError.notFound(`episode ${episodeId} not found`);
+
+    const plans = playbackGateway.planAll(resolved.result.sources).plans;
+    const servers = plans.map((p) => ({
+      serverId: p.providerSlug,
+      sourceId: p.sourceId,
+      serverName: p.providerName || p.providerSlug,
+      displayName: p.providerName || p.providerSlug,
+      status: p.validated !== false ? "AVAILABLE" : "UNAVAILABLE",
+      statusMessage: p.validated !== false ? "Available" : "Unavailable",
+      type: p.access === "embed" ? "embed" : "hls",
+      selectable: p.validated !== false,
+      sub: p.language === "sub" || p.language === "multi",
+      dub: p.language === "dub" || p.language === "multi",
+      lastCheckedAt: new Date().toISOString(),
+      name: p.endpointSlug || p.providerSlug,
+      label: p.providerName || p.providerSlug,
+    }));
+
+    return {
+      episodeId,
+      episodeNumber: Number(resolved.episode.episodeNumber ?? 1),
+      language: query.language,
+      servers,
+      availableCount: servers.filter((s) => s.status === "AVAILABLE").length,
+      totalCount: servers.length,
+      checkedAt: new Date().toISOString(),
+      cached: false,
     };
   });
 

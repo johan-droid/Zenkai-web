@@ -162,7 +162,14 @@ function ServerRow({
         )
       : undefined;
 
-  const selectable = effectiveLanguage !== null && plan !== undefined;
+  const isDegraded = server.status === "DEGRADED";
+  const isUnavailableStatus = server.status === "UNAVAILABLE" || server.status === "ERROR";
+
+  const selectable =
+    effectiveLanguage !== null &&
+    plan !== undefined &&
+    !isUnavailableStatus &&
+    server.selectable !== false;
   const selected =
     plan !== undefined && plan.sourceId === selectedSourceId;
 
@@ -179,20 +186,32 @@ function ServerRow({
       className={cn("gap-2", !selectable && "opacity-45")}
       title={
         !selectable
-          ? `${server.label} does not serve this episode`
+          ? server.statusMessage || `${server.label} is currently unavailable for this episode`
           : undefined
       }
     >
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex items-center gap-2 truncate text-sm">
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              isDegraded
+                ? "bg-amber-500"
+                : isUnavailableStatus
+                  ? "bg-zinc-600"
+                  : "bg-emerald-500",
+            )}
+          />
           {server.label}
           <TrackBadge track="SUB" on={server.sub} />
           <TrackBadge track="DUB" on={server.dub} />
         </span>
         <span className="truncate text-xs text-muted-foreground">
           {!selectable
-            ? "Unavailable for this episode"
-            : plan?.quality ?? (plan?.resolution ? `${plan.resolution}p` : "Standard")}
+            ? (server.statusMessage || "Unavailable for this episode")
+            : isDegraded
+              ? "Degraded (unstable upstream)"
+              : plan?.quality ?? (plan?.resolution ? `${plan.resolution}p` : "Standard")}
         </span>
       </span>
       {selected ? (
