@@ -21,7 +21,7 @@ import { sql } from "drizzle-orm";
 import { config } from "./config/index.js";
 import { cache } from "./cache/index.js";
 import { createDb, createResources, waitForDatabase, startPeriodicProbe, setDatabaseOnline, type Db } from "./db/client.js";
-import { AppError, errorMessage } from "./http/errors.js";
+import { AppError, errorMessage } from "./http/errors";
 import { assertSafeUrl, BlockedUrlError } from "./http/url-guard.js";
 import { AnilistProvider } from "./providers/metadata/anilist.js";
 import {

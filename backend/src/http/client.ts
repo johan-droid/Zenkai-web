@@ -13,7 +13,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { config } from "../config/index.js";
-import { AppError, errorMessage, isAbortError } from "./errors.js";
+import { AppError, errorMessage, isAbortError } from "./errors";
 
 const execFileAsync = promisify(execFile);
 
