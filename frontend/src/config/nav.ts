@@ -1,8 +1,6 @@
 import {
   BookOpen,
   CalendarDays,
-  Compass,
-  Globe,
   History,
   Home,
   Library,
@@ -34,8 +32,6 @@ export const navSections: NavSection[] = [
       { label: "Manga", href: "/manga", icon: BookOpen, mobile: true, description: "Browse manga" },
       { label: "Novels", href: "/novel", icon: ScrollText, description: "Browse light novels" },
       { label: "Schedule", href: "/schedule", icon: CalendarDays, description: "Airing this week" },
-      { label: "Grand Line", href: "/grand-line", icon: Compass, description: "One Pace Manga Cut" },
-      { label: "One Pace", href: "/one-pace", icon: Globe, description: "Official One Pace site" },
       { label: "Library", href: "/library", icon: Library, mobile: true, description: "Lists and saved" },
     ],
   },

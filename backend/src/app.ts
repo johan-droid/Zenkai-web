@@ -57,8 +57,6 @@ import { registerLibraryRoutes } from "./modules/library/routes.js";
 import { ProgressRepository } from "./modules/progress/repository.js";
 import { ProgressService } from "./modules/progress/service.js";
 import { registerProgressRoutes } from "./modules/progress/routes.js";
-import { GrandLineService } from "./modules/grand-line/service.js";
-import { registerGrandLineRoutes } from "./modules/grand-line/routes.js";
 
 export interface AppDependencies {
   db: Db;
@@ -284,8 +282,6 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerNovelRoutes(app, novelService);
   registerScheduleRoutes(app, scheduleService);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo);
-  const grandLineService = new GrandLineService();
-  registerGrandLineRoutes(app, grandLineService);
 
   const execFileAsync = promisify(execFile);
 
