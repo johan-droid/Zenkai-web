@@ -18,6 +18,9 @@ export const GrandLineEpisodeSchema = z.object({
   synopsis: z.string(),
   watchUrl: z.string().url(),
   downloads: z.array(GrandLineDownloadSchema).default([]),
+  crc32: z.string().optional(),
+  releasedAt: z.string().optional(),
+  resolution: z.string().optional(),
 });
 
 export type GrandLineEpisode = z.infer<typeof GrandLineEpisodeSchema>;
@@ -96,6 +99,9 @@ export const GrandLineStatusSchema = z.object({
   arcsCount: z.number(),
   episodesCount: z.number(),
   lastUpdated: z.string(),
+  lastSyncAttempt: z.string().optional(),
+  lastSuccessfulSync: z.string().optional(),
+  catalogVersion: z.string().optional(),
 });
 
 export type GrandLineStatus = z.infer<typeof GrandLineStatusSchema>;

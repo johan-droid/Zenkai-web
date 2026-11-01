@@ -186,4 +186,178 @@ describe("Zenkai Grand Line: Fastify Route Integration", () => {
     assert.equal(body.status, "ok");
     assert.equal(body.episodesCount, 477);
   });
+
+  it("POST /api/v1/grand-line/sync returns status and triggers sync without crashing", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/grand-line/sync",
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.ok(body.status === "ok" || body.status === "warning");
+    assert.ok(body.catalog);
+    assert.equal(body.catalog.sagasCount, 11);
+  });
+});
+
+describe("Zenkai Grand Line: Metadata Adapter & Ingestion", () => {
+  it("initializes with default manifest snapshot and reports metrics", async () => {
+    const { OnePaceMetadataAdapter } = await import(
+      "../src/modules/grand-line/adapter.js"
+    );
+    const adapter = new OnePaceMetadataAdapter();
+    const snapshot = adapter.getSnapshot();
+
+    assert.equal(snapshot.sagas.length, 11);
+    assert.equal(snapshot.arcs.length, 38);
+    assert.equal(snapshot.episodesCount, 477);
+    assert.equal(snapshot.catalogVersion, "2.0.0");
+    assert.equal(snapshot.source, "manifest");
+  });
+
+  it("ingests external metadata with CRC32 episode mapping and updates active snapshot", async () => {
+    const { OnePaceMetadataAdapter } = await import(
+      "../src/modules/grand-line/adapter.js"
+    );
+    const adapter = new OnePaceMetadataAdapter();
+
+    const sampleArcs = {
+      "romance-dawn": {
+        title: "Romance Dawn",
+        order: 1,
+        episodes: ["6D92D66C", "A1B2C3D4"],
+        manga_chapters: "1-7",
+        anime_episodes: "1-3",
+        description: "The journey begins in the East Blue.",
+      },
+    };
+
+    const sampleEpisodes = {
+      "6D92D66C": {
+        title: "Romance Dawn 01",
+        season: 1,
+        episode: 1,
+        manga_chapters: "1",
+        anime_episodes: "1",
+        description: "Luffy meets Koby and Zoro.",
+        crc32: "6D92D66C",
+        air_date: "2020-01-01",
+      },
+      "A1B2C3D4": {
+        title: "Romance Dawn 02",
+        season: 1,
+        episode: 2,
+        manga_chapters: "2-4",
+        anime_episodes: "2",
+        description: "Battle against Captain Morgan.",
+        crc32: "A1B2C3D4",
+        air_date: "2020-01-08",
+      },
+    };
+
+    const result = adapter.ingest(sampleArcs, sampleEpisodes, {
+      version: "2.1.0",
+      source: "test-feed",
+    });
+
+    assert.equal(result.success, true);
+    const snapshot = adapter.getSnapshot();
+    assert.equal(snapshot.catalogVersion, "2.1.0");
+    assert.equal(snapshot.source, "test-feed");
+
+    const rdArc = snapshot.arcs.find((a) => a.id === "romance-dawn");
+    assert.ok(rdArc);
+    assert.equal(rdArc.episodes.length, 2);
+    assert.equal(rdArc.episodes[0].id, "romance-dawn-01");
+    assert.equal(rdArc.episodes[0].crc32, "6D92D66C");
+    assert.equal(rdArc.episodes[0].title, "Romance Dawn 01");
+    assert.equal(rdArc.episodes[0].watchUrl, "https://onepace.net/en/watch#romance-dawn-01");
+  });
+
+  it("atomically preserves last-known-good snapshot when incoming data fails validation", async () => {
+    const { OnePaceMetadataAdapter } = await import(
+      "../src/modules/grand-line/adapter.js"
+    );
+    const adapter = new OnePaceMetadataAdapter();
+    const originalEpisodeCount = adapter.getSnapshot().episodesCount;
+
+    // Provide completely malformed payload
+    const malformedArcs = {
+      "invalid-arc": {
+        // Missing required title
+        episodes: "not an array",
+      },
+    };
+
+    const result = adapter.ingest(malformedArcs);
+    assert.equal(result.success, false);
+    assert.ok(result.error?.includes("Metadata validation failed"));
+
+    // Ensure snapshot was NOT corrupted and previous working snapshot remains active
+    const snapshotAfterFailure = adapter.getSnapshot();
+    assert.equal(snapshotAfterFailure.episodesCount, originalEpisodeCount);
+    assert.equal(snapshotAfterFailure.source, "manifest");
+  });
+
+  it("handles remote fetch failure gracefully without corrupting state", async () => {
+    const { OnePaceMetadataAdapter } = await import(
+      "../src/modules/grand-line/adapter.js"
+    );
+    const adapter = new OnePaceMetadataAdapter();
+    const originalEpisodeCount = adapter.getSnapshot().episodesCount;
+
+    // Mock fetch that throws network failure
+    const mockFailingFetch = async () => {
+      throw new Error("Simulated network timeout (ECONNRESET)");
+    };
+
+    const result = await adapter.fetchAndSync(
+      "https://example.com/mock.json",
+      mockFailingFetch as unknown as typeof fetch,
+    );
+
+    assert.equal(result.success, false);
+    assert.ok(result.error?.includes("ECONNRESET"));
+
+    // State remains intact
+    assert.equal(adapter.getSnapshot().episodesCount, originalEpisodeCount);
+    const syncInfo = adapter.getSyncInfo();
+    assert.ok(syncInfo.lastSyncAttempt);
+    assert.equal(syncInfo.lastSuccessfulSync, null);
+  });
+
+  it("rebuilds service indexes dynamically when service receives ingestion updates", async () => {
+    const service = new GrandLineService();
+    const initialEpisodesCount = service.getStatus().episodesCount;
+
+    const sampleArcs = {
+      "romance-dawn": {
+        title: "Romance Dawn",
+        order: 1,
+        episodes: [
+          {
+            title: "ROMANCE DAWN 01",
+            episode: 1,
+            description: "New updated synopsis",
+            manga_chapters: "1",
+            anime_episodes: "1",
+          },
+        ],
+      },
+    };
+
+    const result = service.ingest(sampleArcs, undefined, {
+      version: "2.2.0",
+      source: "live-update",
+    });
+
+    assert.equal(result.success, true);
+    const status = service.getStatus();
+    assert.equal(status.catalogVersion, "2.2.0");
+
+    // Index was rebuilt
+    const arc = service.getArc("romance-dawn");
+    assert.equal(arc.episodes.length, 1);
+    assert.equal(arc.episodes[0].synopsis, "New updated synopsis");
+  });
 });

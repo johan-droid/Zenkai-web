@@ -77,4 +77,15 @@ export function registerGrandLineRoutes(
   app.get("/api/v1/grand-line/status", async () => {
     return service.getStatus();
   });
+
+  /** Trigger catalogue synchronization */
+  app.post("/api/v1/grand-line/sync", async () => {
+    const result = await service.syncWithRemote();
+    return {
+      status: result.success ? "ok" : "warning",
+      synced: result.success,
+      error: result.error,
+      catalog: service.getStatus(),
+    };
+  });
 }

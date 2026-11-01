@@ -6,6 +6,8 @@ import {
   GrandLineEpisodeDetailSchema,
   GrandLineSearchResponseSchema,
   GrandLineStatusSchema,
+  GrandLineSyncResponseSchema,
+  GrandLineEpisodeSchema,
 } from "../src/lib/api/zenkai.js";
 import { formatOnePaceProgressId } from "../src/hooks/use-grand-line.js";
 import { primaryNav } from "../src/config/nav.js";
@@ -179,5 +181,56 @@ describe("Zenkai Grand Line — Frontend Contract & Schema Suite", () => {
     assert.equal(parsed.sagasCount, 11);
     assert.equal(parsed.arcsCount, 38);
     assert.equal(parsed.episodesCount, 477);
+  });
+
+  it("parses extended metadata with CRC32 and sync freshness attributes", () => {
+    const epPayload = {
+      id: "romance-dawn-01",
+      arcId: "romance-dawn",
+      episodeNumber: "01",
+      title: "ROMANCE DAWN",
+      mangaChapters: "1",
+      animeEpisodes: "1",
+      duration: "17 min",
+      synopsis: "Influenced by Shanks...",
+      watchUrl: "https://onepace.net/en/watch#romance-dawn-01",
+      downloads: [],
+      crc32: "6D92D66C",
+      releasedAt: "2020-01-01",
+      resolution: "1080p",
+    };
+
+    const parsedEp = GrandLineEpisodeSchema.parse(epPayload);
+    assert.equal(parsedEp.crc32, "6D92D66C");
+    assert.equal(parsedEp.releasedAt, "2020-01-01");
+    assert.equal(parsedEp.resolution, "1080p");
+
+    const statusPayload = {
+      status: "ok",
+      source: "remote:ladyisatis-v2",
+      officialSite: "https://onepace.net/en/watch",
+      officialRss: "https://onepace.net/en/releases/rss.xml",
+      sagasCount: 11,
+      arcsCount: 38,
+      episodesCount: 477,
+      lastUpdated: "2026-11-01T12:00:00Z",
+      lastSyncAttempt: "2026-11-01T12:00:00Z",
+      lastSuccessfulSync: "2026-11-01T12:00:00Z",
+      catalogVersion: "2.1.0",
+    };
+
+    const parsedStatus = GrandLineStatusSchema.parse(statusPayload);
+    assert.equal(parsedStatus.catalogVersion, "2.1.0");
+    assert.equal(parsedStatus.lastSuccessfulSync, "2026-11-01T12:00:00Z");
+
+    const syncPayload = {
+      status: "ok",
+      synced: true,
+      catalog: statusPayload,
+    };
+
+    const parsedSync = GrandLineSyncResponseSchema.parse(syncPayload);
+    assert.equal(parsedSync.synced, true);
+    assert.equal(parsedSync.catalog.catalogVersion, "2.1.0");
   });
 });

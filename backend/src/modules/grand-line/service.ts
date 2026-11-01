@@ -1,5 +1,5 @@
 import { AppError } from "../../http/errors.js";
-import { SAGAS, ARCS } from "./manifest.js";
+import { OnePaceMetadataAdapter } from "./adapter.js";
 import type {
   GrandLineSaga,
   GrandLineArc,
@@ -20,8 +20,7 @@ export interface SearchResultItem {
 }
 
 export class GrandLineService {
-  private readonly sagas = SAGAS;
-  private readonly arcs = ARCS;
+  private readonly adapter: OnePaceMetadataAdapter;
   private readonly arcMap = new Map<string, GrandLineArc>();
   /** Flat list of all episodes in chronological order for easy adjacent lookups */
   private readonly allEpisodes: Array<{
@@ -30,8 +29,16 @@ export class GrandLineService {
     globalIndex: number;
   }> = [];
 
-  constructor() {
-    for (const arc of this.arcs) {
+  constructor(adapter: OnePaceMetadataAdapter = new OnePaceMetadataAdapter()) {
+    this.adapter = adapter;
+    this.rebuildIndexes();
+  }
+
+  private rebuildIndexes(): void {
+    this.arcMap.clear();
+    this.allEpisodes.length = 0;
+
+    for (const arc of this.adapter.getArcs()) {
       this.arcMap.set(arc.id, arc);
       for (const ep of arc.episodes) {
         this.allEpisodes.push({
@@ -43,14 +50,53 @@ export class GrandLineService {
     }
   }
 
+  /** Retrieve the underlying metadata adapter */
+  getAdapter(): OnePaceMetadataAdapter {
+    return this.adapter;
+  }
+
+  /** Ingest and refresh catalogue in memory atomically */
+  ingest(
+    rawArcs: unknown,
+    rawEpisodes?: unknown,
+    options?: { version?: string; timestamp?: string; source?: string },
+  ): { success: boolean; error?: string } {
+    const res = this.adapter.ingest(rawArcs, rawEpisodes, options);
+    if (res.success) {
+      this.rebuildIndexes();
+    }
+    return res;
+  }
+
+  /** Ingest combined data.json format */
+  ingestCombined(
+    rawCombined: unknown,
+    options?: { version?: string; source?: string },
+  ): { success: boolean; error?: string } {
+    const res = this.adapter.ingestCombined(rawCombined, options);
+    if (res.success) {
+      this.rebuildIndexes();
+    }
+    return res;
+  }
+
+  /** Trigger remote metadata fetch and synchronization */
+  async syncWithRemote(fetchFn?: typeof fetch): Promise<{ success: boolean; error?: string }> {
+    const res = await this.adapter.fetchAndSync(undefined, fetchFn);
+    if (res.success) {
+      this.rebuildIndexes();
+    }
+    return res;
+  }
+
   /** Retrieve all 11 sagas with their constituent arc summaries */
   getSagas(): GrandLineSaga[] {
-    return this.sagas;
+    return this.adapter.getSagas();
   }
 
   /** Retrieve all arcs with summary metrics */
   getArcs(): Array<Omit<GrandLineArc, "episodes">> {
-    return this.arcs.map(({ episodes, ...rest }) => rest);
+    return this.adapter.getArcs().map(({ episodes, ...rest }) => rest);
   }
 
   /** Retrieve a single arc by slug with its full episode roster */
@@ -183,20 +229,20 @@ export class GrandLineService {
 
   /** Catalog status and metadata freshness */
   getStatus(): GrandLineStatus {
-    const totalEpisodes = this.arcs.reduce(
-      (sum, arc) => sum + arc.episodeCount,
-      0,
-    );
+    const syncInfo = this.adapter.getSyncInfo();
 
     return {
       status: "ok",
       source: "onepace.net",
       officialSite: "https://onepace.net/en/watch",
       officialRss: "https://onepace.net/en/releases/rss.xml",
-      sagasCount: this.sagas.length,
-      arcsCount: this.arcs.length,
-      episodesCount: totalEpisodes,
-      lastUpdated: "2026-11-01T00:00:00Z",
+      sagasCount: this.getSagas().length,
+      arcsCount: this.getArcs().length,
+      episodesCount: this.allEpisodes.length,
+      lastUpdated: syncInfo.lastUpdated,
+      lastSyncAttempt: syncInfo.lastSyncAttempt ?? undefined,
+      lastSuccessfulSync: syncInfo.lastSuccessfulSync ?? undefined,
+      catalogVersion: syncInfo.catalogVersion,
     };
   }
 }

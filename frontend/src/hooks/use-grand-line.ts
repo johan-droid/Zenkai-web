@@ -6,10 +6,12 @@ import {
   fetchGrandLineSagas,
   fetchGrandLineArc,
   fetchGrandLineEpisode,
+  fetchGrandLineStatus,
+  triggerGrandLineSync,
   type GrandLineSaga,
   type GrandLineArc,
-  type GrandLineEpisode,
   type GrandLineEpisodeDetail,
+  type GrandLineStatus,
 } from "@/lib/api/zenkai";
 
 const ONE_PACE_MEDIA_ID = "one-pace";
@@ -38,8 +40,27 @@ export function useGrandLineProgress() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let active = true;
+    db.progress
+      .where("[kind+mediaId]")
+      .equals(["anime", ONE_PACE_MEDIA_ID])
+      .toArray()
+      .then((records) => {
+        if (active) {
+          setProgressRecords(records);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          console.warn("Failed to read One Pace progress from local database", err);
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const watchedSet = useMemo(() => {
     const set = new Set<string>();
@@ -264,4 +285,64 @@ export function useGrandLineEpisode(arcId: string, episodeNumber: string) {
   }, [arcId, episodeNumber]);
 
   return { detail, loading, error };
+}
+
+export function useGrandLineStatus() {
+  const [status, setStatus] = useState<GrandLineStatus | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchGrandLineStatus();
+      setStatus(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load catalog status");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchGrandLineStatus()
+      .then((data) => {
+        if (active) {
+          setStatus(data);
+          setError(null);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Failed to load catalog status");
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const triggerSync = useCallback(async () => {
+    try {
+      setSyncing(true);
+      const res = await triggerGrandLineSync();
+      if (res.catalog) {
+        setStatus(res.catalog);
+      }
+      return res;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Sync failed";
+      setError(msg);
+      return { status: "error", synced: false, error: msg, catalog: status! };
+    } finally {
+      setSyncing(false);
+    }
+  }, [status]);
+
+  return { status, loading, syncing, error, refreshStatus, triggerSync };
 }

@@ -1971,6 +1971,9 @@ export const GrandLineEpisodeSchema = z.object({
   synopsis: z.string(),
   watchUrl: z.string().url(),
   downloads: z.array(GrandLineDownloadSchema).default([]),
+  crc32: z.string().optional(),
+  releasedAt: z.string().optional(),
+  resolution: z.string().optional(),
 });
 
 export type GrandLineEpisode = z.infer<typeof GrandLineEpisodeSchema>;
@@ -2079,9 +2082,21 @@ export const GrandLineStatusSchema = z.object({
   arcsCount: z.number(),
   episodesCount: z.number(),
   lastUpdated: z.string(),
+  lastSyncAttempt: z.string().optional(),
+  lastSuccessfulSync: z.string().optional(),
+  catalogVersion: z.string().optional(),
 });
 
 export type GrandLineStatus = z.infer<typeof GrandLineStatusSchema>;
+
+export const GrandLineSyncResponseSchema = z.object({
+  status: z.string(),
+  synced: z.boolean(),
+  error: z.string().optional(),
+  catalog: GrandLineStatusSchema,
+});
+
+export type GrandLineSyncResponse = z.infer<typeof GrandLineSyncResponseSchema>;
 
 /** Fetch all 11 sagas and their constituent arcs */
 export async function fetchGrandLineSagas(): Promise<GrandLineSaga[]> {
@@ -2125,5 +2140,10 @@ export async function searchGrandLine(query: string, limit = 20): Promise<GrandL
 /** Fetch catalog metadata freshness and status */
 export async function fetchGrandLineStatus(): Promise<GrandLineStatus> {
   return getValidated("/api/v1/grand-line/status", GrandLineStatusSchema);
+}
+
+/** Trigger backend catalog sync */
+export async function triggerGrandLineSync(): Promise<GrandLineSyncResponse> {
+  return postValidated("/api/v1/grand-line/sync", GrandLineSyncResponseSchema, {});
 }
 
