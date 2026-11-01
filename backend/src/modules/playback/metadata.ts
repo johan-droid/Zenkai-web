@@ -46,7 +46,7 @@ export const persistedEpisodeMetadataSchema = z
     intro: z.object({ start: z.number(), end: z.number() }).strict().optional(),
     outro: z.object({ start: z.number(), end: z.number() }).strict().optional(),
     recap: z.object({ start: z.number(), end: z.number() }).strict().optional(),
-    preview: z.object({ start: z.number(); end: z.number() }).strict().optional(),
+    preview: z.object({ start: z.number(), end: z.number() }).strict().optional(),
     subtitles: z.array(
       z
         .object({ language: z.string(), kind: z.string().optional() })
