@@ -127,6 +127,14 @@ const schema = z.object({
     message: "must be an IANA timezone name, e.g. UTC or Asia/Tokyo",
   }).default("UTC"),
 
+  /** Allowed CORS origins (comma-separated). In development, all origins are permitted. */
+  CORS_ORIGIN: z.string().default(""),
+
+  /** Passphrase for user settings encryption at rest. */
+  SETTINGS_ENCRYPTION_PASSPHRASE: z
+    .string()
+    .default("zenkai-default-settings-key-change-me"),
+
   /** How long discovery payloads stay warm in Redis before a refetch. */
   CACHE_TTL_DISCOVERY_S: z.coerce.number().int().min(1).default(1800),
   CACHE_TTL_METADATA_S: z.coerce.number().int().min(1).default(86_400),

@@ -186,12 +186,13 @@ describe("Auth Cryptography", () => {
     assert.equal(hashSessionToken(rawToken), tokenHash, "Hash of raw token must match tokenHash");
   });
 
-  it("parses cookies from header string correctly", () => {
-    const cookieHeader = "zenkai_session=abcdef12345; theme=dark; other=value%20space";
+  it("parses cookies from header string correctly and survives malformed cookies", () => {
+    const cookieHeader = "zenkai_session=abcdef12345; theme=dark; other=value%20space; malformed=%ZZ";
     const cookies = parseCookies(cookieHeader);
     assert.equal(cookies["zenkai_session"], "abcdef12345");
     assert.equal(cookies["theme"], "dark");
     assert.equal(cookies["other"], "value space");
+    assert.equal(cookies["malformed"], "%ZZ");
     assert.deepEqual(parseCookies(undefined), {});
   });
 });

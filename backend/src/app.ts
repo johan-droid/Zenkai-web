@@ -85,7 +85,37 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
 
   await app.register(cors, {
-    origin: true,
+    origin: (origin, cb) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+      if (!origin) return cb(null, true);
+      // In development / test, allow all origins
+      if (config.NODE_ENV !== "production") return cb(null, true);
+
+      // In production, check configured CORS_ORIGIN
+      if (config.CORS_ORIGIN) {
+        const allowedOrigins = config.CORS_ORIGIN.split(",").map((s) => s.trim().toLowerCase());
+        const originLower = origin.toLowerCase();
+        const isMatch = allowedOrigins.some((allowed) => {
+          if (allowed === originLower) return true;
+          if (allowed.startsWith("*.")) {
+            const suffix = allowed.slice(1); // e.g. ".example.com"
+            try {
+              const url = new URL(originLower);
+              return url.hostname.endsWith(suffix);
+            } catch {
+              return false;
+            }
+          }
+          return false;
+        });
+        if (isMatch) return cb(null, true);
+        return cb(new Error("CORS origin not allowed"), false);
+      }
+
+      // Default production fallback: allow same origin
+      return cb(null, true);
+    },
+    credentials: true,
     // The player needs to read response headers for quality and range handling.
     exposedHeaders: ["x-zenkai-cache", "content-range", "accept-ranges"],
   });
@@ -366,8 +396,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
             "-s",
             "--max-time", "15",
             "--proto", "=http,https",
-            "--proto-redir", "=http,https",
-            "--max-redirs", "5",
+            "--max-redirs", "0",
           ];
           if (referer) {
             curlArgs.push("-H", `referer: ${referer}`);

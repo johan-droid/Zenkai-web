@@ -1,13 +1,12 @@
 import { eq, and, sql, or } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { users, userSessions } from "../../db/schema/index.js";
-import { SettingsEncryption } from "../../lib/encryption";
+import { SettingsEncryption } from "../../lib/encryption.js";
+import { config } from "../../config/index.js";
 
-// Initialize encryption with a passphrase from environment
+// Initialize encryption with a passphrase from configuration
 // In production, rotate this regularly and store in a secrets manager
-const settingsEncryption = new SettingsEncryption(
-  process.env.SETTINGS_ENCRYPTION_PASSPHRASE ?? "zenkai-default-settings-key-change-me"
-);
+const settingsEncryption = new SettingsEncryption(config.SETTINGS_ENCRYPTION_PASSPHRASE);
 
 export interface UserRow {
   id: string;

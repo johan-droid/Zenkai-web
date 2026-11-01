@@ -26,6 +26,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+// Pre-computed scrypt dummy hash to prevent timing attacks / username enumeration
+const DUMMY_HASH =
+  "scrypt$16384,8,1$00000000000000000000000000000000$00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+
 export const updateProfileSchema = z.object({
   displayName: z.string().max(64).optional(),
   bio: z.string().max(500).optional(),
@@ -99,6 +103,7 @@ export class AuthService {
     const { login, password } = parsed.data;
     const user = await this.repo.findUserForAuth(login);
     if (!user) {
+      await verifyPassword(password, DUMMY_HASH).catch(() => false);
       throw AppError.unauthorized("Invalid username or password");
     }
 

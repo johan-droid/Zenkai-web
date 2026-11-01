@@ -42,12 +42,17 @@ export function isPrivateAddress(ip: string): boolean {
   if (version === 6) {
     const lower = ip.toLowerCase();
     if (lower === "::1" || lower === "::") return true;
-    // Unique-local (fc00::/7) and link-local (fe80::/10).
+    // Unique-local (fc00::/7) and link-local / site-local (fe80::/10, fec0::/10)
     if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true;
-    if (/^fe[89ab][0-9a-f]:/.test(lower)) return true;
-    // IPv4-mapped (::ffff:a.b.c.d) must be judged by the embedded v4 address.
-    const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (/^fe[89a-f][0-9a-f]:/.test(lower)) return true;
+    // Discard (100::/64) and documentation / benchmarking (2001:db8::/32, 2001:2::/48)
+    if (/^100::/.test(lower) || /^2001:db8:/i.test(lower) || /^2001:2:/i.test(lower)) return true;
+    // IPv4-mapped (::ffff:a.b.c.d or ::ffff:0:a.b.c.d) must be judged by the embedded v4 address.
+    const mapped = lower.match(/^::ffff:(?:0:)?(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isPrivateAddress(mapped[1]);
+    // IPv4-compatible (::a.b.c.d)
+    const compatible = lower.match(/^::(\d+\.\d+\.\d+\.\d+)$/);
+    if (compatible) return isPrivateAddress(compatible[1]);
     return false;
   }
 

@@ -98,14 +98,19 @@ export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/** Parse a raw Cookie header into key-value pairs. */
+/** Parse a raw Cookie header into key-value pairs safely. */
 export function parseCookies(cookieHeader?: string): Record<string, string> {
   if (!cookieHeader) return {};
   const cookies: Record<string, string> = {};
   for (const pair of cookieHeader.split(";")) {
     const [key, ...value] = pair.trim().split("=");
     if (key) {
-      cookies[key] = decodeURIComponent(value.join("="));
+      const rawVal = value.join("=");
+      try {
+        cookies[key] = decodeURIComponent(rawVal);
+      } catch {
+        cookies[key] = rawVal;
+      }
     }
   }
   return cookies;

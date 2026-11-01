@@ -65,40 +65,62 @@ export function registerAuthRoutes(app: FastifyInstance, authService: AuthServic
   });
 
   /**
-   * Register a new user account.
+   * Register a new user account (tight rate limit to prevent credential stuffing).
    */
-  app.post("/api/v1/auth/register", async (request, reply) => {
-    const meta = {
-      userAgent: request.headers["user-agent"],
-      ipAddress: request.ip,
-    };
+  app.post(
+    "/api/v1/auth/register",
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: 60_000,
+        },
+      },
+    },
+    async (request, reply) => {
+      const meta = {
+        userAgent: request.headers["user-agent"],
+        ipAddress: request.ip,
+      };
 
-    const { user, rawToken, expiresAt } = await authService.register(request.body, meta);
-    setSessionCookie(reply, rawToken, expiresAt);
+      const { user, rawToken, expiresAt } = await authService.register(request.body, meta);
+      setSessionCookie(reply, rawToken, expiresAt);
 
-    return reply.code(201).send({
-      user,
-      token: rawToken, // Returned for clients that do not support cookies
-    });
-  });
+      return reply.code(201).send({
+        user,
+        token: rawToken, // Returned for clients that do not support cookies
+      });
+    },
+  );
 
   /**
-   * Log into an existing account.
+   * Log into an existing account (tight rate limit to mitigate brute force).
    */
-  app.post("/api/v1/auth/login", async (request, reply) => {
-    const meta = {
-      userAgent: request.headers["user-agent"],
-      ipAddress: request.ip,
-    };
+  app.post(
+    "/api/v1/auth/login",
+    {
+      config: {
+        rateLimit: {
+          max: 15,
+          timeWindow: 60_000,
+        },
+      },
+    },
+    async (request, reply) => {
+      const meta = {
+        userAgent: request.headers["user-agent"],
+        ipAddress: request.ip,
+      };
 
-    const { user, rawToken, expiresAt } = await authService.login(request.body, meta);
-    setSessionCookie(reply, rawToken, expiresAt);
+      const { user, rawToken, expiresAt } = await authService.login(request.body, meta);
+      setSessionCookie(reply, rawToken, expiresAt);
 
-    return reply.code(200).send({
-      user,
-      token: rawToken,
-    });
-  });
+      return reply.code(200).send({
+        user,
+        token: rawToken,
+      });
+    },
+  );
 
   /**
    * Log out of current session.
@@ -143,8 +165,17 @@ export function registerAuthRoutes(app: FastifyInstance, authService: AuthServic
     return reply.code(200).send(result);
   };
 
-  app.get("/api/v1/users/check-username", handleCheckUsername);
-  app.get("/api/v1/auth/check-username", handleCheckUsername);
+  const checkUsernameOpts = {
+    config: {
+      rateLimit: {
+        max: 60,
+        timeWindow: 60_000,
+      },
+    },
+  };
+
+  app.get("/api/v1/users/check-username", checkUsernameOpts, handleCheckUsername);
+  app.get("/api/v1/auth/check-username", checkUsernameOpts, handleCheckUsername);
 
   /**
    * Update authenticated user profile.
