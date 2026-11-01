@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "motion/react";
 import Link from "next/link";
 import { Hash } from "lucide-react";
 
@@ -20,7 +19,7 @@ export function GenreChips({ className }: { className?: string }) {
     <section className={cn("flex flex-col gap-4", className)}>
       {/* Header */}
       <div className="flex items-center gap-3">
-        <span className="h-5 w-[3px] rounded-full bg-gradient-to-b from-[#e84060] to-[#b8102a]" />
+        <span className="h-5 w-[3px] rounded-full bg-gradient-to-b from-signal to-signal-soft" />
         <h2 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">Browse by Genre</h2>
       </div>
 
@@ -34,34 +33,20 @@ export function GenreChips({ className }: { className?: string }) {
               />
             ))
           : (genres ?? []).map((genre, i) => (
-              <motion.div
+              <div
                 key={genre}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{
-                  duration: 0.3,
-                  delay: Math.min(i * 0.04, 0.5),
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.97 }}
+                className={cn(
+                  "group flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1.5",
+                  "border border-surface-2/70 bg-surface-1",
+                  "text-sm font-medium text-ink-2",
+                  "backdrop-blur-sm",
+                  "transition-colors duration-200",
+                  "hover:border-signal/45 hover:bg-signal/10 hover:text-white",
+                )}
               >
-                <Link
-                  href={`/anime?genre=${encodeURIComponent(genre)}`}
-                  className={cn(
-                    "group flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5",
-                    "border border-white/[0.07] bg-white/[0.03]",
-                    "text-sm font-medium text-zinc-400",
-                    "backdrop-blur-sm",
-                    "transition-all duration-200",
-                    "hover:border-[#b8102a]/45 hover:bg-[#b8102a]/10 hover:text-white",
-                    "hover:shadow-[0_4px_16px_rgba(184,16,42,0.25)]",
-                  )}
-                >
-                  <Hash className="size-3 text-zinc-600 transition-colors duration-200 group-hover:text-[#e84060]" />
-                  {genre}
-                </Link>
-              </motion.div>
+                <Hash className="size-3 text-ink-3/60 transition-colors duration-200 group-hover:text-signal" />
+                {genre}
+              </div>
             ))}
       </div>
     </section>

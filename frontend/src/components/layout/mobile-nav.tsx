@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Tv, BookOpen, CalendarDays, Library } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 
 import { isActivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
@@ -31,8 +30,9 @@ export function MobileNav() {
       className={[
         "fixed inset-x-0 bottom-0 z-50 md:hidden",
         "pb-[env(safe-area-inset-bottom)]",
-        "border-t border-white/[0.06]",
-        "bg-[#06060a]/90 backdrop-blur-2xl",
+        "border-t border-surface-2/90",
+        "bg-surface-1",
+        "backdrop-blur-md",
         "shadow-[0_-8px_40px_rgba(0,0,0,0.8),0_-1px_0_0_rgba(255,255,255,0.05)_inset]",
       ].join(" ")}
       aria-label="Mobile"
@@ -48,36 +48,29 @@ export function MobileNav() {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "relative flex flex-1 flex-col items-center gap-1 py-2.5",
-                "text-[0.65rem] font-semibold tracking-wide transition-colors duration-200",
-                active ? "text-white" : "text-zinc-500 hover:text-zinc-200",
+                "text-[0.65rem] font-semibold tracking-wide",
+                active ? "text-signal" : "text-ink-3/60 hover:text-signal",
               )}
             >
               {/* Active background pill */}
-              <AnimatePresence>
-                {active && (
-                  <motion.span
-                    layoutId="mobile-nav-pill"
-                    initial={{ opacity: 0, scale: 0.85 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.85 }}
-                    transition={{ type: "spring", stiffness: 380, damping: 26 }}
-                    className="absolute inset-x-2 top-1.5 bottom-1.5 rounded-xl bg-[#b8102a]/18 ring-1 ring-[#b8102a]/30"
-                  />
+              <span
+                className={cn(
+                  "absolute inset-x-2 top-1.5 bottom-1.5 rounded-xl bg-surface-1/18 ring-1 ring-signal/30",
                 )}
-              </AnimatePresence>
+              />
 
               <span className="relative z-10 flex flex-col items-center gap-1">
-                <motion.span
-                  animate={active ? { scale: 1.1 } : { scale: 1 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                <span
+                  className={cn(
+                    "size-5 transition-colors duration-200",
+                    active ? "text-signal" : "text-ink-3/60",
+                  )}
                 >
                   <Icon
-                    className={cn(
-                      "size-5 transition-colors duration-200",
-                      active ? "text-[#e84060]" : "text-zinc-500",
-                    )}
+                    className="size-5 transition-colors duration-200"
+                    aria-hidden
                   />
-                </motion.span>
+                </span>
                 <span>{item.label}</span>
               </span>
             </Link>

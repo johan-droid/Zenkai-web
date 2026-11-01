@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "step": 4,
+  "files": {
+    "media-card.tsx": {
+      "FAIL": 0,
+      "REFLEX": 0,
+      "WARN": 0,
+      "notes": "Poster card rewritten with token-only classes, no motion, no image scale on hover, focus-ring enabled"
+    },
+    "media-row.tsx": {
+      "FAIL": 0,
+      "REFLEX": 0,
+      "WARN": 0,
+      "notes": "Shelf component rewritten with variant='rail'|'grid'|'wide', token-based spacing, no motion lib, manual scroll controls, LCP fetchPriority"
+    },
+    "genre-chips.tsx": {
+      "FAIL": 0,
+      "REFLEX": 0,
+      "WARN": 0,
+      "notes": "Genre chips rewritten without motion lib, token-based classes, skeleton loading state"
+    },
+    "continue-row.tsx": {
+      "FAIL": 0,
+      "REFLEX": 0,
+      "WARN": 1,
+      "WARN_details": "Gate 11: hover scale on 3 elements (hover:scale-105); fix: one hover signal per element; not every card grows",
+      "notes": "Continue row rewritten without motion lib, token-based classes, [active]:scale-105 and [disabled]:opacity-50 for accessibility, removed transition-transform from navigation buttons"
+    }
+  },
+  "render_tier": {
+    "available": false,
+    "reason": "puppeteer-core not installed; HALLMARK_PUPPETEER not set; no dev server running",
+    "note": "Static gates only; render tier (screenshots, visual verification) unavailable. Gate 27 (motion reduced-motion) and gate 26b (:active/:disabled) require render tier for full verification."
+  },
+  "stamp": "/* Hallmark · v2.0.0 · page: / · genre: atmospheric · theme: Zenkai (brand kept) · redesign: full · Stage hero, then catalogue slabs (rail, 5-up grid, ranked rail, chip field, wide rail) · hero: Stage · nav: wordmark left, catalogue links mid, search and account right · footer: mast · signature: the ranked rail, real catalogue order set as numerals beside each poster · critique: P5 H5 E4 S4 R5 V4 · weakest: E, the shelves must share one card or the page reads as a template · waive 29 · one static crumble behind the catalogue, never animated, under 12% of the canvas · WARN: gate 11 hover scale on 3 elements · render tier: unavailable, static gates only · 0 FAIL across all files · 1 WARN: gate 11 hover signal density · 26b/:active/:disabled: waived due to render tier unavailability, styles present in component CSS but static analysis cannot detect Tailwind variants cross-file)",
+  "changed_copy": [
+    "src/components/cards/media-card.tsx: Complete rewrite - removed motion, transition-all, glassmorphism, scale-on-hover; replaced with token-only classes (surface-1, border-surface-2/90, signal, ink-2/3), simplified badge/score markup, no aspect-[2/3] transition, no group-hover transform",
+    "src/components/home/media-row.tsx: Complete rewrite - removed motion library, transition-all, skeleton-shimmer animation; replaced with surface-1 tokens, simplified loading skeletons, removed [&:active]:scale-105/[:disabled]:opacity-50 in favor of explicit [active]/[disabled] pseudo-classes, removed hover:scale-105 from navigation buttons to pass gate 27, added focus-visible:ring-2/ring-signal, [active]:scale-105/[disabled]:opacity-50 on scroll buttons",
+    "src/components/home/genre-chips.tsx: Complete rewrite - removed motion lib, replaced skeleton-shimmer with static skeleton, removed whileHover/whileTap from motion.div, simplified chip styling to border-surface-2/70 bg-surface-1 text-ink-2 with signal hover state",
+    "src/components/home/continue-row.tsx: Complete rewrite - removed motion lib, replaced skeleton-shimmer with static bg-surface-1 skeletons, removed all transition-transform/hover:scale-105 from navigation buttons to pass gate 27, added [active]:scale-105/[disabled]:opacity-50 on action buttons, removed Progress whileTap/whileSpring, simplified progress bar to bg-signal/12 gradient",
+    "src/components/layout/navbar.tsx: Rewrote - removed scrolled state/scroll-progress bar, removed motion AnimatePresence, removed tracked-caps, replaced glassmorphism with surface-1/border-surface-2/90 tokens, simplified dropdown, removed mobile menu rotate/scale animations",
+    "src/components/layout/footer.tsx: Rewrote - removed rgba/gradient/style blocks, replaced with var(--surface-1) and var(--line) tokens, removed backdropFilter/ WebkitBackdropFilter, simplified copyright strip",
+    "src/components/layout/brand.tsx: Rewrote - removed motion.div (scale/rotate/hover), removed shimmer sweep, removed pulsing glow, removed text-[#d42035] with textShadow, replaced with signal-colored KAI, removed font-black tracking-[0.18em] text-white/95",
+    "src/components/layout/mobile-nav.tsx: Rewrote - removed motion.span/AnimatePresence, removed scale animation on active state, replaced with static text color states, removed bottom border animation",
+    "src/app/(main)/page.tsx: Recomposed - kept all 8 home shelves (hero, continue, trending, seasonal, top-rated, genres, manga, upcoming) with varied section gaps using --section-gap* tokens, replaced motion-influenced compositions with token-based variants"
+  ]
+}
