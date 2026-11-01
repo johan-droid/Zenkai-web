@@ -84,7 +84,7 @@ const MEDIA_FIELDS = `
  * rewritten rather than appended.
  */
 export function imageUrl(
-  url: string | undefined,
+  url: string | null | undefined,
   width: number,
   height?: number,
 ): string | null {
@@ -198,7 +198,7 @@ function textOrUndefined(value: unknown): string | null | undefined {
 
 /** As above, for image URLs: absent stays absent. */
 function imageUrlOrUndefined(
-  url: string | undefined,
+  url: string | null | undefined,
   width: number,
   height?: number,
 ): string | null | undefined {
