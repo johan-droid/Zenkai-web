@@ -37,6 +37,14 @@ export const episodes = pgTable(
     airDate: timestamp("air_date", { withTimezone: true }),
     /** Recap episodes carry no new story, so the UI can mark them. */
     isFiller: boolean("is_filler").notNull().default(false),
+    /** Recap episodes (station recap, previous episode summary). */
+    isRecap: boolean("is_recap").notNull().default(false),
+    /** Preview/next episode promotional segments. */
+    isPreview: boolean("is_preview").notNull().default(false),
+    /** Episode format category for skip timing defaults (TV, Web, Blu-ray, etc.). */
+    episodeFormat: varchar("episode_format", { length: 32 }),
+    /** Canon type: main story, filler, recap, or unknown. */
+    canonType: varchar("canon_type", { length: 32 }),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -85,6 +93,12 @@ export const episodePlaybackMeta = pgTable("episode_playback_meta", {
   introEndSeconds: integer("intro_end_seconds"),
   outroStartSeconds: integer("outro_start_seconds"),
   outroEndSeconds: integer("outro_end_seconds"),
+  /** Recap segment markers (station recap, previous episode summary). */
+  recapStartSeconds: integer("recap_start_seconds"),
+  recapEndSeconds: integer("recap_end_seconds"),
+  /** Preview/next episode promotional segment markers. */
+  previewStartSeconds: integer("preview_start_seconds"),
+  previewEndSeconds: integer("preview_end_seconds"),
   /**
    * Non-secret subtitle descriptors only: which languages and kinds a title
    * has. URLs belong to the ephemeral, per-request playback plan (P6) and

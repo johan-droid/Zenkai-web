@@ -40,7 +40,24 @@ export interface BookmarkRecord {
   createdAt: number;
 }
 
-export type LibraryStatus = "watching" | "plan" | "completed" | "dropped";
+/** Individual watch history entry. */
+export interface HistoryRecord {
+  /** Composite key: `${kind}:${mediaId}`. */
+  id: string;
+  kind: ProgressKind;
+  mediaId: string;
+  title: string;
+  coverUrl: string | null;
+  /** Seconds watched into the final episode/chapter. */
+  watchedSeconds: number;
+  /** When the watching ended (completed or dropped). */
+  endedAt: number;
+  /** How the watching ended: "completed", "dropped", "paused". */
+  endedBy: "completed" | "dropped" | "paused";
+  createdAt: number;
+}
+
+export type LibraryStatus = "watching" | "on_hold" | "completed" | "dropped" | "plan";
 
 export interface LibraryRecord {
   /** Composite key: `${kind}:${mediaId}`. */
@@ -50,6 +67,8 @@ export interface LibraryRecord {
   title: string;
   coverUrl: string | null;
   status: LibraryStatus;
+  /** User rating from 0-5, null when not rated. */
+  rating: number | null;
   updatedAt: number;
 }
 
@@ -63,6 +82,7 @@ db.version(1).stores({
   progress: "id, kind, mediaId, updatedAt, [kind+mediaId]",
   bookmarks: "id, kind, mediaId, createdAt",
   library: "id, kind, mediaId, status, updatedAt",
+  history: "id, kind, mediaId, endedAt, createdAt, [kind+mediaId]",
 });
 
 export function progressId(kind: ProgressKind, mediaId: string, unit: number): string {

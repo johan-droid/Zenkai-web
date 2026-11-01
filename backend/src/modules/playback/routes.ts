@@ -337,14 +337,185 @@ export function registerPlaybackRoutes(
       throw AppError.notFound(`episode ${episodeId} has no resolvable title`);
     }
 
-    return metadata.get(episodeId, {
+    const meta = await metadata.get(episodeId, {
       animeId: String(title.id),
       anilistId: String(title.anilistId),
       malId: title.externalIds?.mal,
       episodeNumber: Number(episode.episodeNumber),
       language: "sub",
     });
+
+    const timings = await metadata.#communityTimings(metadata.db, String(title.id), episodeId);
+
+    return {
+      episodeId: meta.episodeId,
+      subtitles: meta.subtitles,
+      intro: meta.intro,
+      outro: meta.outro,
+      recap: timings.recap ?? meta.recap,
+      preview: timings.preview ?? meta.preview,
+      sourceUpdatedAt: meta.sourceUpdatedAt,
+      _communityTimings: timings.all,
+    };
   });
+
+  // ---- community skip-timing endpoints (Prompt 04) ------------------------------------
+
+  app.post("/api/v1/episodes/:episodeId/skip-timing", async (request: FastifyRequest) => {
+    const { episodeId } = parseOrThrow(
+      z.object({ episodeId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        segmentType: z.enum(["intro", "outro", "recap", "preview"]),
+        startSeconds: z.number().int().min(0),
+        endSeconds: z.number().int().min(1),
+        versionNote: z.string().max(128).optional().nullable().default(null),
+        submitterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.startSeconds >= body.endSeconds) {
+      throw new AppError("bad_request", "start_seconds must be less than end_seconds", 400);
+    }
+
+    if (body.endSeconds - body.startSeconds > 420) {
+      throw new AppError("bad_request", "timing range must be 420 seconds or fewer", 400);
+    }
+
+    const result = await metadata.submitCommunityTiming(episodeId, {
+      segmentType: body.segmentType,
+      startSeconds: body.startSeconds,
+      endSeconds: body.endSeconds,
+      versionNote: body.versionNote ?? null,
+      submitterAnilistId: body.submitterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { episodeId, timingId: result.id, segmentType: body.segmentType },
+      "community skip timing submitted",
+    );
+
+    return result;
+  });
+
+  app.post("/api/v1/skip-timing/:timingId/report", async (request: FastifyRequest) => {
+    const { timingId } = parseOrThrow(
+      z.object({ timingId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        reportType: z.enum(["too_early", "too_late", "wrong_segment", "incorrect"]),
+        suggestedStartSeconds: z.number().int().min(0).optional().nullable().default(null),
+        suggestedEndSeconds: z.number().int().min(1).optional().nullable().default(null),
+        reporterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.suggestedStartSeconds !== null && body.suggestedEndSeconds !== null) {
+      if (body.suggestedStartSeconds >= body.suggestedEndSeconds) {
+        throw new AppError("bad_request", "suggested timing must have start before end", 400);
+      }
+    }
+
+    await metadata.reportTiming(timingId, {
+      reportType: body.reportType,
+      suggestedStartSeconds: body.suggestedStartSeconds ?? null,
+      suggestedEndSeconds: body.suggestedEndSeconds ?? null,
+      reporterAnilistId: body.reporterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { timingId, reportType: body.reportType },
+      "community skip timing reported",
+    );
+  });
+
+
+  // ---- community skip-timing endpoints (Prompt 04) ------------------------------------
+
+  app.post("/api/v1/episodes/:episodeId/skip-timing", async (request: FastifyRequest) => {
+    const { episodeId } = parseOrThrow(
+      z.object({ episodeId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        segmentType: z.enum(["intro", "outro", "recap", "preview"]),
+        startSeconds: z.number().int().min(0),
+        endSeconds: z.number().int().min(1),
+        versionNote: z.string().max(128).optional().nullable().default(null),
+        submitterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.startSeconds >= body.endSeconds) {
+      throw new AppError("bad_request", "start_seconds must be less than end_seconds", 400);
+    }
+
+    if (body.endSeconds - body.startSeconds > 420) {
+      throw new AppError("bad_request", "timing range must be 420 seconds or fewer", 400);
+    }
+
+    const result = await metadata.submitCommunityTiming(episodeId, {
+      segmentType: body.segmentType,
+      startSeconds: body.startSeconds,
+      endSeconds: body.endSeconds,
+      versionNote: body.versionNote ?? null,
+      submitterAnilistId: body.submitterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { episodeId, timingId: result.id, segmentType: body.segmentType },
+      "community skip timing submitted",
+    );
+
+    return result;
+  });
+
+  app.post("/api/v1/skip-timing/:timingId/report", async (request: FastifyRequest) => {
+    const { timingId } = parseOrThrow(
+      z.object({ timingId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        reportType: z.enum(["too_early", "too_late", "wrong_segment", "incorrect"]),
+        suggestedStartSeconds: z.number().int().min(0).optional().nullable().default(null),
+        suggestedEndSeconds: z.number().int().min(1).optional().nullable().default(null),
+        reporterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.suggestedStartSeconds !== null && body.suggestedEndSeconds !== null) {
+      if (body.suggestedStartSeconds >= body.suggestedEndSeconds) {
+        throw new AppError("bad_request", "suggested timing must have start before end", 400);
+      }
+    }
+
+    await metadata.reportTiming(timingId, {
+      reportType: body.reportType,
+      suggestedStartSeconds: body.suggestedStartSeconds ?? null,
+      suggestedEndSeconds: body.suggestedEndSeconds ?? null,
+      reporterAnilistId: body.reporterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { timingId, reportType: body.reportType },
+      "community skip timing reported",
+    );
+  });
+
 
   /** Provider health snapshot (P7/P19), with P6 gateway counters. */
   app.get("/api/v1/playback/providers", async () => ({
@@ -358,6 +529,167 @@ export function registerPlaybackRoutes(
   app.post("/api/v1/playback/providers/check", async () => ({
     results: await resolver.checkAll(),
   }));
+
+  /** Accept a community-contributed skip timing. */
+  app.post("/api/v1/episodes/:episodeId/skip-timing", async (request: FastifyRequest) => {
+    const { episodeId } = parseOrThrow(
+      z.object({ episodeId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        segmentType: z.enum(["intro", "outro", "recap", "preview"]),
+        startSeconds: z.number().int().min(0),
+        endSeconds: z.number().int().min(1),
+        versionNote: z.string().max(128).optional().nullable().default(null),
+        submitterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.startSeconds >= body.endSeconds) {
+      throw new AppError("bad_request", "start_seconds must be less than end_seconds", 400);
+    }
+
+    if (body.endSeconds - body.startSeconds > 420) {
+      throw new AppError("bad_request", "timing range must be 420 seconds or fewer", 400);
+    }
+
+    const result = await metadata.submitCommunityTiming(episodeId, {
+      segmentType: body.segmentType,
+      startSeconds: body.startSeconds,
+      endSeconds: body.endSeconds,
+      versionNote: body.versionNote ?? null,
+      submitterAnilistId: body.submitterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { episodeId, timingId: result.id, segmentType: body.segmentType },
+      "community skip timing submitted",
+    );
+
+    return result;
+  });
+
+  /** Report a problem with a community timing. */
+  app.post("/api/v1/skip-timing/:timingId/report", async (request: FastifyRequest) => {
+    const { timingId } = parseOrThrow(
+      z.object({ timingId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        reportType: z.enum(["too_early", "too_late", "wrong_segment", "incorrect"]),
+        suggestedStartSeconds: z.number().int().min(0).optional().nullable().default(null),
+        suggestedEndSeconds: z.number().int().min(1).optional().nullable().default(null),
+        reporterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.suggestedStartSeconds !== null && body.suggestedEndSeconds !== null) {
+      if (body.suggestedStartSeconds >= body.suggestedEndSeconds) {
+        throw new AppError("bad_request", "suggested timing must have start before end", 400);
+      }
+    }
+
+    await metadata.reportTiming(timingId, {
+      reportType: body.reportType,
+      suggestedStartSeconds: body.suggestedStartSeconds ?? null,
+      suggestedEndSeconds: body.suggestedEndSeconds ?? null,
+      reporterAnilistId: body.reporterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { timingId, reportType: body.reportType },
+      "community skip timing reported",
+    );
+  });
+  /** Force a re-probe of every provider. */
+  app.post("/api/v1/playback/providers/check", async () => ({
+    results: await resolver.checkAll(),
+  }));
+
+  /** Accept a community-contributed skip timing. */
+  app.post("/api/v1/episodes/:episodeId/skip-timing", async (request: FastifyRequest) => {
+    const { episodeId } = parseOrThrow(
+      z.object({ episodeId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        segmentType: z.enum(["intro", "outro", "recap", "preview"]),
+        startSeconds: z.number().int().min(0),
+        endSeconds: z.number().int().min(1),
+        versionNote: z.string().max(128).optional().nullable().default(null),
+        submitterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.startSeconds >= body.endSeconds) {
+      throw new AppError("bad_request", "start_seconds must be less than end_seconds", 400);
+    }
+
+    if (body.endSeconds - body.startSeconds > 420) {
+      throw new AppError("bad_request", "timing range must be 420 seconds or fewer", 400);
+    }
+
+    const result = await metadata.submitCommunityTiming(episodeId, {
+      segmentType: body.segmentType,
+      startSeconds: body.startSeconds,
+      endSeconds: body.endSeconds,
+      versionNote: body.versionNote ?? null,
+      submitterAnilistId: body.submitterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { episodeId, timingId: result.id, segmentType: body.segmentType },
+      "community skip timing submitted",
+    );
+
+    return result;
+  });
+
+  /** Report a problem with a community timing. */
+  app.post("/api/v1/skip-timing/:timingId/report", async (request: FastifyRequest) => {
+    const { timingId } = parseOrThrow(
+      z.object({ timingId: z.string().trim().min(1) }),
+      request.params,
+    );
+
+    const body = parseOrThrow(
+      z.object({
+        reportType: z.enum(["too_early", "too_late", "wrong_segment", "incorrect"]),
+        suggestedStartSeconds: z.number().int().min(0).optional().nullable().default(null),
+        suggestedEndSeconds: z.number().int().min(1).optional().nullable().default(null),
+        reporterAnilistId: z.number().int().min(1).optional().nullable().default(null),
+      }),
+      request.body,
+    );
+
+    if (body.suggestedStartSeconds !== null && body.suggestedEndSeconds !== null) {
+      if (body.suggestedStartSeconds >= body.suggestedEndSeconds) {
+        throw new AppError("bad_request", "suggested timing must have start before end", 400);
+      }
+    }
+
+    await metadata.reportTiming(timingId, {
+      reportType: body.reportType,
+      suggestedStartSeconds: body.suggestedStartSeconds ?? null,
+      suggestedEndSeconds: body.suggestedEndSeconds ?? null,
+      reporterAnilistId: body.reporterAnilistId ?? null,
+    });
+
+    request.log.info(
+      { timingId, reportType: body.reportType },
+      "community skip timing reported",
+    );
+  });
+
 
   /**
    * Manifest and media resource relay (P9).
