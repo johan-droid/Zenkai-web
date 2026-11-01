@@ -32,8 +32,6 @@ export function MobileNav() {
         "pb-[env(safe-area-inset-bottom)]",
         "border-t border-surface-2/90",
         "bg-surface-1",
-        "backdrop-blur-md",
-        "shadow-[0_-8px_40px_rgba(0,0,0,0.8),0_-1px_0_0_rgba(255,255,255,0.05)_inset]",
       ].join(" ")}
       aria-label="Mobile"
     >

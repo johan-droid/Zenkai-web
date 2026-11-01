@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import { History, Play, BookOpen, X, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 

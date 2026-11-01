@@ -30,7 +30,7 @@ export function Footer() {
         <div className="flex flex-wrap gap-10">
           {navSections.map((section, index) => (
             <div key={section.title ?? index} className="flex flex-col gap-2.5">
-              <p className="text-[0.65rem] font-bold tracking-[0.15em] text-ink-3/60 uppercase">
+              <p className="text-[0.65rem] font-bold text-ink-3/60">
                 {section.title ?? "Browse"}
               </p>
               <div className="flex flex-col gap-1.5">

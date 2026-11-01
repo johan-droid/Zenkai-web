@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Bookmark, Download, History, LogOut, Menu, RefreshCw, Search, Settings, User } from "lucide-react";
 
 import { Brand } from "@/components/layout/brand";
 import { usePWA } from "@/components/providers/pwa-provider";
@@ -16,18 +17,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { navSections, isActivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
   const pathname = usePathname();
   const { isInstallable, isStandalone, installPWA } = usePWA();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout, syncNow } = useAuth();
 
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 w-full bg-surface-1 border-b border-surface-2/90 shadow-[0_1px_0_0_rgba(0,0,0,0.04)_inset]",
+        "sticky top-0 z-50 w-full bg-surface-1 border-b border-surface-2/90",
       )}
     >
       <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 sm:px-6">
@@ -69,6 +71,21 @@ export function Navbar() {
               <span>Install App</span>
             </Button>
           ) : null}
+
+          {/* Desktop Search Palette */}
+          <SearchCommand>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden h-9 w-52 justify-start gap-2 rounded-xl px-3 text-muted-foreground hover:text-foreground hover:bg-surface-2/60 sm:flex lg:w-60"
+            >
+              <Search className="size-4" />
+              <span className="text-sm">Search…</span>
+              <kbd className="ml-auto rounded-md border border-surface-2 bg-surface-1 px-1.5 py-0.5 text-[0.65rem] font-medium">
+                ⌘K
+              </kbd>
+            </Button>
+          </SearchCommand>
 
           {/* Mobile search icon — goes directly to /search */}
           <Button
@@ -120,14 +137,14 @@ export function Navbar() {
                   aria-label="User Account Menu"
                   className="flex size-9 items-center justify-center rounded-xl border-surface-2/90 bg-surface-1/12 text-signal/90 transition-colors duration-200 hover:bg-surface-1/22 hover:ring-2 hover:ring-signal/35 hover:border-signal/50"
                 >
-                  <span className="text-xs font-bold uppercase tracking-wider">
+                  <span className="text-xs font-bold">
                     {user.username.slice(0, 2)}
                   </span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="glass-strong min-w-56 border-surface-2/70 p-1.5 rounded-2xl shadow-[0_24px_48px_-12px_rgba(0,0,0,0.9)]"
+                className="glass-strong min-w-56 border-surface-2/70 p-1.5 rounded-2xl"
               >
                 <div className="flex flex-col px-2.5 py-2">
                   <span className="text-sm font-semibold text-foreground">
@@ -149,7 +166,7 @@ export function Navbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => void void syncNow()}
+                  onClick={() => void syncNow()}
                   disabled={false}
                   className="flex cursor-pointer items-center gap-2.5 rounded-xl"
                 >
@@ -230,7 +247,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
             {navSections.map((section, index) => (
               <div key={section.title ?? index} className="flex flex-col gap-0.5">
                 {section.title ? (
-                  <p className="px-3 pb-1.5 text-[0.65rem] font-semibold tracking-[0.16em] text-muted-foreground/70 uppercase">
+                  <p className="px-3 pb-1.5 text-[0.65rem] font-semibold text-muted-foreground/70">
                     {section.title}
                   </p>
                 ) : null}

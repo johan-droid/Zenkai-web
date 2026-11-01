@@ -45,11 +45,11 @@ export function Brand({
           className="relative z-10 size-full"
         >
           <path
-            fill="#b8102a"
+            className="fill-signal"
             d="M728 0H301L173 151l135-94h254L0 454h577l137-155-144 98H187L728 0Z"
           />
           <path
-            fill="rgba(240,240,248,0.92)"
+            className="fill-ink-1/90"
             d="M884 0h-93L248 377h93L884 0Z"
           />
         </svg>
@@ -65,8 +65,7 @@ export function Brand({
         >
           ZEN
           <span
-            className="relative inline-block mx-1"
-            style={{ color: "#b8102a" }}
+            className="relative inline-block mx-1 text-signal-soft"
           >
             KAI
           </span>
@@ -77,7 +76,7 @@ export function Brand({
             sizeClasses.sub,
           )}
         >
-          WATCH · READ · DISCOVER
+          Watch, Read, Discover
         </span>
       </div>
     </Link>

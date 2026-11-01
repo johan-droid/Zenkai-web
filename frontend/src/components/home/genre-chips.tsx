@@ -32,21 +32,22 @@ export function GenreChips({ className }: { className?: string }) {
                 style={{ width: `${60 + (i % 4) * 16}px` }}
               />
             ))
-          : (genres ?? []).map((genre, i) => (
-              <div
+          : (genres ?? []).map((genre) => (
+              <Link
                 key={genre}
+                href={`/anime?genre=${encodeURIComponent(genre)}`}
                 className={cn(
                   "group flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1.5",
                   "border border-surface-2/70 bg-surface-1",
                   "text-sm font-medium text-ink-2",
-                  "backdrop-blur-sm",
                   "transition-colors duration-200",
                   "hover:border-signal/45 hover:bg-signal/10 hover:text-white",
+                  "focus-ring",
                 )}
               >
                 <Hash className="size-3 text-ink-3/60 transition-colors duration-200 group-hover:text-signal" />
                 {genre}
-              </div>
+              </Link>
             ))}
       </div>
     </section>

@@ -158,8 +158,8 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-sans);
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   --radius-sm: calc(var(--radius-control) - 0.125rem);
@@ -185,7 +185,7 @@
   body {
     background: var(--surface-0);
     color: var(--ink-1);
-    font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-sans);
     font-size: var(--text-md);
     line-height: 1.55;
     font-synthesis: none;
@@ -197,7 +197,7 @@
   h2,
   h3,
   h4 {
-    font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-display);
     font-weight: 800;
     letter-spacing: -0.025em;
     line-height: 1.06;
