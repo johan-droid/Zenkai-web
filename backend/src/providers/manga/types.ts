@@ -82,6 +82,7 @@ export interface ProviderChapter {
   pages: number;
   publishedAt?: number | null;
   scanlationGroup?: string | null;
+  externalUrl?: string | null;
 }
 
 /**

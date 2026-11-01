@@ -908,6 +908,7 @@ export const mangaChapterSchema = z.object({
   pages: z.number().nullish(),
   publishedAt: z.union([z.string(), z.number()]).nullish(),
   scanlationGroup: z.string().nullish(),
+  externalUrl: z.string().nullish(),
 });
 
 export type MangaChapter = z.infer<typeof mangaChapterSchema>;

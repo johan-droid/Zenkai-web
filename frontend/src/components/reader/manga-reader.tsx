@@ -189,6 +189,16 @@ export function MangaReader({
           <p className="text-sm text-red-400">
             Could not load this chapter: {(error as Error).message}
           </p>
+          {chapter?.externalUrl ? (
+            <Button
+              className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30"
+              asChild
+            >
+              <a href={chapter.externalUrl} target="_blank" rel="noopener noreferrer">
+                Read on {chapter.scanlationGroup || "Official Provider"} ↗
+              </a>
+            </Button>
+          ) : null}
           <Button variant="outline" className="glass rounded-xl" asChild>
             <Link href={mangaRoute}>Back to title</Link>
           </Button>
@@ -219,6 +229,16 @@ export function MangaReader({
           <p className="text-sm text-zinc-400">
             This chapter has no readable pages hosted directly.
           </p>
+          {chapter.externalUrl ? (
+            <Button
+              className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30"
+              asChild
+            >
+              <a href={chapter.externalUrl} target="_blank" rel="noopener noreferrer">
+                Read on {chapter.scanlationGroup || "Official Provider"} ↗
+              </a>
+            </Button>
+          ) : null}
           <Button variant="outline" className="glass rounded-xl" asChild>
             <Link href={mangaRoute}>Back to title</Link>
           </Button>
@@ -604,14 +624,27 @@ function resolveChapter(
 ): MangaChapter | null {
   if (!items?.length) return null;
 
-  const exact = items.find((item) => Number(item.chapterNumber) === chapterNumber);
-  if (exact) return exact;
+  // Exact chapter match: prefer readable entries (pages > 0 and no externalUrl) over external placeholders
+  const exactMatches = items.filter((item) => Number(item.chapterNumber) === chapterNumber);
+  if (exactMatches.length > 0) {
+    const readable = exactMatches.find((item) => (item.pages ?? 0) > 0 && !item.externalUrl);
+    return readable ?? exactMatches[0];
+  }
 
   const numeric = items
     .map((item) => ({ item, value: Number(item.chapterNumber) }))
     .filter((entry) => Number.isFinite(entry.value))
     .sort((a, b) => a.value - b.value);
 
-  const below = [...numeric].reverse().find((entry) => entry.value <= chapterNumber);
-  return below?.item ?? numeric[0]?.item ?? items[0] ?? null;
+  const belowMatches = [...numeric].reverse().filter((entry) => entry.value <= chapterNumber);
+  if (belowMatches.length > 0) {
+    const targetValue = belowMatches[0].value;
+    const sameValueGroup = belowMatches.filter((entry) => entry.value === targetValue);
+    const readable = sameValueGroup.find(
+      (entry) => (entry.item.pages ?? 0) > 0 && !entry.item.externalUrl,
+    );
+    return readable?.item ?? sameValueGroup[0].item;
+  }
+
+  return numeric[0]?.item ?? items[0] ?? null;
 }

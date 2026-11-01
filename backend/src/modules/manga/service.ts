@@ -335,7 +335,22 @@ export class MangaService {
 
     try {
       const list = await this.repo.listChapters(localId, language);
-      if (list.length > 0) return list;
+      if (list.length > 0) {
+        const extUrlMap = new Map<string, string | null>();
+        for (const ch of value) {
+          if (ch.externalUrl) {
+            extUrlMap.set(ch.externalId, ch.externalUrl);
+            extUrlMap.set(ch.chapterNumber, ch.externalUrl);
+          }
+        }
+        return list.map((item) => ({
+          ...item,
+          externalUrl:
+            extUrlMap.get(item.mangadexChapterId ?? item.id) ??
+            extUrlMap.get(item.chapterNumber) ??
+            null,
+        }));
+      }
     } catch {
       // DB offline
     }
@@ -350,6 +365,7 @@ export class MangaService {
       pages: ch.pages,
       scanlationGroup: ch.scanlationGroup,
       publishedAt: ch.publishedAt ? new Date(ch.publishedAt) : null,
+      externalUrl: ch.externalUrl ?? null,
     }));
   }
 
@@ -395,13 +411,26 @@ export class MangaService {
     let upstream;
     const isZenkaiId = String(upstreamId).length === 26 || String(upstreamId).startsWith("01");
     if (isZenkaiId) {
-      upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+      try {
+        upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+      } catch {
+        return { pageCount: 0, pages: [] };
+      }
     } else {
       try {
         upstream = await this.provider.getChapterPages(String(upstreamId));
       } catch {
-        upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+        try {
+          upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+        } catch {
+          // Both providers failed or chapter is an external release with no hosted pages
+          return { pageCount: 0, pages: [] };
+        }
       }
+    }
+
+    if (!upstream || !upstream.pages || upstream.pages.length === 0) {
+      return { pageCount: 0, pages: [] };
     }
 
     await this.repo.replaceChapterPages(localChapterId, upstream).catch(() => undefined);

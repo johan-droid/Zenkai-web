@@ -484,5 +484,6 @@ function toChapter(resource: MangadexChapterResource): ProviderChapter | null {
     pages: attributes.pages ?? 0,
     publishedAt: attributes.publishAt ? Date.parse(attributes.publishAt) : null,
     scanlationGroup: group ?? null,
+    externalUrl: attributes.externalUrl ?? null,
   };
 }

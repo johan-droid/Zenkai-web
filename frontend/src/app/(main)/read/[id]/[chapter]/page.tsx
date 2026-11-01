@@ -1,17 +1,4 @@
-"use client";
-
-import { useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
-
-import { MangaReader } from "@/components/reader/manga-reader";
-import { EmptyState } from "@/components/common/empty-state";
-import { SearchX } from "lucide-react";
-import {
-  fetchMangaDetail,
-  classifyMangaError,
-  cleanImageUrl,
-} from "@/lib/api/zenkai";
+import { ReadView } from "@/components/reader/read-view";
 
 /**
  * Manga reader route (P17).
@@ -26,89 +13,13 @@ import {
  * contract failure is an unavailable title, and a partial payload is never
  * rendered as a full reader.
  */
-export default function ReadPage() {
-  const params = useParams();
-  const anilistId = params.id as string;
-  const chapterNumber = Number(params.chapter as string);
-
-  const media = useQuery({
-    queryKey: ["read-media", anilistId],
-    queryFn: () => fetchMangaDetail(anilistId),
-    enabled: Boolean(anilistId && anilistId !== "undefined"),
-    staleTime: 10 * 60_000,
-  });
-
-  const title =
-    media.data?.titles?.primary ??
-    media.data?.canonicalTitle ??
-    (media.data as { title?: string } | undefined)?.title ??
-    "";
-
-  const mangaId = media.data?.mangadexId ?? media.data?.id ?? null;
-
-  if (!Number.isFinite(chapterNumber) || chapterNumber < 0) {
-    return (
-      <EmptyState
-        icon={SearchX}
-        title="Invalid chapter"
-        description={`"${params.chapter as string}" is not a chapter number.`}
-      />
-    );
-  }
-
-  if (media.isLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center gap-3">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Finding this title...</span>
-      </div>
-    );
-  }
-
-  if (media.isError) {
-    const failure = classifyMangaError(media.error);
-    if (failure === "not_found") {
-      return (
-        <EmptyState
-          icon={SearchX}
-          title="Title not found"
-          description={title
-            ? `"${title}" could not be found in the manga catalogue. Try browsing Manga titles instead.`
-            : "This title could not be found in the manga catalogue."}
-        />
-      );
-    }
-    return (
-      <EmptyState
-        icon={SearchX}
-        title="Could not load this title"
-        description={failure === "invalid_response"
-          ? "This title returned data the reader could not understand."
-          : "The manga service could not answer just now. Try again in a moment."}
-      />
-    );
-  }
-
-  if (!mangaId) {
-    return (
-      <EmptyState
-        icon={SearchX}
-        title="No readable edition found"
-        description={title
-          ? `"${title}" is in the catalogue but has no readable edition available yet.`
-          : "This title has no readable edition available yet."}
-      />
-    );
-  }
-
-  return (
-    <MangaReader
-      mangaId={mangaId}
-      anilistId={anilistId}
-      chapterNumber={chapterNumber}
-      title={title}
-      coverUrl={cleanImageUrl(media.data?.coverImageLarge ?? media.data?.coverUrl)}
-    />
-  );
+export default async function ReadPage({
+  params,
+}: {
+  params: Promise<{ id: string; chapter: string }>;
+}) {
+  const { id, chapter } = await params;
+  return <ReadView id={id} chapter={chapter} />;
 }
+
 
