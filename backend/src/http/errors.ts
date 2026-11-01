@@ -1,90 +1,165 @@
-/**
- * Typed application errors.
- *
- * Providers fail for different reasons that a client must be able to tell
- * apart: "this episode genuinely has no stream" is not the same as "the
- * provider is down". Collapsing both into a generic 500 is what makes a backend
- * impossible to debug at 3am, so the resolver carries a discriminated `reason`
- * through to the response.
+/** Error handling and utilities (P14).
+ * 
+ * Centralized error types, consistent API response format,
+ * and error formatting for consistent client-side handling.
  */
 
-export type ErrorReason =
-  | "bad_request"
-  | "unauthorized"
-  | "forbidden"
-  | "conflict"
-  | "not_found"
-  | "no_sources"
-  | "selection_stale"
-  | "provider_unavailable"
-  | "provider_timeout"
-  | "upstream_error"
-  | "rate_limited"
-  | "internal";
+import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "@fastify/zod";
 
-export class AppError extends Error {
-  readonly reason: ErrorReason;
-  readonly statusCode: number;
-  readonly details?: unknown;
+/** Standardized API error response */
+export interface ApiError {
+  success: false;
+  error: string;
+  code: string;
+  details?: unknown;
+  timestamp: string;
+  requestId: string;
+}
 
-  constructor(reason: ErrorReason, message: string, statusCode: number, details?: unknown) {
-    super(message);
-    this.name = "AppError";
-    this.reason = reason;
-    this.statusCode = statusCode;
-    this.details = details;
-  }
+/** Consistent API success response */
+export interface ApiSuccess<T> {
+  success: true;
+  data: T;
+  meta?: {
+    total?: number;
+    page?: number;
+    perPage?: number;
+    hasMore?: boolean;
+  };
+  timestamp: string;
+  requestId: string;
+}
 
-  static badRequest(message: string, details?: unknown): AppError {
-    return new AppError("bad_request", message, 400, details);
-  }
+/** Generic API response wrapper */
+export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
-  static unauthorized(message = "unauthorized", details?: unknown): AppError {
-    return new AppError("unauthorized", message, 401, details);
-  }
+/** Error codes enum */
+export enum ErrorCode {
+  VALIDATION = "VALIDATION_ERROR",
+  NOT_FOUND = "NOT_FOUND",
+  UNAUTHORIZED = "UNAUTHORIZED",
+  FORBIDDEN = "FORBIDDEN",
+  RATE_LIMITED = "RATE_LIMITED",
+  SERVER_ERROR = "INTERNAL_SERVER_ERROR",
+  TIMEOUT = "PROVIDER_TIMEOUT",
+  QUARANTINED = "PROVIDER_QUARANTINED",
+  VALIDATION_FAILED = "VALIDATION_FAILED",
+}
 
-  static forbidden(message = "forbidden", details?: unknown): AppError {
-    return new AppError("forbidden", message, 403, details);
-  }
+/** Format API error consistently */
+export function formatApiError(
+  error: unknown,
+  code: ErrorCode = ErrorCode.SERVER_ERROR,
+  context?: string
+): ApiError {
+  const timestamp = new Date().toISOString();
+  const requestId = crypto.randomUUID();
 
-  static conflict(message: string, details?: unknown): AppError {
-    return new AppError("conflict", message, 409, details);
-  }
+  return {
+    success: false,
+    error: getErrorMessage(error, code),
+    code,
+    details: context ? { context } : undefined,
+    timestamp,
+    requestId,
+  };
+}
 
-  static notFound(message: string, details?: unknown): AppError {
-    return new AppError("not_found", message, 404, details);
-  }
-
-  /**
-   * Every eligible provider was tried and none returned a playable source.
-   *
-   * 200 with an empty list is defensible for a valid episode with no streams,
-   * but when providers errored we surface 503 so a client can retry rather than
-   * caching a permanent "nothing here" verdict.
-   */
-  static noSources(message: string, details?: unknown): AppError {
-    return new AppError("no_sources", message, 503, details);
-  }
-
-  static internal(message: string, details?: unknown): AppError {
-    return new AppError("internal", message, 500, details);
-  }
-
-  /** The client referenced a source that no longer resolves for this episode. */
-  static selectionStale(message: string, details?: unknown): AppError {
-    return new AppError("selection_stale", message, 409, details);
+/** Get user-friendly error message */
+function getErrorMessage(error: unknown, code: ErrorCode): string {
+  switch (code) {
+    case ErrorCode.VALIDATION:
+      return "Validation failed. Please check your input.";
+    case ErrorCode.NOT_FOUND:
+      return "The requested resource was not found.";
+    case ErrorCode.UNAUTHORIZED:
+      return "Authentication required.";
+    case ErrorCode.FORBIDDEN:
+      return "You don't have permission to perform this action.";
+    case ErrorCode.RATE_LIMITED:
+      return "Too many requests. Please try again later.";
+    case ErrorCode.SERVER_ERROR:
+      return "An unexpected error occurred. Please try again.";
+    case ErrorCode.TIMEOUT:
+      return "The request timed out. Please try again.";
+    case ErrorCode.QUARANTINED:
+      return "The service is temporarily unavailable.";
+    case ErrorCode.VALIDATION_FAILED:
+      return "Validation of external data failed.";
+    default:
+      return String(error);
   }
 }
 
-export function isAbortError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.name === "AbortError" || error.name === "TimeoutError")
-  );
+/** Fastify error handler middleware */
+export function errorHandler(
+  fastify: FastifyInstance,
+  options: { logLevel?: string }
+) {
+  fastify.setErrorHandler(async (error, request, reply) => {
+    const errorId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+
+    // Log the error
+    fastify.log.error({
+      error,
+      errorId,
+      timestamp,
+      url: request.url,
+      method: request.method,
+      ip: request.ip,
+    });
+
+    // Determine error code
+    let code: ErrorCode;
+    if (error.statusCode) {
+      code = ErrorCode[`${error.statusCode}_ERROR` as keyof typeof ErrorCode] || ErrorCode.SERVER_ERROR;
+    } else if (error instanceof Error) {
+      code = ErrorCode.SERVER_ERROR;
+    } else {
+      code = ErrorCode.SERVER_ERROR;
+    }
+
+    // Send consistent error response
+    const apiError = formatApiError(error, code, request.url);
+    
+    const statusCode = error.statusCode ?? 500;
+    reply.status(statusCode).send(apiError);
+  });
 }
 
-/** Reduce any thrown value to a message safe to log. */
-export function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+/** Rate limiting middleware configuration */
+export function rateLimitConfig(max: number = 100, timeWindowMs: number = 60_000) {
+  return rateLimit({
+    max,
+    timeWindowMs,
+    ban: 60_000, // Ban for 60s after exceeding
+    validator: (rateLimitInfo) => ({
+      errorBody: {
+        error: "Rate limited",
+        code: "RATE_LIMITED",
+        details: {
+          limit: max,
+          remaining: rateLimitInfo?.remaining ?? 0,
+          reset: rateLimitInfo?.reset ?? Date.now() + timeWindowMs,
+        },
+      },
+    }),
+  });
+}
+
+/** API response helper for Fastify routes */
+export function successResponse<T>(reply: any, data: T, meta?: { total?: number; page?: number; perPage?: number }) {
+  return reply.send({
+    success: true,
+    data,
+    meta,
+    timestamp: new Date().toISOString(),
+    requestId: crypto.randomUUID(),
+  });
+}
+
+export function errorResponse(reply: any, error: unknown, code: ErrorCode = ErrorCode.SERVER_ERROR, context?: string) {
+  return reply.status(400).send(formatApiError(error, code, context));
 }

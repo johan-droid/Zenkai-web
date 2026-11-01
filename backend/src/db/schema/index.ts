@@ -7,6 +7,7 @@ export * from "./novel.js";
 export * from "./providers.js";
 export * from "./schedule.js";
 export * from "./users.js";
+export * from "./comments.js";
 export * from "./userSessions.js";
 export * from "./library.js";
 export * from "./progress.js";
