@@ -144,3 +144,64 @@ export function weekWindow(
     to: zonedWallClockToUtc(timeZone, year, month, day - daysSinceMonday + 7, 0, 0, 0),
   };
 }
+
+/** A whole calendar month in a zone. */
+export function monthWindow(
+  date: Date,
+  timeZone: string,
+): { from: Date; to: Date } {
+  const { year, month, day } = zonedParts(date, timeZone);
+
+  return {
+    from: zonedWallClockToUtc(timeZone, year, month, 1, 0, 0, 0),
+    to: zonedWallClockToUtc(timeZone, year, month + 1, 1, 0, 0, 0),
+  };
+}
+
+/** A three-month season window (Winter/Spring/Summer/Fall) in a zone. */
+export function seasonWindow(
+  date: Date,
+  timeZone: string,
+): { from: Date; to: Date; season: string; year: number } {
+  const { year, month } = zonedParts(date, timeZone);
+
+  // Months are 1-indexed: 1=Jan, 12=Dec
+  // Winter: Dec-Feb (12,1,2), Spring: Mar-May (3,4,5), Summer: Jun-Aug (6,7,8), Fall: Sep-Nov (9,10,11)
+  if (month >= 3 && month <= 5) {
+    return {
+      from: zonedWallClockToUtc(timeZone, year, 3, 1, 0, 0, 0),
+      to: zonedWallClockToUtc(timeZone, year, 6, 1, 0, 0, 0),
+      season: "Spring",
+      year,
+    };
+  }
+
+  if (month >= 6 && month <= 8) {
+    return {
+      from: zonedWallClockToUtc(timeZone, year, 6, 1, 0, 0, 0),
+      to: zonedWallClockToUtc(timeZone, year, 9, 1, 0, 0, 0),
+      season: "Summer",
+      year,
+    };
+  }
+
+  if (month >= 9 && month <= 11) {
+    return {
+      from: zonedWallClockToUtc(timeZone, year, 9, 1, 0, 0, 0),
+      to: zonedWallClockToUtc(timeZone, year, 12, 1, 0, 0, 0),
+      season: "Fall",
+      year,
+    };
+  }
+
+  // Winter: spans December of previous year through February of season year
+  const seasonYear = month === 12 ? year + 1 : year;
+  const startYear = month === 12 ? year : year - 1;
+
+  return {
+    from: zonedWallClockToUtc(timeZone, startYear, 12, 1, 0, 0, 0),
+    to: zonedWallClockToUtc(timeZone, seasonYear, 3, 1, 0, 0, 0),
+    season: "Winter",
+    year: seasonYear,
+  };
+}

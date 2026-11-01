@@ -1058,9 +1058,64 @@ export const scheduleWeekSchema = z.object({
 
 export type ScheduleWeek = z.infer<typeof scheduleWeekSchema>;
 
+function buildScheduleParams(timeZone?: string, date?: Date): string {
+  const params = new URLSearchParams();
+  if (timeZone) params.set("timeZone", timeZone);
+  if (date) params.set("date", date.toISOString());
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 /** Canonical week schedule (P3). */
-export function fetchScheduleWeek(): Promise<ScheduleWeek> {
-  return getValidated("/api/v1/schedule/week", scheduleWeekSchema);
+export function fetchScheduleWeek(timeZone?: string, date?: Date): Promise<ScheduleWeek> {
+  return getValidated(`/api/v1/schedule/week${buildScheduleParams(timeZone, date)}`, scheduleWeekSchema);
+}
+
+/** Canonical month schedule (P3). */
+export const scheduleMonthSchema = scheduleWeekSchema;
+
+export type ScheduleMonth = ScheduleWeek;
+
+export function fetchScheduleMonth(timeZone?: string, date?: Date): Promise<ScheduleMonth> {
+  return getValidated(`/api/v1/schedule/month${buildScheduleParams(timeZone, date)}`, scheduleMonthSchema);
+}
+
+/** Canonical season schedule (P3). */
+export const scheduleSeasonSchema = scheduleWeekSchema.extend({
+  season: z.string(),
+  year: z.number(),
+});
+
+export type ScheduleSeason = z.infer<typeof scheduleSeasonSchema>;
+
+export function fetchScheduleSeason(timeZone?: string, date?: Date): Promise<ScheduleSeason> {
+  return getValidated(`/api/v1/schedule/season${buildScheduleParams(timeZone, date)}`, scheduleSeasonSchema);
+}
+
+/** Next upcoming episode (P3). */
+export const scheduleNextSchema = z.object({
+  item: scheduleEntrySchema.nullable(),
+  timeZone: z.string(),
+});
+
+export type ScheduleNext = z.infer<typeof scheduleNextSchema>;
+
+export function fetchScheduleNext(timeZone?: string): Promise<ScheduleNext> {
+  const params = timeZone ? `?timeZone=${encodeURIComponent(timeZone)}` : "";
+  return getValidated(`/api/v1/schedule/next${params}`, scheduleNextSchema);
+}
+
+/** Today schedule (P3). */
+export const scheduleTodaySchema = z.object({
+  date: z.string(),
+  timeZone: z.string(),
+  items: z.array(scheduleEntrySchema),
+});
+
+export type ScheduleToday = z.infer<typeof scheduleTodaySchema>;
+
+export function fetchScheduleToday(timeZone?: string, date?: Date): Promise<ScheduleToday> {
+  return getValidated(`/api/v1/schedule/today${buildScheduleParams(timeZone, date)}`, scheduleTodaySchema);
 }
 
 /**
@@ -1892,3 +1947,182 @@ export function novelSummaryToMedia(novel: NovelSummary): MediaSummary {
     genres: novel.genres,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Zenkai Grand Line: One Pace Integration (P2/P12)                           */
+/* -------------------------------------------------------------------------- */
+
+export const GrandLineDownloadSchema = z.object({
+  url: z.string().url(),
+  quality: z.string(),
+});
+
+export type GrandLineDownload = z.infer<typeof GrandLineDownloadSchema>;
+
+export const GrandLineEpisodeSchema = z.object({
+  id: z.string(),
+  arcId: z.string(),
+  episodeNumber: z.string(),
+  title: z.string(),
+  mangaChapters: z.string(),
+  animeEpisodes: z.string(),
+  duration: z.string(),
+  synopsis: z.string(),
+  watchUrl: z.string().url(),
+  downloads: z.array(GrandLineDownloadSchema).default([]),
+});
+
+export type GrandLineEpisode = z.infer<typeof GrandLineEpisodeSchema>;
+
+export const GrandLineArcSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  order: z.number(),
+  episodeCount: z.number(),
+  duration: z.string(),
+  mangaChapters: z.string(),
+  animeEpisodes: z.string(),
+  synopsis: z.string(),
+});
+
+export type GrandLineArcSummary = z.infer<typeof GrandLineArcSummarySchema>;
+
+export const GrandLineArcSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  sagaId: z.string(),
+  sagaName: z.string(),
+  order: z.number(),
+  mangaChapters: z.string(),
+  animeEpisodes: z.string(),
+  duration: z.string(),
+  synopsis: z.string(),
+  episodeCount: z.number(),
+  episodes: z.array(GrandLineEpisodeSchema),
+});
+
+export type GrandLineArc = z.infer<typeof GrandLineArcSchema>;
+
+export const GrandLineSagaSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number(),
+  arcCount: z.number(),
+  episodeCount: z.number(),
+  arcs: z.array(GrandLineArcSummarySchema),
+});
+
+export type GrandLineSaga = z.infer<typeof GrandLineSagaSchema>;
+
+export const GrandLineSagasResponseSchema = z.object({
+  sagas: z.array(GrandLineSagaSchema),
+});
+
+export const GrandLineArcsResponseSchema = z.object({
+  arcs: z.array(GrandLineArcSummarySchema),
+});
+
+export const GrandLineArcResponseSchema = z.object({
+  arc: GrandLineArcSchema,
+});
+
+export const GrandLineEpisodeDetailSchema = z.object({
+  episode: GrandLineEpisodeSchema,
+  arc: z.object({
+    id: z.string(),
+    title: z.string(),
+    sagaId: z.string(),
+    sagaName: z.string(),
+    order: z.number(),
+  }),
+  prevEpisode: z.object({
+    id: z.string(),
+    arcId: z.string(),
+    episodeNumber: z.string(),
+    title: z.string(),
+  }).nullable(),
+  nextEpisode: z.object({
+    id: z.string(),
+    arcId: z.string(),
+    episodeNumber: z.string(),
+    title: z.string(),
+  }).nullable(),
+});
+
+export type GrandLineEpisodeDetail = z.infer<typeof GrandLineEpisodeDetailSchema>;
+
+export const GrandLineSearchResultItemSchema = z.object({
+  episode: GrandLineEpisodeSchema,
+  arc: z.object({
+    id: z.string(),
+    title: z.string(),
+    sagaId: z.string(),
+    sagaName: z.string(),
+    order: z.number(),
+  }),
+});
+
+export type GrandLineSearchResultItem = z.infer<typeof GrandLineSearchResultItemSchema>;
+
+export const GrandLineSearchResponseSchema = z.object({
+  query: z.string(),
+  results: z.array(GrandLineSearchResultItemSchema),
+});
+
+export const GrandLineStatusSchema = z.object({
+  status: z.literal("ok"),
+  source: z.string(),
+  officialSite: z.string().url(),
+  officialRss: z.string().url(),
+  sagasCount: z.number(),
+  arcsCount: z.number(),
+  episodesCount: z.number(),
+  lastUpdated: z.string(),
+});
+
+export type GrandLineStatus = z.infer<typeof GrandLineStatusSchema>;
+
+/** Fetch all 11 sagas and their constituent arcs */
+export async function fetchGrandLineSagas(): Promise<GrandLineSaga[]> {
+  const data = await getValidated("/api/v1/grand-line/sagas", GrandLineSagasResponseSchema);
+  return data.sagas;
+}
+
+/** Fetch all 38 arcs */
+export async function fetchGrandLineArcs(): Promise<GrandLineArcSummary[]> {
+  const data = await getValidated("/api/v1/grand-line/arcs", GrandLineArcsResponseSchema);
+  return data.arcs;
+}
+
+/** Fetch a specific arc with its full episode roster */
+export async function fetchGrandLineArc(arcId: string): Promise<GrandLineArc> {
+  const data = await getValidated(`/api/v1/grand-line/arcs/${encodeURIComponent(arcId)}`, GrandLineArcResponseSchema);
+  return data.arc;
+}
+
+/** Fetch an episode with adjacent chapter/episode navigation */
+export async function fetchGrandLineEpisode(
+  arcId: string,
+  episodeNumber: string,
+): Promise<GrandLineEpisodeDetail> {
+  return getValidated(
+    `/api/v1/grand-line/arcs/${encodeURIComponent(arcId)}/episodes/${encodeURIComponent(episodeNumber)}`,
+    GrandLineEpisodeDetailSchema,
+  );
+}
+
+/** Search One Pace catalog by query, chapter number, or anime episode number */
+export async function searchGrandLine(query: string, limit = 20): Promise<GrandLineSearchResultItem[]> {
+  const data = await getValidated(
+    `/api/v1/grand-line/search`,
+    GrandLineSearchResponseSchema,
+    { q: query, limit: String(limit) },
+  );
+  return data.results;
+}
+
+/** Fetch catalog metadata freshness and status */
+export async function fetchGrandLineStatus(): Promise<GrandLineStatus> {
+  return getValidated("/api/v1/grand-line/status", GrandLineStatusSchema);
+}
+

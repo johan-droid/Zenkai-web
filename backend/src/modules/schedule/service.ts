@@ -20,7 +20,9 @@ import { AppError } from "../../http/errors.js";
 import {
   airingStateAt,
   localDateKey,
+  monthWindow,
   secondsUntil,
+  seasonWindow,
   startOfDay,
   startOfNextDay,
   weekWindow,
@@ -299,36 +301,38 @@ export class ScheduleService {
   }
 
   /**
-   * Today's schedule in the configured calendar zone.
+   * Today's schedule in the configured calendar zone (or requested zone and date).
    *
-   * The window is a civil day in `SCHEDULE_TIMEZONE`, not a 24 hour span from
+   * The window is a civil day in the zone, not a 24 hour span from
    * "now" and not the server's local day. The returned key is the local calendar
    * date, so a client can label the day without recomputing the zone itself.
    */
-  async today(): Promise<{ date: string; timeZone: string; items: Record<string, any>[] }> {
-    const now = this.now();
-    const from = startOfDay(now, this.timeZone);
-    const to = startOfNextDay(now, this.timeZone);
+  async today(timeZone?: string, date?: Date): Promise<{ date: string; timeZone: string; items: Record<string, any>[] }> {
+    const target = date ?? this.now();
+    const tz = timeZone ?? this.timeZone;
+    const from = startOfDay(target, tz);
+    const to = startOfNextDay(target, tz);
 
     return {
-      date: localDateKey(now, this.timeZone),
-      timeZone: this.timeZone,
+      date: localDateKey(target, tz),
+      timeZone: tz,
       items: await this.list({ from, to }),
     };
   }
 
   /**
-   * The current calendar week, Monday to Sunday, in the configured zone.
+   * The current calendar week, Monday to Sunday, in the configured zone (or requested zone and date).
    */
-  async week(): Promise<{ from: string; to: string; timeZone: string; days: Record<string, any>[] }> {
-    const now = this.now();
-    const { from, to } = weekWindow(now, this.timeZone);
+  async week(timeZone?: string, date?: Date): Promise<{ from: string; to: string; timeZone: string; days: Record<string, any>[] }> {
+    const target = date ?? this.now();
+    const tz = timeZone ?? this.timeZone;
+    const { from, to } = weekWindow(target, tz);
 
     return {
       from: from.toISOString(),
       to: to.toISOString(),
-      timeZone: this.timeZone,
-      days: await this.grouped({ from, to }),
+      timeZone: tz,
+      days: await this.grouped({ from, to, timeZone: tz }),
     };
   }
 
@@ -355,19 +359,89 @@ export class ScheduleService {
     }));
   }
 
+  /** The calendar month in the configured zone (or requested zone and date). */
+  async month(timeZone?: string, date?: Date): Promise<{ from: string; to: string; timeZone: string; days: Record<string, any>[] }> {
+    const target = date ?? this.now();
+    const tz = timeZone ?? this.timeZone;
+    const { from, to } = monthWindow(target, tz);
+
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timeZone: tz,
+      days: await this.grouped({ from, to, timeZone: tz }),
+    };
+  }
+
+  /** The three-month season in the configured zone (or requested zone and date). */
+  async season(timeZone?: string, date?: Date): Promise<{ from: string; to: string; timeZone: string; season: string; year: number; days: Record<string, any>[] }> {
+    const target = date ?? this.now();
+    const tz = timeZone ?? this.timeZone;
+    const { from, to, season, year } = seasonWindow(target, tz);
+
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timeZone: tz,
+      season,
+      year,
+      days: await this.grouped({ from, to, timeZone: tz }),
+    };
+  }
+
+  /** The single nearest upcoming episode across all titles. */
+  async next(timeZone?: string): Promise<{ item: Record<string, any> | null; timeZone: string }> {
+    const now = this.now();
+    const tz = timeZone ?? this.timeZone;
+    const rows = await this.db
+      .select({
+        scheduleId: airingSchedule.id,
+        episodeNumber: airingSchedule.episodeNumber,
+        airingAt: airingSchedule.airingAt,
+        status: airingSchedule.status,
+        source: airingSchedule.source,
+        animeId: anime.id,
+        anilistId: anime.anilistId,
+        title: anime.canonicalTitle,
+        coverUrl: anime.coverUrl,
+        totalEpisodes: anime.totalEpisodes,
+        slug: anime.slug,
+      })
+      .from(airingSchedule)
+      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+      .where(gt(airingSchedule.airingAt, now))
+      .orderBy(asc(airingSchedule.airingAt))
+      .limit(1);
+
+    const readAt = this.now();
+    const item = rows[0]
+      ? {
+          ...rows[0],
+          airingState: airingStateAt(rows[0].airingAt, readAt),
+          providerStatus: rows[0].status,
+          secondsUntil: secondsUntil(rows[0].airingAt, readAt),
+        }
+      : null;
+
+    return { item, timeZone: tz };
+  }
+
   /**
-   * Group a schedule into days for `GET /schedule/week`.
+   * Group a schedule into days for `GET /schedule/week`, month, and season views.
    *
-   * Grouping lives here so the week view and a future season view share a shape.
+   * Grouping lives here so the week view, month view, and season view share a shape.
+   * Days are keyed by `localDateKey` in the requested timezone so episodes air on
+   * the local calendar day they are seen by the viewer.
    */
   async grouped(
-    options: { from?: Date; to?: Date } = {},
+    options: { from?: Date; to?: Date; timeZone?: string } = {},
   ): Promise<Array<{ date: string; dayOfWeek: string; entries: Record<string, any>[] }>> {
+    const tz = options.timeZone ?? this.timeZone;
     const rows = await this.list({ ...options, limit: 500 });
     const groups = new Map<string, Record<string, any>[]>();
 
     for (const row of rows) {
-      const key = row.airingAt.toISOString().slice(0, 10);
+      const key = localDateKey(row.airingAt, tz);
       const bucket = groups.get(key);
       if (bucket) bucket.push(row);
       else groups.set(key, [row]);

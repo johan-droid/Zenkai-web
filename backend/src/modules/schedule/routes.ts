@@ -26,6 +26,7 @@ function parseOrThrow<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infe
 const windowQuery = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
+  timeZone: z.string().optional(),
 });
 
 /** Bounded pagination. Rejected, not clamped, so a client bug stays visible. */
@@ -38,6 +39,11 @@ const recentQuery = paged.extend({
   withinDays: z.coerce.number().int().min(1).max(90).default(14),
 });
 
+const horizonQuery = z.object({
+  timeZone: z.string().optional(),
+  date: z.coerce.date().optional(),
+});
+
 export function registerScheduleRoutes(app: FastifyInstance, service: ScheduleService): void {
   /** Everything airing within an explicit window, or a sensible default. */
   app.get("/api/v1/schedule", async (request) => {
@@ -48,14 +54,37 @@ export function registerScheduleRoutes(app: FastifyInstance, service: ScheduleSe
   /**
    * Today's releases.
    *
-   * "Today" is a calendar day in `SCHEDULE_TIMEZONE`, and the response says
-   * which zone that was so a client never has to guess. A rolling 24 hour window
-   * would split one broadcast day across two pages.
+   * "Today" is a calendar day in the requested zone (defaults to `SCHEDULE_TIMEZONE`),
+   * and the response says which zone that was so a client never has to guess.
    */
-  app.get("/api/v1/schedule/today", async () => service.today());
+  app.get("/api/v1/schedule/today", async (request) => {
+    const query = parseOrThrow(horizonQuery, request.query);
+    return service.today(query.timeZone, query.date);
+  });
 
-  /** The current calendar week, Monday to Sunday, in the configured zone. */
-  app.get("/api/v1/schedule/week", async () => service.week());
+  /** The calendar week, Monday to Sunday, in the configured zone. */
+  app.get("/api/v1/schedule/week", async (request) => {
+    const query = parseOrThrow(horizonQuery, request.query);
+    return service.week(query.timeZone, query.date);
+  });
+
+  /** The calendar month in the requested zone (defaults to server config). */
+  app.get("/api/v1/schedule/month", async (request) => {
+    const query = parseOrThrow(horizonQuery, request.query);
+    return service.month(query.timeZone, query.date);
+  });
+
+  /** The three-month season in the requested zone (defaults to server config). */
+  app.get("/api/v1/schedule/season", async (request) => {
+    const query = parseOrThrow(horizonQuery, request.query);
+    return service.season(query.timeZone, query.date);
+  });
+
+  /** The single nearest upcoming episode across all titles. */
+  app.get("/api/v1/schedule/next", async (request) => {
+    const query = parseOrThrow(z.object({ timeZone: z.string().optional() }), request.query);
+    return service.next(query.timeZone);
+  });
 
   /**
    * Upcoming episodes, soonest first.

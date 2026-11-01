@@ -16,7 +16,9 @@ import { describe, it } from "node:test";
 import {
   airingStateAt,
   localDateKey,
+  monthWindow,
   secondsUntil,
+  seasonWindow,
   startOfDay,
   startOfNextDay,
   weekWindow,
@@ -135,5 +137,96 @@ describe("week window", () => {
     // 02:00Z on Monday is already Monday 11:00 in Tokyo, but the same instant
     // is still within the previous week when Tokyo is the reference.
     assert.notEqual(utc.from.toISOString(), tokyo.from.toISOString());
+  });
+});
+
+describe("month window", () => {
+  it("covers the full calendar month in UTC", () => {
+    const { from, to } = monthWindow(at("2026-10-15T12:00:00Z"), "UTC");
+    assert.equal(from.toISOString(), "2026-10-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-11-01T00:00:00.000Z");
+  });
+
+  it("starts the month at local midnight for a zone ahead of UTC", () => {
+    // Tokyo is UTC+9, so October 1 in Tokyo begins at Sept 30 15:00Z
+    const { from } = monthWindow(at("2026-10-15T12:00:00Z"), "Asia/Tokyo");
+    assert.equal(from.toISOString(), "2026-09-30T15:00:00.000Z");
+  });
+
+  it("handles year boundary in December", () => {
+    const { from, to } = monthWindow(at("2026-12-15T12:00:00Z"), "UTC");
+    assert.equal(from.toISOString(), "2026-12-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2027-01-01T00:00:00.000Z");
+  });
+
+  it("respects the configured zone rather than the server clock", () => {
+    const utc = monthWindow(at("2026-10-05T02:00:00Z"), "UTC");
+    const tokyo = monthWindow(at("2026-10-05T02:00:00Z"), "Asia/Tokyo");
+    // Tokyo month begins at Sept 30 15:00 UTC, whereas UTC month begins at Oct 1 00:00 UTC.
+    assert.notEqual(utc.from.toISOString(), tokyo.from.toISOString());
+  });
+});
+
+describe("season window", () => {
+  it("Spring season covers March-May", () => {
+    const { from, to, season, year } = seasonWindow(at("2026-04-15T12:00:00Z"), "UTC");
+    assert.equal(season, "Spring");
+    assert.equal(year, 2026);
+    assert.equal(from.toISOString(), "2026-03-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-06-01T00:00:00.000Z");
+  });
+
+  it("Summer season covers June-August", () => {
+    const { from, to, season, year } = seasonWindow(at("2026-07-15T12:00:00Z"), "UTC");
+    assert.equal(season, "Summer");
+    assert.equal(year, 2026);
+    assert.equal(from.toISOString(), "2026-06-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-09-01T00:00:00.000Z");
+  });
+
+  it("Fall season covers September-November", () => {
+    const { from, to, season, year } = seasonWindow(at("2026-10-15T12:00:00Z"), "UTC");
+    assert.equal(season, "Fall");
+    assert.equal(year, 2026);
+    assert.equal(from.toISOString(), "2026-09-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-12-01T00:00:00.000Z");
+  });
+
+  it("Winter season starting December spans year boundary", () => {
+    const { from, to, season, year } = seasonWindow(at("2026-12-15T12:00:00Z"), "UTC");
+    assert.equal(season, "Winter");
+    assert.equal(year, 2027);
+    assert.equal(from.toISOString(), "2026-12-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2027-03-01T00:00:00.000Z");
+  });
+
+  it("Winter season January belongs to Winter starting previous December", () => {
+    const { from, to, season, year } = seasonWindow(at("2027-01-15T12:00:00Z"), "UTC");
+    assert.equal(season, "Winter");
+    assert.equal(year, 2027);
+    assert.equal(from.toISOString(), "2026-12-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2027-03-01T00:00:00.000Z");
+  });
+
+  it("February belongs to Winter starting previous December", () => {
+    const { from, to, season, year } = seasonWindow(at("2027-02-15T12:00:00Z"), "UTC");
+    assert.equal(season, "Winter");
+    assert.equal(year, 2027);
+    assert.equal(from.toISOString(), "2026-12-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2027-03-01T00:00:00.000Z");
+  });
+
+  it("handles leap year in February", () => {
+    // 2028 is a leap year (Feb 29 exists)
+    const feb29 = at("2028-02-29T12:00:00Z");
+    const { from, to, season, year } = seasonWindow(feb29, "UTC");
+    assert.equal(season, "Winter");
+    assert.equal(year, 2028);
+    assert.equal(from.toISOString(), "2027-12-01T00:00:00.000Z");
+    assert.equal(to.toISOString(), "2028-03-01T00:00:00.000Z");
+
+    const monthWin = monthWindow(feb29, "UTC");
+    assert.equal(monthWin.from.toISOString(), "2028-02-01T00:00:00.000Z");
+    assert.equal(monthWin.to.toISOString(), "2028-03-01T00:00:00.000Z");
   });
 });

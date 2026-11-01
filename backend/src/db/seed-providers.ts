@@ -217,7 +217,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: false,
-    isActive: true,
+    // Disabled 2026-11-01: smoke test returns a "410 file deleted" error page.
+    isActive: false,
     sortOrder: 14,
   },
   {
@@ -231,7 +232,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: false,
-    isActive: true,
+    // Disabled 2026-11-01: smoke test returns the same 410 error page as megaplay-sub.
+    isActive: false,
     sortOrder: 15,
   },
   {
@@ -287,7 +289,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: false,
-    isActive: true,
+    // Disabled 2026-11-01: /e/ route returns 404 (site root still up; path changed).
+    isActive: false,
     sortOrder: 19,
   },
   {
@@ -315,7 +318,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: false,
-    isActive: true,
+    // Disabled 2026-11-01: smoke test returns a "410 file deleted" error page.
+    isActive: false,
     sortOrder: 21,
   },
   {
@@ -329,7 +333,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: false,
-    isActive: true,
+    // Disabled 2026-11-01: same 410 failure family as the other megaplay rows.
+    isActive: false,
     sortOrder: 22,
   },
   {
@@ -385,7 +390,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: false,
-    isActive: true,
+    // Disabled 2026-11-01: /e/ route returns 404 (same as sub).
+    isActive: false,
     sortOrder: 26,
   },
   {
@@ -441,7 +447,8 @@ const RAW_ROWS: RawProviderRow[] = [
     isDirectStream: false,
     isEmbedOnly: true,
     isMultiAudio: true,
-    isActive: true,
+    // Disabled 2026-11-01: /episode/ path 404s (site root still up; needs re-mapping).
+    isActive: false,
     sortOrder: 29,
   },
   {
