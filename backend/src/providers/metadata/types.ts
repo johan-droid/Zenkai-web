@@ -162,6 +162,19 @@ export interface AnimeMetadataProvider {
   getByExternalId(idType: string, externalId: string): Promise<AnimeDetail | null>;
   /** Upcoming slots; AniList returns several, other providers return one. */
   getAiringSlots(anilistId: string): Promise<AiringSlot[]>;
+  /** Airing schedule across all titles for a time window. */
+  getAiringSchedule?(from: Date, to: Date, limit?: number): Promise<Array<{
+    scheduleId: string;
+    episodeNumber: number;
+    airingAt: Date;
+    status: string;
+    source: string;
+    animeId: string;
+    anilistId: string;
+    title: string;
+    coverUrl: string | null;
+    totalEpisodes: number | null;
+  }>>;
   /** Cheap liveness probe for the health monitor. */
   healthCheck(): Promise<boolean>;
 }

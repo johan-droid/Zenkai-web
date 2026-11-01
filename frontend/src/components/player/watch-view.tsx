@@ -359,6 +359,19 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     setCountdownState(null);
   }, []);
 
+  const togglePauseCountdown = useCallback(() => {
+    const controller = countdownControllerRef.current;
+    if (!controller) return;
+    const currentState = controller.getState();
+    if (currentState === "counting") {
+      controller.pause();
+      setCountdownState((prev) => (prev ? { ...prev, isPaused: true } : null));
+    } else if (currentState === "paused") {
+      controller.resume();
+      setCountdownState((prev) => (prev ? { ...prev, isPaused: false } : null));
+    }
+  }, []);
+
   const goNext = useCallback(() => {
     countdownControllerRef.current?.destroy();
     countdownControllerRef.current = null;
@@ -547,6 +560,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
                   isPaused={countdownState.isPaused}
                   onPlayNow={goNext}
                   onCancel={cancelCountdown}
+                  onTogglePause={togglePauseCountdown}
                 />
               ) : null
             }

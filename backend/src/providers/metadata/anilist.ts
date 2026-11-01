@@ -465,6 +465,138 @@ export class AnilistProvider implements AnimeMetadataProvider {
     ];
   }
 
+  /**
+   * Airing schedule across all titles for a given time window.
+   */
+  async getAiringSchedule(
+    from: Date,
+    to: Date,
+    limit = 100,
+  ): Promise<
+    Array<{
+      scheduleId: string;
+      episodeNumber: number;
+      airingAt: Date;
+      status: string;
+      source: string;
+      animeId: string;
+      anilistId: string;
+      title: string;
+      coverUrl: string | null;
+      totalEpisodes: number | null;
+    }>
+  > {
+    const fromSec = Math.floor(from.getTime() / 1000);
+    const toSec = Math.floor(to.getTime() / 1000);
+    const gql = `
+      query ($from: Int, $to: Int, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            hasNextPage
+          }
+          airingSchedules(airingAt_greater: $from, airingAt_lesser: $to) {
+            id
+            airingAt
+            episode
+            mediaId
+            media {
+              id
+              title {
+                romaji
+                english
+                native
+              }
+              coverImage {
+                large
+                medium
+              }
+              format
+              status
+              episodes
+              isAdult
+            }
+          }
+        }
+      }
+    `;
+
+    const results: Array<{
+      scheduleId: string;
+      episodeNumber: number;
+      airingAt: Date;
+      status: string;
+      source: string;
+      animeId: string;
+      anilistId: string;
+      title: string;
+      coverUrl: string | null;
+      totalEpisodes: number | null;
+    }> = [];
+
+    let page = 1;
+    let hasNext = true;
+
+    while (hasNext && results.length < limit) {
+      const perPage = Math.min(MAX_PER_PAGE, limit - results.length);
+      try {
+        const data = await this.#query<{
+          Page: {
+            pageInfo: { hasNextPage: boolean };
+            airingSchedules: Array<{
+              id: number;
+              airingAt: number;
+              episode: number;
+              mediaId: number;
+              media: {
+                id: number;
+                title?: { romaji?: string | null; english?: string | null; native?: string | null };
+                coverImage?: { large?: string | null; medium?: string | null };
+                format?: string | null;
+                status?: string | null;
+                episodes?: number | null;
+                isAdult?: boolean;
+              };
+            }>;
+          };
+        }>(gql, { from: fromSec, to: toSec, page, perPage });
+
+        const pageSchedules = data?.Page?.airingSchedules ?? [];
+        for (const slot of pageSchedules) {
+          if (!slot?.media || slot.media.isAdult) continue;
+          const anilistId = String(slot.media.id);
+          const title = displayTitle(
+            {
+              romaji: slot.media.title?.romaji ?? null,
+              english: slot.media.title?.english ?? null,
+              native: slot.media.title?.native ?? null,
+            },
+            "Untitled",
+          );
+          results.push({
+            scheduleId: `anilist-${slot.id}`,
+            episodeNumber: slot.episode,
+            airingAt: new Date(slot.airingAt * 1000),
+            status: "SCHEDULED",
+            source: "anilist",
+            animeId: anilistId,
+            anilistId,
+            title,
+            coverUrl: imageUrl(slot.media.coverImage?.medium ?? slot.media.coverImage?.large, 300, 450),
+            totalEpisodes: slot.media.episodes ?? null,
+          });
+        }
+
+        hasNext = Boolean(data?.Page?.pageInfo?.hasNextPage) && pageSchedules.length > 0;
+        page++;
+        if (page > 10) break;
+      } catch (err) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
   async healthCheck(): Promise<boolean> {
     const data = await this.#query<{ Viewer: { id: number } }>(`query { Viewer { id } }`, {});
     return typeof data?.Viewer?.id === "number";
