@@ -1,58 +1,28 @@
 "use client";
 
-import { SkipForward } from "lucide-react";
-import { useEffect, useState } from "react";
-
+import { FastForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-/**
- * Floating skip control. When `autoSkip` is on it counts down and fires on its
- * own; pressing it skips immediately.
- */
-export function SkipButton({
-  label,
-  autoSkip,
-  seconds = 5,
-  onSkip,
-}: {
+export interface SkipButtonProps {
   label: string;
-  autoSkip: boolean;
-  seconds?: number;
   onSkip: () => void;
-}) {
-  const [remaining, setRemaining] = useState(seconds);
+}
 
-  useEffect(() => {
-    if (!autoSkip) return;
-
-    const timer = setInterval(() => {
-      setRemaining((value) => {
-        if (value <= 1) {
-          clearInterval(timer);
-          onSkip();
-          return 0;
-        }
-        return value - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [autoSkip, onSkip]);
-
+/**
+ * Floating manual skip control for verified intro and outro segments.
+ * Skips immediately upon interaction with full keyboard accessibility.
+ */
+export function SkipButton({ label, onSkip }: SkipButtonProps) {
   return (
-    <div className="absolute right-4 bottom-20 z-20 sm:bottom-24">
+    <div className="absolute right-4 bottom-20 z-20 sm:bottom-24 animate-in fade-in slide-in-from-bottom-2 duration-200">
       <Button
         size="lg"
         onClick={onSkip}
-        className="glass-strong rounded-xl border-glass-border shadow-lg"
+        className="glass-strong rounded-xl border border-glass-border px-4 py-2 font-semibold shadow-2xl backdrop-blur-md transition-transform hover:scale-105 active:scale-95 bg-black/75 hover:bg-black/90 text-white"
+        aria-label={label}
       >
-        <SkipForward className="fill-current" />
-        {label}
-        {autoSkip && remaining > 0 ? (
-          <span className="ml-1 rounded-md bg-black/30 px-1.5 py-0.5 text-xs tabular-nums">
-            {remaining}
-          </span>
-        ) : null}
+        <FastForward className="mr-1.5 size-4 fill-current text-amber-400" />
+        <span>{label}</span>
       </Button>
     </div>
   );

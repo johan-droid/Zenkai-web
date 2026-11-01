@@ -24,8 +24,10 @@ import {
 } from "@/lib/api/zenkai";
 import { displayTitle } from "@/lib/media";
 import { usePlayerStore } from "@/stores/player";
+import { NextEpisodeCountdownController } from "@/lib/player/automation";
 import { EmbedPlayer } from "@/components/player/embed-player";
 import { EpisodeList } from "@/components/player/episode-list";
+import { NextEpisodeOverlay } from "@/components/player/next-episode-overlay";
 import { PlayerHotkeys } from "@/components/player/player-hotkeys";
 import { QualityMenu } from "@/components/player/quality-menu";
 import { SourceSwitcher } from "@/components/player/source-switcher";
@@ -63,6 +65,10 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   const autoplayNext = usePlayerStore((s) => s.autoplayNext);
   const playbackRate = usePlayerStore((s) => s.playbackRate);
   const autoSkip = usePlayerStore((s) => s.autoSkip);
+  const autoSkipIntro = usePlayerStore((s) => s.autoSkipIntro);
+  const autoSkipOutro = usePlayerStore((s) => s.autoSkipOutro);
+  const nextEpisodeCountdown = usePlayerStore((s) => s.nextEpisodeCountdown);
+  const showSkipButtons = usePlayerStore((s) => s.showSkipButtons);
   const theaterMode = usePlayerStore((s) => s.theaterMode);
   const volume = usePlayerStore((s) => s.volume);
   const muted = usePlayerStore((s) => s.muted);
@@ -259,14 +265,75 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   const canGoNext = nextNumber !== null && nextCard !== null && nextCard.airingState !== "upcoming";
   const canGoPrev = navigationQuery.data?.previous !== null;
 
+  const [countdownState, setCountdownState] = useState<{
+    episodeEpoch: string;
+    remaining: number;
+    isPaused: boolean;
+  } | null>(null);
+
+  const countdownControllerRef = useRef<NextEpisodeCountdownController | null>(null);
+
+  // Clean up running countdown controller when episode changes or unmounts
+  useEffect(() => {
+    return () => {
+      countdownControllerRef.current?.destroy();
+      countdownControllerRef.current = null;
+    };
+  }, [id, episodeNumber]);
+
+  const cancelCountdown = useCallback(() => {
+    countdownControllerRef.current?.cancel();
+    countdownControllerRef.current = null;
+    setCountdownState(null);
+  }, []);
+
   const goNext = useCallback(() => {
+    countdownControllerRef.current?.destroy();
+    countdownControllerRef.current = null;
+    setCountdownState(null);
     if (canGoNext && nextNumber !== null) router.push(`/watch/${id}/${nextNumber}`);
   }, [canGoNext, nextNumber, id, router]);
 
   const goPrev = useCallback(() => {
+    cancelCountdown();
     const previous = navigationQuery.data?.previous;
     if (previous !== null && previous !== undefined) router.push(`/watch/${id}/${previous}`);
-  }, [navigationQuery.data, id, router]);
+  }, [cancelCountdown, navigationQuery.data, id, router]);
+
+  const handleEnded = useCallback(() => {
+    if (!autoplayNext || !canGoNext || nextNumber === null) {
+      return;
+    }
+
+    if (nextEpisodeCountdown <= 0) {
+      goNext();
+      return;
+    }
+
+    const currentEpoch = `${id}:${episodeNumber}`;
+    countdownControllerRef.current?.destroy();
+    const controller = new NextEpisodeCountdownController({
+      durationSeconds: nextEpisodeCountdown,
+      onTick: (remaining) => {
+        setCountdownState((prev) => (prev ? { ...prev, remaining } : null));
+      },
+      onComplete: () => {
+        setCountdownState(null);
+        goNext();
+      },
+      onCancel: () => {
+        setCountdownState(null);
+      },
+    });
+
+    countdownControllerRef.current = controller;
+    setCountdownState({
+      episodeEpoch: currentEpoch,
+      remaining: nextEpisodeCountdown,
+      isPaused: false,
+    });
+    controller.start();
+  }, [autoplayNext, canGoNext, nextNumber, nextEpisodeCountdown, goNext, id, episodeNumber]);
 
   // Keyboard shortcuts (Vidstack covers the core inputs).
   useHotkeys("t", () => {
@@ -375,21 +442,38 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
             playbackFailure={playbackFailure}
             title={media ? displayTitle(media.title, id) : id}
             poster={media?.cover.url ?? null}
+            episodeId={episodeCard?.id ?? `${id}-${episodeNumber}`}
             episodeNumber={episodeNumber}
             initialTime={initialTime}
             skipTimes={skipTimes}
             autoSkip={autoSkip}
+            autoSkipIntro={autoSkipIntro}
+            autoSkipOutro={autoSkipOutro}
+            showSkipButtons={showSkipButtons}
             playbackRate={playbackRate}
             volume={volume}
             muted={muted}
             onProgress={resumeProgress}
-            onEnded={() => {
-              if (autoplayNext) goNext();
-            }}
+            onEnded={handleEnded}
             onError={handlePlaybackError}
             onRetry={retry}
             language={language}
             onLanguageChange={(value) => usePlayerStore.getState().setAudio(value)}
+            overlay={
+              countdownState !== null &&
+              countdownState.episodeEpoch === `${id}:${episodeNumber}` &&
+              canGoNext &&
+              nextNumber !== null ? (
+                <NextEpisodeOverlay
+                  remainingSeconds={countdownState.remaining}
+                  nextEpisodeNumber={nextNumber}
+                  nextEpisodeTitle={nextCard?.title}
+                  isPaused={countdownState.isPaused}
+                  onPlayNow={goNext}
+                  onCancel={cancelCountdown}
+                />
+              ) : null
+            }
           />
 
 
@@ -480,10 +564,14 @@ function PlayerArea({
   playbackFailure,
   title,
   poster,
+  episodeId,
   episodeNumber,
   initialTime,
   skipTimes,
   autoSkip,
+  autoSkipIntro,
+  autoSkipOutro,
+  showSkipButtons,
   playbackRate,
   volume,
   muted,
@@ -493,6 +581,7 @@ function PlayerArea({
   onRetry,
   language,
   onLanguageChange,
+  overlay,
 }: {
   sourcesQuery: ReturnType<
     typeof useQuery<Awaited<ReturnType<typeof fetchEpisodeSources>>>
@@ -501,10 +590,14 @@ function PlayerArea({
   playbackFailure: string | null;
   title: string;
   poster: string | null;
+  episodeId?: string;
   episodeNumber?: number;
   initialTime?: number;
   skipTimes: { opening: { startTime: number; endTime: number } | null; ending: { startTime: number; endTime: number } | null; recap: null };
   autoSkip: boolean;
+  autoSkipIntro: boolean;
+  autoSkipOutro: boolean;
+  showSkipButtons: boolean;
   playbackRate: number;
   volume: number;
   muted: boolean;
@@ -514,6 +607,7 @@ function PlayerArea({
   onRetry: () => void;
   language: "sub" | "dub" | "multi";
   onLanguageChange: (value: "sub" | "dub" | "multi") => void;
+  overlay?: React.ReactNode;
 }) {
   if (sourcesQuery.isLoading) {
     return (
@@ -615,12 +709,17 @@ function PlayerArea({
       initialTime={initialTime}
       skipTimes={skipTimes}
       autoSkip={autoSkip}
+      autoSkipIntro={autoSkipIntro}
+      autoSkipOutro={autoSkipOutro}
+      showSkipButtons={showSkipButtons}
+      episodeId={episodeId}
       playbackRate={playbackRate}
       volume={volume}
       muted={muted}
       onProgress={onProgress}
       onEnded={onEnded}
       onError={onError}
+      overlay={overlay}
     />
   );
 }

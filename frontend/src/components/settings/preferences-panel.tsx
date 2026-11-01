@@ -16,9 +16,9 @@ import {
   BookOpen,
   Sparkles,
   Sliders,
+  FastForward,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import { useMounted } from "@/hooks/use-debounce";
 import { usePWA } from "@/components/providers/pwa-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { exportLibraryData, importLibraryData, parseImport } from "@/lib/library";
+import { usePlayerStore } from "@/stores/player";
 import {
   getDevicePreferences,
   setCardDensity,
@@ -68,6 +69,18 @@ export function PreferencesPanel() {
   const mounted = useMounted();
   const { isInstallable, isStandalone, installPWA } = usePWA();
   const { user, isAuthenticated, isSyncing, lastSyncedAt, login, register, logout, syncNow } = useAuth();
+
+  // Playback Automation preferences (Phase 1)
+  const autoSkipIntro = usePlayerStore((s) => s.autoSkipIntro);
+  const setAutoSkipIntro = usePlayerStore((s) => s.setAutoSkipIntro);
+  const autoSkipOutro = usePlayerStore((s) => s.autoSkipOutro);
+  const setAutoSkipOutro = usePlayerStore((s) => s.setAutoSkipOutro);
+  const autoplayNext = usePlayerStore((s) => s.autoplayNext);
+  const setAutoplayNext = usePlayerStore((s) => s.setAutoplayNext);
+  const nextEpisodeCountdown = usePlayerStore((s) => s.nextEpisodeCountdown);
+  const setNextEpisodeCountdown = usePlayerStore((s) => s.setNextEpisodeCountdown);
+  const showSkipButtons = usePlayerStore((s) => s.showSkipButtons);
+  const setShowSkipButtons = usePlayerStore((s) => s.setShowSkipButtons);
 
   // Local device preferences
   const [density, setDensityState] = useState<CardDensity>("comfortable");
@@ -523,7 +536,164 @@ export function PreferencesPanel() {
         </div>
       </section>
 
-      {/* 3. Local Data Backup & Restore */}
+      {/* 3. Playback Automation Preferences (Phase 1) */}
+      <section className="glass-panel flex flex-col gap-6 rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-xl border border-glass-border bg-[#c8102e]/10 text-[#ff4d6a]">
+            <FastForward className="size-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold tracking-tight">Playback Automation</h2>
+            <p className="text-xs text-muted-foreground">
+              Intelligent intro, outro, and next episode transitions for supported video providers.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Auto Skip Intro */}
+          <div className="flex flex-col justify-between rounded-xl border border-glass-border bg-black/20 p-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold text-foreground">Auto Skip Intro</span>
+              <p className="text-xs text-muted-foreground">
+                Skip verified opening intro automatically when detected.
+              </p>
+            </div>
+            <div className="mt-3 flex items-center justify-between pt-2 border-t border-glass-border">
+              <span className="text-xs font-medium text-muted-foreground">
+                Status: {mounted ? (autoSkipIntro ? "Enabled" : "Disabled") : "—"}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAutoSkipIntro(!autoSkipIntro)}
+                className={cn(
+                  "glass rounded-xl text-xs font-semibold",
+                  autoSkipIntro && "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                )}
+              >
+                {autoSkipIntro ? "ON" : "OFF"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Auto Skip Outro */}
+          <div className="flex flex-col justify-between rounded-xl border border-glass-border bg-black/20 p-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold text-foreground">Auto Skip Outro</span>
+              <p className="text-xs text-muted-foreground">
+                Skip verified ending credits or outro when detected.
+              </p>
+            </div>
+            <div className="mt-3 flex items-center justify-between pt-2 border-t border-glass-border">
+              <span className="text-xs font-medium text-muted-foreground">
+                Status: {mounted ? (autoSkipOutro ? "Enabled" : "Disabled") : "—"}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAutoSkipOutro(!autoSkipOutro)}
+                className={cn(
+                  "glass rounded-xl text-xs font-semibold",
+                  autoSkipOutro && "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                )}
+              >
+                {autoSkipOutro ? "ON" : "OFF"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Auto Play Next Episode */}
+          <div className="flex flex-col justify-between rounded-xl border border-glass-border bg-black/20 p-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold text-foreground">Auto Play Next Episode</span>
+              <p className="text-xs text-muted-foreground">
+                Automatically queue and play the next canonical episode upon completion.
+              </p>
+            </div>
+            <div className="mt-3 flex items-center justify-between pt-2 border-t border-glass-border">
+              <span className="text-xs font-medium text-muted-foreground">
+                Status: {mounted ? (autoplayNext ? "Enabled" : "Disabled") : "—"}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAutoplayNext(!autoplayNext)}
+                className={cn(
+                  "glass rounded-xl text-xs font-semibold",
+                  autoplayNext && "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                )}
+              >
+                {autoplayNext ? "ON" : "OFF"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Manual Skip Buttons */}
+          <div className="flex flex-col justify-between rounded-xl border border-glass-border bg-black/20 p-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold text-foreground">Manual Skip Buttons</span>
+              <p className="text-xs text-muted-foreground">
+                Display floating &ldquo;Skip Intro&rdquo; and &ldquo;Skip Outro&rdquo; buttons when auto-skip is disabled.
+              </p>
+            </div>
+            <div className="mt-3 flex items-center justify-between pt-2 border-t border-glass-border">
+              <span className="text-xs font-medium text-muted-foreground">
+                Status: {mounted ? (showSkipButtons ? "Visible" : "Hidden") : "—"}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSkipButtons(!showSkipButtons)}
+                className={cn(
+                  "glass rounded-xl text-xs font-semibold",
+                  showSkipButtons && "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                )}
+              >
+                {showSkipButtons ? "ON" : "OFF"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Countdown Duration */}
+        <div className="flex flex-col gap-2 rounded-xl border border-glass-border bg-black/20 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-semibold text-foreground">Next Episode Countdown</span>
+              <p className="text-xs text-muted-foreground">
+                Delay duration before automatically launching the next episode.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-2">
+            {[
+              { label: "Instant (0s)", value: 0 },
+              { label: "5 seconds", value: 5 },
+              { label: "10 seconds (Default)", value: 10 },
+              { label: "15 seconds", value: 15 },
+            ].map((option) => {
+              const active = mounted && nextEpisodeCountdown === option.value;
+              return (
+                <Button
+                  key={option.value}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setNextEpisodeCountdown(option.value)}
+                  className={cn(
+                    "glass rounded-xl text-xs font-semibold",
+                    active && "border-[#c8102e]/60 bg-[#c8102e]/20 text-white font-medium"
+                  )}
+                >
+                  {option.label}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Local Data Backup & Restore */}
       <section className="glass-panel flex flex-col gap-5 rounded-2xl p-5 sm:p-6">
         <h2 className="text-base font-bold tracking-tight">Backup & Restore</h2>
 
