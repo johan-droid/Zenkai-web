@@ -26,7 +26,7 @@ import { getTableColumns, is, Table } from "drizzle-orm";
 import * as schema from "../src/db/schema/index.js";
 
 /** Every exported table, with its column names. */
-const TABLES: Array<[string, string[]]> = Object.entries(schema)
+const TABLES: Array<[string, string[]]> = (Object.entries(schema) as Array<[string, unknown]>)
   .filter((entry): entry is [string, Table] => is(entry[1], Table))
   .map(([name, table]) => [name, Object.keys(getTableColumns(table))]);
 

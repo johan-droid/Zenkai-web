@@ -40,6 +40,7 @@ class MockAuthRepository implements Partial<AuthRepository> {
       displayName: input.displayName ?? input.username,
       avatarUrl: null,
       bio: null,
+      settings: {},
       isActive: true,
       createdAt: now,
       updatedAt: now,
