@@ -60,6 +60,7 @@ function bootServiceWorker(network: (url: string) => Promise<ResponseLike> | nul
     },
     skipWaiting: () => undefined,
     clients: { claim: async () => undefined },
+    location: { origin: "https://zenkai.test" },
   };
 
   const fetchMock = async (request: RequestLike) => {
