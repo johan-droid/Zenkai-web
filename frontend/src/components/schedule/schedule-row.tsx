@@ -33,7 +33,8 @@ export function ScheduleRow({ entry, timeZone, isWatchlisted }: ScheduleRowProps
   const airingDate = new Date(entry.airingAt);
   const uiState = getUIAiringState(airingDate, now);
   const styles = STATE_STYLES[uiState] ?? STATE_STYLES.upcoming;
-  const countdown = formatCountdown(entry.secondsUntil);
+  const secondsLeft = entry.secondsUntil ?? Math.floor((airingDate.getTime() - now.getTime()) / 1000);
+  const countdown = formatCountdown(secondsLeft);
   const relative = getRelativeTimeDescription(airingDate, now, timeZone);
   const timeStr = airingDate.toLocaleTimeString(undefined, {
     hour: "numeric",

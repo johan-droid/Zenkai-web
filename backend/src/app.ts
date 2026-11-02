@@ -196,7 +196,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     async upcoming({ limit }) {
       const rows = await scheduleService.upcoming({ limit });
       return rows.map((row) => ({
-        anilistId: row.anilistId as number | null,
+        anilistId: row.anilistId ? Number(row.anilistId) : null,
         title: String(row.title),
         coverUrl: (row.coverUrl as string | null) ?? null,
         episodeNumber: Number(row.episodeNumber),

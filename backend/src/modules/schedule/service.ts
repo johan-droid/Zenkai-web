@@ -17,6 +17,7 @@ import type { Db } from "../../db/client.js";
 import { airingSchedule, anime } from "../../db/schema/index.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../http/errors.js";
+import { cache } from "../../cache/index.js";
 import {
   airingStateAt,
   localDateKey,
@@ -30,7 +31,7 @@ import {
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { JikanProvider } from "../../providers/metadata/jikan.js";
 import type { AiringSlot } from "../../providers/metadata/types.js";
-import type { AnimeRepository } from "../anime/repository.js";
+import { type AnimeRepository, slugify } from "../anime/repository.js";
 
 const DAY_MS = 86_400_000;
 
@@ -56,7 +57,7 @@ export interface ScheduleRow {
   status?: string;
   source?: string;
   animeId?: string;
-  anilistId: number | null;
+  anilistId: string;
   title: string;
   coverUrl: string | null;
   totalEpisodes?: number | null;
@@ -197,40 +198,71 @@ export class ScheduleService {
     const from = options.from ?? new Date(now.getTime() - DAY_MS);
     const to = options.to ?? new Date(now.getTime() + 7 * DAY_MS);
 
-    const rows = await this.db
-      .select({
-        scheduleId: airingSchedule.id,
-        episodeNumber: airingSchedule.episodeNumber,
-        airingAt: airingSchedule.airingAt,
-        status: airingSchedule.status,
-        source: airingSchedule.source,
-        animeId: anime.id,
-        anilistId: anime.anilistId,
-        title: anime.canonicalTitle,
-        coverUrl: anime.coverUrl,
-        totalEpisodes: anime.totalEpisodes,
-        slug: anime.slug,
-      })
-      .from(airingSchedule)
-      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
-      .where(and(gte(airingSchedule.airingAt, from), lte(airingSchedule.airingAt, to)))
-      .orderBy(asc(airingSchedule.airingAt))
-      .limit(options.limit ?? 200);
+    let rows: any[] = [];
+    try {
+      rows = await this.db
+        .select({
+          scheduleId: airingSchedule.id,
+          episodeNumber: airingSchedule.episodeNumber,
+          airingAt: airingSchedule.airingAt,
+          status: airingSchedule.status,
+          source: airingSchedule.source,
+          animeId: anime.id,
+          anilistId: anime.anilistId,
+          title: anime.canonicalTitle,
+          coverUrl: anime.coverUrl,
+          totalEpisodes: anime.totalEpisodes,
+          slug: anime.slug,
+        })
+        .from(airingSchedule)
+        .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+        .where(and(gte(airingSchedule.airingAt, from), lte(airingSchedule.airingAt, to)))
+        .orderBy(asc(airingSchedule.airingAt))
+        .limit(options.limit ?? 200);
+    } catch {
+      // Database offline or query failure
+      rows = [];
+    }
+
+    if (rows.length === 0) {
+      try {
+        const cacheKey = `schedule:window:${Math.floor(from.getTime() / 60000)}:${Math.floor(to.getTime() / 60000)}:${options.limit ?? 200}`;
+        const { value: upstream } = await cache.remember(cacheKey, 300, async () => {
+          return this.#anilist.getAiringSchedule(from, to, options.limit ?? 200);
+        });
+        rows = upstream.map((item) => ({
+          ...item,
+          airingAt: new Date(item.airingAt),
+        }));
+      } catch {
+        rows = [];
+      }
+    }
 
     const readAt = this.now();
 
-    return rows.map((row) => ({
-      ...row,
-      // Derived from the clock on every read, never from the stored label.
-      // `status` is what the provider claimed when the row was written, and it
-      // is not maintained afterwards: without this, a slot written as
-      // NOT_YET_AIRED still reads that way weeks after the episode has aired.
-      airingState: airingStateAt(row.airingAt, readAt),
-      providerStatus: row.status,
-      dayOfWeek: DAY_NAMES[row.airingAt.getUTCDay()],
-      // Computed per read so a cached day view still shows a live countdown.
-      secondsUntil: secondsUntil(row.airingAt, readAt),
-    }));
+    return rows.map((row) => {
+      const airingAt = new Date(row.airingAt);
+      const anilistIdStr = String(row.anilistId ?? "");
+      const titleStr = String(row.title ?? "Untitled");
+      return {
+        scheduleId: String(row.scheduleId ?? `sched-${anilistIdStr}-${row.episodeNumber}`),
+        episodeNumber: Number(row.episodeNumber),
+        airingAt,
+        status: String(row.status ?? "SCHEDULED"),
+        source: String(row.source ?? "anilist"),
+        animeId: String(row.animeId ?? anilistIdStr),
+        anilistId: anilistIdStr,
+        title: titleStr,
+        coverUrl: (row.coverUrl as string | null) ?? null,
+        totalEpisodes: row.totalEpisodes != null ? Number(row.totalEpisodes) : null,
+        slug: String(row.slug ?? (titleStr ? slugify(titleStr, anilistIdStr) : anilistIdStr)),
+        airingState: airingStateAt(airingAt, readAt),
+        providerStatus: String(row.providerStatus ?? row.status ?? "SCHEDULED"),
+        dayOfWeek: DAY_NAMES[airingAt.getUTCDay()],
+        secondsUntil: secondsUntil(airingAt, readAt),
+      };
+    });
   }
 
   /**
@@ -248,31 +280,67 @@ export class ScheduleService {
     const limit = Math.min(Math.max(options.limit ?? 20, 1), MAX_SCHEDULE_ITEMS);
     const offset = Math.max(options.offset ?? 0, 0);
 
-    const rows = await this.db
-      .select({
-        episodeNumber: airingSchedule.episodeNumber,
-        airingAt: airingSchedule.airingAt,
-        providerStatus: airingSchedule.status,
-        source: airingSchedule.source,
-        animeId: anime.id,
-        anilistId: anime.anilistId,
-        title: anime.canonicalTitle,
-        coverUrl: anime.coverUrl,
-        totalEpisodes: anime.totalEpisodes,
-        slug: anime.slug,
-      })
-      .from(airingSchedule)
-      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
-      .where(gt(airingSchedule.airingAt, now))
-      .orderBy(asc(airingSchedule.airingAt))
-      .limit(limit)
-      .offset(offset);
+    let rows: any[] = [];
+    try {
+      rows = await this.db
+        .select({
+          scheduleId: airingSchedule.id,
+          episodeNumber: airingSchedule.episodeNumber,
+          airingAt: airingSchedule.airingAt,
+          status: airingSchedule.status,
+          providerStatus: airingSchedule.status,
+          source: airingSchedule.source,
+          animeId: anime.id,
+          anilistId: anime.anilistId,
+          title: anime.canonicalTitle,
+          coverUrl: anime.coverUrl,
+          totalEpisodes: anime.totalEpisodes,
+          slug: anime.slug,
+        })
+        .from(airingSchedule)
+        .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+        .where(gt(airingSchedule.airingAt, now))
+        .orderBy(asc(airingSchedule.airingAt))
+        .limit(limit)
+        .offset(offset);
+    } catch {
+      rows = [];
+    }
 
-    return rows.map((row) => ({
-      ...row,
-      airingState: airingStateAt(row.airingAt, now),
-      secondsUntil: secondsUntil(row.airingAt, now),
-    }));
+    if (rows.length === 0) {
+      try {
+        const to = new Date(now.getTime() + 14 * DAY_MS);
+        const cacheKey = `schedule:upcoming:anilist:${limit + offset}`;
+        const { value: upstream } = await cache.remember(cacheKey, 300, async () => {
+          return this.#anilist.getAiringSchedule(now, to, limit + offset);
+        });
+        rows = upstream.slice(offset, offset + limit);
+      } catch {
+        rows = [];
+      }
+    }
+
+    return rows.map((row) => {
+      const airingAt = new Date(row.airingAt);
+      const anilistIdStr = String(row.anilistId ?? "");
+      const titleStr = String(row.title ?? "Untitled");
+      return {
+        scheduleId: String(row.scheduleId ?? `sched-${anilistIdStr}-${row.episodeNumber}`),
+        episodeNumber: Number(row.episodeNumber),
+        airingAt,
+        status: String(row.status ?? "SCHEDULED"),
+        source: String(row.source ?? "anilist"),
+        animeId: String(row.animeId ?? anilistIdStr),
+        anilistId: anilistIdStr,
+        title: titleStr,
+        coverUrl: (row.coverUrl as string | null) ?? null,
+        totalEpisodes: row.totalEpisodes != null ? Number(row.totalEpisodes) : null,
+        slug: String(row.slug ?? (titleStr ? slugify(titleStr, anilistIdStr) : anilistIdStr)),
+        airingState: airingStateAt(airingAt, now),
+        providerStatus: String(row.providerStatus ?? row.status ?? "SCHEDULED"),
+        secondsUntil: secondsUntil(airingAt, now),
+      };
+    });
   }
 
   /**
@@ -291,31 +359,69 @@ export class ScheduleService {
     const withinDays = Math.min(Math.max(options.withinDays ?? RECENT_AIRING_WINDOW_DAYS, 1), 90);
     const since = new Date(now.getTime() - withinDays * DAY_MS);
 
-    const rows = await this.db
-      .select({
-        episodeNumber: airingSchedule.episodeNumber,
-        airingAt: airingSchedule.airingAt,
-        providerStatus: airingSchedule.status,
-        source: airingSchedule.source,
-        animeId: anime.id,
-        anilistId: anime.anilistId,
-        title: anime.canonicalTitle,
-        coverUrl: anime.coverUrl,
-        totalEpisodes: anime.totalEpisodes,
-        slug: anime.slug,
-      })
-      .from(airingSchedule)
-      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
-      .where(and(lte(airingSchedule.airingAt, now), gte(airingSchedule.airingAt, since)))
-      .orderBy(desc(airingSchedule.airingAt))
-      .limit(limit)
-      .offset(offset);
+    let rows: any[] = [];
+    try {
+      rows = await this.db
+        .select({
+          scheduleId: airingSchedule.id,
+          episodeNumber: airingSchedule.episodeNumber,
+          airingAt: airingSchedule.airingAt,
+          status: airingSchedule.status,
+          providerStatus: airingSchedule.status,
+          source: airingSchedule.source,
+          animeId: anime.id,
+          anilistId: anime.anilistId,
+          title: anime.canonicalTitle,
+          coverUrl: anime.coverUrl,
+          totalEpisodes: anime.totalEpisodes,
+          slug: anime.slug,
+        })
+        .from(airingSchedule)
+        .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+        .where(and(lte(airingSchedule.airingAt, now), gte(airingSchedule.airingAt, since)))
+        .orderBy(desc(airingSchedule.airingAt))
+        .limit(limit)
+        .offset(offset);
+    } catch {
+      rows = [];
+    }
 
-    return rows.map((row) => ({
-      ...row,
-      airingState: airingStateAt(row.airingAt, now),
-      secondsUntil: secondsUntil(row.airingAt, now),
-    }));
+    if (rows.length === 0) {
+      try {
+        const cacheKey = `schedule:recent:anilist:${withinDays}:${limit + offset}`;
+        const { value: upstream } = await cache.remember(cacheKey, 300, async () => {
+          return this.#anilist.getAiringSchedule(since, now, limit + offset);
+        });
+        rows = upstream
+          .slice()
+          .sort((a, b) => new Date(b.airingAt).getTime() - new Date(a.airingAt).getTime())
+          .slice(offset, offset + limit);
+      } catch {
+        rows = [];
+      }
+    }
+
+    return rows.map((row) => {
+      const airingAt = new Date(row.airingAt);
+      const anilistIdStr = String(row.anilistId ?? "");
+      const titleStr = String(row.title ?? "Untitled");
+      return {
+        scheduleId: String(row.scheduleId ?? `sched-${anilistIdStr}-${row.episodeNumber}`),
+        episodeNumber: Number(row.episodeNumber),
+        airingAt,
+        status: String(row.status ?? "SCHEDULED"),
+        source: String(row.source ?? "anilist"),
+        animeId: String(row.animeId ?? anilistIdStr),
+        anilistId: anilistIdStr,
+        title: titleStr,
+        coverUrl: (row.coverUrl as string | null) ?? null,
+        totalEpisodes: row.totalEpisodes != null ? Number(row.totalEpisodes) : null,
+        slug: String(row.slug ?? (titleStr ? slugify(titleStr, anilistIdStr) : anilistIdStr)),
+        airingState: airingStateAt(airingAt, now),
+        providerStatus: String(row.providerStatus ?? row.status ?? "SCHEDULED"),
+        secondsUntil: secondsUntil(airingAt, now),
+      };
+    });
   }
 
   /**
@@ -356,25 +462,49 @@ export class ScheduleService {
 
   /** Schedule for one title. */
   async forAnime(anilistId: string): Promise<Record<string, any>[]> {
-    const localId = await this.animeRepo.getLocalIdByAnilistId(anilistId);
-    if (!localId) throw AppError.notFound(`anime ${anilistId} is not cached`);
+    let rows: any[] = [];
+    try {
+      const localId = await this.animeRepo.getLocalIdByAnilistId(anilistId);
+      if (localId) {
+        rows = await this.db
+          .select()
+          .from(airingSchedule)
+          .where(eq(airingSchedule.animeId, localId))
+          .orderBy(asc(airingSchedule.episodeNumber));
+      }
+    } catch {
+      rows = [];
+    }
 
-    const rows = await this.db
-      .select()
-      .from(airingSchedule)
-      .where(eq(airingSchedule.animeId, localId))
-      .orderBy(asc(airingSchedule.episodeNumber));
+    if (rows.length === 0) {
+      try {
+        const slots = await this.#anilist.getAiringSlots(anilistId);
+        rows = slots.map((s) => ({
+          scheduleId: `sched-${anilistId}-${s.episodeNumber}`,
+          episodeNumber: s.episodeNumber,
+          airingAt: new Date(s.airingAt * 1000),
+          status: s.status,
+          providerStatus: s.status,
+          source: "anilist",
+          animeId: anilistId,
+          anilistId,
+        }));
+      } catch {
+        rows = [];
+      }
+    }
 
-    // Same derived state as every other schedule read. Returning the raw table
-    // here would make this one endpoint report the provider's stored label,
-    // which is the bug the derived state exists to remove.
     const readAt = this.now();
-    return rows.map((row) => ({
-      ...row,
-      airingState: airingStateAt(row.airingAt, readAt),
-      providerStatus: row.status,
-      secondsUntil: secondsUntil(row.airingAt, readAt),
-    }));
+    return rows.map((row) => {
+      const airingAt = new Date(row.airingAt);
+      return {
+        ...row,
+        airingAt,
+        airingState: airingStateAt(airingAt, readAt),
+        providerStatus: String(row.providerStatus ?? row.status ?? "SCHEDULED"),
+        secondsUntil: secondsUntil(airingAt, readAt),
+      };
+    });
   }
 
   /** The calendar month in the configured zone (or requested zone and date). */
@@ -409,38 +539,9 @@ export class ScheduleService {
 
   /** The single nearest upcoming episode across all titles. */
   async next(timeZone?: string): Promise<{ item: Record<string, any> | null; timeZone: string }> {
-    const now = this.now();
     const tz = timeZone ?? this.timeZone;
-    const rows = await this.db
-      .select({
-        scheduleId: airingSchedule.id,
-        episodeNumber: airingSchedule.episodeNumber,
-        airingAt: airingSchedule.airingAt,
-        status: airingSchedule.status,
-        source: airingSchedule.source,
-        animeId: anime.id,
-        anilistId: anime.anilistId,
-        title: anime.canonicalTitle,
-        coverUrl: anime.coverUrl,
-        totalEpisodes: anime.totalEpisodes,
-        slug: anime.slug,
-      })
-      .from(airingSchedule)
-      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
-      .where(gt(airingSchedule.airingAt, now))
-      .orderBy(asc(airingSchedule.airingAt))
-      .limit(1);
-
-    const readAt = this.now();
-    const item = rows[0]
-      ? {
-          ...rows[0],
-          airingState: airingStateAt(rows[0].airingAt, readAt),
-          providerStatus: rows[0].status,
-          secondsUntil: secondsUntil(rows[0].airingAt, readAt),
-        }
-      : null;
-
+    const upcomingItems = await this.upcoming({ limit: 1 });
+    const item = upcomingItems[0] ?? null;
     return { item, timeZone: tz };
   }
 
@@ -465,26 +566,32 @@ export class ScheduleService {
       else groups.set(key, [row]);
     }
 
-    return [...groups.entries()].map(([date, entries]) => ({
-      date,
-      dayOfWeek: DAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()],
-      entries,
-    }));
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, entries]) => ({
+        date,
+        dayOfWeek: DAY_NAMES[new Date(`${date}T12:00:00Z`).getUTCDay()],
+        entries,
+      }));
   }
 
   /** Titles currently marked as releasing, for the sync job to walk. */
   async listAiringAnime(limit: number): Promise<string[]> {
-    const rows = await this.db
-      .selectDistinct({ anilistId: anime.anilistId })
-      .from(airingSchedule)
-      .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
-      .where(eq(anime.status, "RELEASING"))
-      .limit(limit);
+    try {
+      const rows = await this.db
+        .selectDistinct({ anilistId: anime.anilistId })
+        .from(airingSchedule)
+        .innerJoin(anime, eq(anime.id, airingSchedule.animeId))
+        .where(eq(anime.status, "RELEASING"))
+        .limit(limit);
 
-    return rows
-      .map((row) => row.anilistId)
-      .filter((id): id is number => id != null)
-      .map(String);
+      return rows
+        .map((row) => row.anilistId)
+        .filter((id): id is number => id != null)
+        .map(String);
+    } catch {
+      return [];
+    }
   }
 }
 

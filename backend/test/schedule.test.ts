@@ -230,3 +230,62 @@ describe("season window", () => {
     assert.equal(monthWin.to.toISOString(), "2028-03-01T00:00:00.000Z");
   });
 });
+
+describe("ScheduleService offline database resilience", () => {
+  it("falls back gracefully when database is offline without throwing 500", async () => {
+    const { ScheduleService } = await import("../src/modules/schedule/service.js");
+    const mockDb = {
+      select: () => {
+        throw new Error("Database offline (circuit breaker active)");
+      },
+    } as any;
+    const mockRepo = {
+      getLocalIdByAnilistId: async () => null,
+    } as any;
+
+    const service = new ScheduleService(mockDb, mockRepo, () => at("2026-10-06T12:00:00Z"), "UTC");
+
+    // Stub anilist provider to avoid network dependency in unit tests
+    (service as any)["#anilist"] = {
+      getAiringSchedule: async () => [
+        {
+          scheduleId: "anilist-101",
+          episodeNumber: 1,
+          airingAt: at("2026-10-07T12:00:00Z"),
+          status: "SCHEDULED",
+          source: "anilist",
+          animeId: "123",
+          anilistId: "123",
+          title: "Test Anime",
+          coverUrl: "https://example.com/cover.jpg",
+          totalEpisodes: 12,
+        },
+      ],
+      getAiringSlots: async () => [
+        {
+          episodeNumber: 2,
+          airingAt: Math.floor(at("2026-10-08T12:00:00Z").getTime() / 1000),
+          status: "SCHEDULED",
+        },
+      ],
+    };
+
+    const week = await service.week();
+    assert.equal(week.timeZone, "UTC");
+    assert.ok(Array.isArray(week.days));
+    assert.ok(week.days.length >= 1);
+    assert.ok(week.days[0].entries[0].title);
+    assert.ok(week.days[0].entries[0].slug);
+    assert.ok(["aired", "upcoming"].includes(week.days[0].entries[0].airingState));
+
+    const today = await service.today();
+    assert.equal(today.timeZone, "UTC");
+    assert.ok(Array.isArray(today.items));
+
+    const next = await service.next();
+    assert.equal(next.timeZone, "UTC");
+
+    const forAnime = await service.forAnime("123");
+    assert.ok(Array.isArray(forAnime));
+  });
+});

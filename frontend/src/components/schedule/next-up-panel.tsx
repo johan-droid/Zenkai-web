@@ -71,7 +71,8 @@ export function NextUpPanel({
           const airingDate = new Date(entry.airingAt);
           const uiState = getUIAiringState(airingDate, now);
           const stateInfo = STATE_LABELS[uiState] ?? STATE_LABELS.upcoming;
-          const countdown = formatCountdown(entry.secondsUntil);
+          const secondsLeft = entry.secondsUntil ?? Math.floor((airingDate.getTime() - now.getTime()) / 1000);
+          const countdown = formatCountdown(secondsLeft);
           const relative = getRelativeTimeDescription(airingDate, now, timeZone);
           const isWatchlisted = watchlistAnilistIds?.has(entry.anilistId);
 

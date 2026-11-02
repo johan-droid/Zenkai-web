@@ -1052,20 +1052,20 @@ export function classifyMangaError(error: unknown): MangaFailure {
  * read so a cached day view still shows a live countdown.
  */
 export const scheduleEntrySchema = z.object({
-  scheduleId: z.string(),
+  scheduleId: z.string().optional(),
   episodeNumber: z.number(),
   airingAt: z.coerce.date(),
-  airingState: z.enum(["aired", "upcoming", "unknown"]),
-  providerStatus: z.string(),
-  source: z.string(),
-  secondsUntil: z.number(),
+  airingState: z.enum(["aired", "upcoming", "unknown"]).optional(),
+  providerStatus: z.string().optional(),
+  source: z.string().optional(),
+  secondsUntil: z.number().optional(),
   /** The joined title metadata the schedule query attaches. */
-  animeId: z.string(),
-  anilistId: z.string(),
+  animeId: z.string().optional(),
+  anilistId: z.coerce.string(),
   title: z.string(),
-  coverUrl: z.string().nullable(),
-  totalEpisodes: z.number().nullable(),
-  slug: z.string(),
+  coverUrl: z.string().nullable().optional(),
+  totalEpisodes: z.number().nullable().optional(),
+  slug: z.string().nullable().optional(),
   /** Present on week/day views; absent on single-title schedule. */
   dayOfWeek: z.string().optional(),
 });
