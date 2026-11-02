@@ -5,7 +5,7 @@ import { Calendar, Clock, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { useAiringSchedule } from "@/hooks/use-airing";
+import type { AiringState } from "@/hooks/use-airing";
 
 interface AiringCalendarProps {
   animeId?: string;
@@ -16,7 +16,6 @@ export function AiringCalendar({ animeId, userTimezone }: AiringCalendarProps) {
   const [schedule, setSchedule] = useState<EpisodeAiring | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { data: userPrefs } = useAiringSchedule();
   
   const timezone = userTimezone || "+09:00";
 
@@ -48,7 +47,7 @@ export function AiringCalendar({ animeId, userTimezone }: AiringCalendarProps) {
         <p className="mt-2 text-zinc-500">Loading airing schedule...</p>
       </div>
     );
-  );
+  }
 
   if (error) {
     return (

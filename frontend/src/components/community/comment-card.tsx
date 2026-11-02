@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
-interface CommentProps {
+export interface CommentProps {
   id: string;
   animeId: string;
   content: string;

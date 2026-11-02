@@ -5,7 +5,7 @@ import { MessageCircle, TextCursor, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { CommentCard, type CommentProps } from "@/components/community/comment-card";
 
 interface DiscussionThreadProps {
   animeId: string;
@@ -23,14 +23,11 @@ export function DiscussionThread({ animeId, initialComments, onAddComment, canMo
     e.preventDefault();
     if (!newComment.trim()) return;
     onAddComment({
-      id: Date.now().toString(),
       animeId,
       content: newComment.trim(),
       author: "CurrentUser", // Would come from auth
       createdAt: new Date().toISOString(),
       isSpoiler: false,
-      replies: [],
-      depth: 0,
       canDelete: canModerate,
       canReport: canModerate,
     });

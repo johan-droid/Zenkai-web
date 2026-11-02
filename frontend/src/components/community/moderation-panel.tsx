@@ -7,12 +7,13 @@ import { cn } from "@/lib/utils";
 
 interface ModerationPanelProps {
   comments: any[];
+  canModerate: boolean;
   onDelete: (commentId: string) => void;
   onSpoilerToggle: (commentId: string) => void;
   onReport: (commentId: string) => void;
 }
 
-export function ModerationPanel({ comments, onDelete, onSpoilerToggle, onReport }: ModerationPanelProps) {
+export function ModerationPanel({ comments, canModerate, onDelete, onSpoilerToggle, onReport }: ModerationPanelProps) {
   return (
     <div className="hidden sm:block border-white/[0.08] rounded-xl bg-[#101014]/80 p-4 mb-4 backdrop-blur-md">
       <div className="flex items-center gap-3 text-xs text-zinc-400">

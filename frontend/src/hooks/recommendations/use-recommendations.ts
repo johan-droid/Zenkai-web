@@ -1,7 +1,16 @@
 "use client";
 
-import { useQuery, useMemo } from "react";
-import type { AnimeSummary } from "@/lib/api/zenkai";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+interface AnimeSummary {
+  id: string;
+  genres?: string[];
+  studios?: string[];
+  popularityRank?: number;
+  season?: string;
+  status?: string;
+}
 
 export type RecommendationSource = "watchlist" | "completed" | "favorites" | "history";
 
@@ -13,7 +22,8 @@ export type RecommendationReason =
   | "highly rated"
   | "recently completed"
   | "watchlist addition"
-  | "random discovery";
+  | "random discovery"
+  | "metadata-matched";
 
 export interface RecommendationItem {
   anime: AnimeSummary;
@@ -68,11 +78,11 @@ export function useRecommendations(options: RecommendationOptions = {}) {
     const animeStudios = new Set(anime.studios?.map((s) => s.toLowerCase()) ?? []);
 
     // Genre match (max 30 points)
-    const matchedGenres = userPrefs.watchedGenres.filter((g) => animeGenres.has(g));
+    const matchedGenres = [...userPrefs.watchedGenres].filter((g) => animeGenres.has(g));
     score += (matchedGenres.length / Math.max(userPrefs.watchedGenres.size, 1)) * 30;
 
     // Studio match (max 25 points)
-    const matchedStudios = userPrefs.favoriteStudios.filter((s) => animeStudios.has(s));
+    const matchedStudios = [...userPrefs.favoriteStudios].filter((s) => animeStudios.has(s));
     score += (matchedStudios.length / Math.max(userPrefs.favoriteStudios.size, 1)) * 25;
 
     // Popularity boost (max 20 points)
@@ -111,8 +121,8 @@ export function useRecommendations(options: RecommendationOptions = {}) {
         let reason: RecommendationReason = "metadata-matched";
         const animeGenres = new Set(anime.genres?.map((g) => g.toLowerCase()) ?? []);
         const animeStudios = new Set(anime.studios?.map((s) => s.toLowerCase()) ?? []);
-        const matchedGenres = userPrefs.watchedGenres.filter((g) => animeGenres.has(g));
-        const matchedStudios = userPrefs.favoriteStudios.filter((s) => animeStudios.has(s));
+        const matchedGenres = [...userPrefs.watchedGenres].filter((g) => animeGenres.has(g));
+        const matchedStudios = [...userPrefs.favoriteStudios].filter((s) => animeStudios.has(s));
 
         if (matchedGenres.length > 0 && (matchedGenres.length / Math.max(userPrefs.watchedGenres.size, 1)) * 30 >= 25) {
           reason = "same genre";
@@ -128,7 +138,7 @@ export function useRecommendations(options: RecommendationOptions = {}) {
 
         return { anime, reason, score };
       })
-      .filter((r): r is { anime: AnimeSummary; reason: RecommendationReason; score: number } => r !== null)
+      .filter((r) => r !== null)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }, [apiData, trending, isLoading, excludeIds, userPrefs]);

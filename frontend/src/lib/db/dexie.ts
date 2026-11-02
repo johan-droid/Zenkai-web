@@ -57,7 +57,7 @@ export interface HistoryRecord {
   createdAt: number;
 }
 
-export type LibraryStatus = "watching" | "on_hold" | "completed" | "dropped" | "plan";
+export type LibraryStatus = "watching" | "completed" | "dropped" | "plan";
 
 export interface LibraryRecord {
   /** Composite key: `${kind}:${mediaId}`. */
@@ -67,8 +67,8 @@ export interface LibraryRecord {
   title: string;
   coverUrl: string | null;
   status: LibraryStatus;
-  /** User rating from 0-5, null when not rated. */
-  rating: number | null;
+  /** User rating from 0-5, null when not rated. Optional: the local contract schema does not carry it yet. */
+  rating?: number | null;
   updatedAt: number;
 }
 

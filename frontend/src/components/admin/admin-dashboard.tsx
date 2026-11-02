@@ -42,7 +42,8 @@ export function AdminDashboard({ userRole, onRoleChange }: AdminDashboardProps) 
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="User menu">
                   <User className="size-4" />
-                </DropdownMenuTrigger>
+                </Button>
+              </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem onClick={() => onRoleChange("user")}>
                     <span>Switch to User</span>
@@ -58,14 +59,13 @@ export function AdminDashboard({ userRole, onRoleChange }: AdminDashboardProps) 
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem disabled>
-                    <span>Version {import.meta.env.VITE_APP_VERSION || "2.0.0"}</span>
+                    <span>Version {process.env.NEXT_PUBLIC_APP_VERSION || "2.0.0"}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem>
                     <span>Sign Out</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </DropdownMenu>
           </div>
         </div>
       </nav>
@@ -88,23 +88,24 @@ export function AdminDashboard({ userRole, onRoleChange }: AdminDashboardProps) 
 
 /* Role panels */
 function AdminPanel({ onRoleChange }: { onRoleChange: (role: "user" | "moderator" | "admin") => void }) {
+  const { toast } = useToast();
   return (
     <div className="pt-8">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Administrator Panel</h2>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <Button
-          onClick={() => toast({ title: "Feature Coming Soon", description: "Admin panel under development }", variant: "default")}
+          onClick={() => toast({ title: "Feature Coming Soon", description: "Admin panel under development", variant: "default" })}
         >
           User Management
         </Button>
         <Button
-          onClick={() => toast({ title: "Feature Coming Soon", description: "System settings under development}", variant: "default")}
+          onClick={() => toast({ title: "Feature Coming Soon", description: "System settings under development", variant: "default" })}
         >
           System Settings
         </Button>
         <Button
-          onClick={() => toast({ title: "Feature Coming Soon", description: "Analytics under development}", variant: "default")}
+          onClick={() => toast({ title: "Feature Coming Soon", description: "Analytics under development", variant: "default" })}
         >
           Dashboard
         </Button>
@@ -137,6 +138,7 @@ function AdminPanel({ onRoleChange }: { onRoleChange: (role: "user" | "moderator
 }
 
 function ModeratorPanel({ onRoleChange }: { onRoleChange: (role: "user" | "moderator" | "admin") => void }) {
+  const { toast } = useToast();
   return (
     <div className="pt-8">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Moderator Panel</h2>

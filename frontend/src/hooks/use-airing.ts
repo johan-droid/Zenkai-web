@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { tokens } from "@/config/tokens";
 
@@ -28,7 +28,6 @@ export interface UseAiringScheduleResult {
 /** Hook for accessing airing schedule data with timezone preferences. */
 export function useAiringSchedule(): UseAiringScheduleResult {
   const [userTimezone, setUserTimezone] = useState("+09:00"); // Default JST
-  const { data: userSettings } = useAtomValue(() => /* atom from settings store */ {});
 
   // Parse timezone from user preferences
   const parseTimezone = (tz: string): string => {

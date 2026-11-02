@@ -16,7 +16,7 @@ interface RatingDisplayProps {
 export function RatingDisplay({ averageRating, totalRatings, userRating, canRate, onRate }: RatingDisplayProps) {
   const stars = Array.from({ length: 5 }, (_, i) => i);
 
-  const getStarClass = (index: number, userRating?: number, averageRating?: number) => {
+  const getStarClass = (index: number, userRating?: number, averageRating = 0) => {
     if (userRating !== undefined) {
       return index < userRating ? "text-amber-400" : "text-zinc-500/30";
     }
@@ -37,7 +37,6 @@ export function RatingDisplay({ averageRating, totalRatings, userRating, canRate
           className={cn("cursor-pointer", getStarClass(i, userRating, averageRating))}
           fill={getStarClass(i, userRating, averageRating) === "text-amber-400" ? "currentColor" : "none"}
           onClick={() => userRating !== undefined && onRate?.(i + 1)}
-          title={`Rate ${i + 1} stars`}
         />
       ))}
 

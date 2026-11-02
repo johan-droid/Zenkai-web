@@ -6,7 +6,7 @@ import type { MediaProviderAdapter } from "@vidstack/react";
 import { isHLSProvider } from "@vidstack/react";
 import Hls from "hls.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { Check, Settings, Palette, TextSize, HighlightRemove, TextColor } from "lucide-react";
+import { Check } from "lucide-react";
 
 import { SkipButton } from "@/components/player/skip-button";
 import type { PlaybackExecution } from "@/lib/api/zenkai";
@@ -16,15 +16,11 @@ import {
   isAutomationSupported,
   type EpisodeSegment,
 } from "@/lib/player/automation";
-import { useSessionStorage } from "@/lib/hooks/use-session-storage";
-import { cn } from "@/lib/utils";
-import { tokens } from "@/config/tokens";
 
 export { computeResumePosition };
 
 import "@vidstack/react/player/styles/default/theme.css";
 import "@vidstack/react/player/styles/default/layouts/video.css";
-import "@vidstack/react/player/styles/default/layouts/audio.css";
 
 /** Skip markers as the canonical metadata service reports them (P10). */
 export interface SkipInterval {
@@ -122,38 +118,6 @@ export function VideoPlayer({
 
   const [notification, setNotification] = useState<string | null>(null);
   const notificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Player settings persistence using session storage
-  const { get: storedSettings, set: saveSettings } = useSessionStorage("player-settings-v1", {
-    subtitleFont: "default",
-    subtitleSize: "medium",
-    subtitleColor: "#FFFFFF",
-    subtitleBackground: "rgba(0,0,0,0.8)",
-    audioLanguage: "auto",
-    playbackRate: 1,
-    volume: 1,
-    piPEnabled: true,
-  });
-
-  const playerSettings = storedSettings ?? {
-    subtitleFont: "default",
-    subtitleSize: "medium",
-    subtitleColor: "#FFFFFF",
-    subtitleBackground: "rgba(0,0,0,0.8)",
-    audioLanguage: "auto",
-    playbackRate: 1,
-    volume: 1,
-    piPEnabled: true,
-  };
-
-  // Subtitle customization state
-  const [subtitleFont, setSubtitleFont] = useState(playerSettings.subtitleFont);
-  const [subtitleSize, setSubtitleSize] = useState(playerSettings.subtitleSize);
-  const [subtitleColor, setSubtitleColor] = useState(playerSettings.subtitleColor);
-  const [subtitleBackground, setSubtitleBackground] = useState(playerSettings.subtitleBackground);
-
-  // Audio language state
-  const [audioLanguage, setAudioLanguage] = useState(playerSettings.audioLanguage);
 
   const handlers = useRef({ onProgress, onEnded, onError });
   const playerApi = useRef<{ seekTo: (timeSeconds: number) => void } | null>(null);
@@ -438,38 +402,5 @@ function MediaEffects({
     };
   }, [player, playerApiRef, automationController]);
 
-  // Picture-in-Picture button
-  const pipButton = useMemo(() => (
-    <button
-      className={cn(
-        "absolute bottom-6 right-6 sm:bottom-8 sm:right-8 z-30 flex size-10 sm:size-12 items-center justify-center rounded-full border border-white/10 bg-[#16161c]/80 backdrop-blur-md hover:border-white/20 hover:bg-white/10 hover:text-white transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
-        "data-state=pip ? "scale-95" : "scale-100"
-      )}
-      aria-label="Toggle Picture-in-Picture"
-      onClick={togglePiP}
-    >
-      <PiP className="size-4.5 text-zinc-300" />
-    </button>
-  ), [togglePiP]);
-
-  // Floating keyboard shortcuts hint
-  const shortcutsHint = useMemo(() => (
-    <div className="absolute bottom-16 right-6 sm:bottom-14 sm:right-8 z-20 text-xs text-zinc-400">
-      <span className="mr-2">Space: Play/Pause</span>
-      <span className="mr-2">↑/↓: Seek 10s</span>
-      <span className="mr-2">F: Fullscreen</span>
-      <span>I: PiP</span>
-      <span className="ml-2">S: Sub</span>
-    </div>
-  ), []];
-
-  return (
-    <div className="relative" style={{style: {paddingBottom: 20}}}>  // Placeholder - actual return handled by Vidstack
-      {pipButton}
-      {shortcutsHint}
-      <div className="absolute inset-0">
-        {children}
-      </div>
-    </div>
-  );
+  return null;
 }

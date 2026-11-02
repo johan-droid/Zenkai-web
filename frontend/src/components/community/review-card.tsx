@@ -63,7 +63,7 @@ export function ReviewCard({ animeId, animeTitle, rating, content, createdAt, au
       {canEdit && (
         <div className="mt-3 flex gap-2 text-xs text-zinc-400">
           <Button variant="ghost" size="sm">Edit</Button>
-          <Button variant="ghost" size="sm" danger>Delete</Button>
+          <Button variant="ghost" size="sm">Delete</Button>
         </div>
       )}
 

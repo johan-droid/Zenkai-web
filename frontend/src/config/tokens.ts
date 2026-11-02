@@ -86,11 +86,11 @@ export const tokens = {
   typography: {
     fontFamily: {
       // Primary: Cinematic serif for headings, reminiscent of anime credits
-      heading: "'Merriweather', 'Playfair Display', serif',
+      heading: "'Merriweather', 'Playfair Display', serif",
       // Secondary: Clean sans-serif for UI body
-      body: "'Inter', 'System UI', -apple-system, sans-serif',
+      body: "'Inter', 'System UI', -apple-system, sans-serif",
       // Monospace for numbers/timestamps
-      mono: "'Roboto Mono', 'Fira Code', monospace',
+      mono: "'Roboto Mono', 'Fira Code', monospace",
     },
     fontSize: {
       xs: ["0.75rem", { lineHeight: "1rem" }],
@@ -198,7 +198,7 @@ export const tokens = {
  * Used in CSS-in-JS or styled-components
  */
 export function color(token: keyof typeof tokens.colors): string {
-  return tokens.colors[token as keyof typeof tokens.colors];
+  return tokens.colors[token] as string;
 }
 
 /** 
