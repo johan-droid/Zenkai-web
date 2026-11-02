@@ -27,6 +27,8 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../../db/client.js";
 import { episodePlaybackMeta, skipTimingCommunity, skipTimingReports } from "../../db/schema/index.js";
+import { fetchJson } from "../../http/client.js";
+import { zenkaiShield } from "../../providers/zenkaiShield.js";
 import { skipCapableProviders, subtitleCapableProviders } from "../../providers/streaming/registry.js";
 import type { ResolveRequest, StreamingProvider } from "../../providers/streaming/types.js";
 
@@ -248,23 +250,59 @@ export class PlaybackMetadataService {
     request: ResolveRequest,
   ): Promise<Array<{ language: string; url: string; kind?: string }>> {
     const capable = subtitleCapableProviders(this.providers);
-    if (capable.length === 0) return [];
 
-    const collected = await Promise.all(
-      capable.map(async (provider) => {
-        try {
-          const sources = await provider.resolve(request);
-          return sources.flatMap((source) => source.subtitles ?? []);
-        } catch {
-          return [];
+    const collectedPromises = capable.map(async (provider) => {
+      try {
+        const sources = await provider.resolve(request);
+        return sources.flatMap((source) => source.subtitles ?? []);
+      } catch {
+        return [];
+      }
+    });
+
+    // Query OpenSubtitles via Zenkai API
+    const anilistId =
+      request.externalIds?.anilist ||
+      (typeof request.animeId === "string" && /^\d+$/.test(request.animeId) ? request.animeId : null);
+
+    const externalSubPromise = (async () => {
+      if (!anilistId) return [];
+      try {
+        const shieldHeaders = await zenkaiShield.getShieldHeaders();
+        const subData = await fetchJson<{
+          success?: boolean;
+          subtitles?: Array<{ id: string; label: string; language: string; lang: string; url: string }>;
+        }>(
+          `https://zenkaii.pages.dev/api/subtitles?id=${encodeURIComponent(anilistId)}&ep=${request.episodeNumber}`,
+          {
+            headers: { ...shieldHeaders, "X-Zenkai-Embed": "1" },
+            timeoutMs: 4000,
+            retries: 0,
+          },
+        );
+        if (subData?.success && Array.isArray(subData.subtitles)) {
+          return subData.subtitles.map((s) => ({
+            language: s.label || s.language || s.lang,
+            url: s.url,
+            kind: "subtitles",
+          }));
         }
-      }),
-    );
+      } catch {
+        // Non-blocking fallback
+      }
+      return [];
+    })();
+
+    const [collected, externalSubs] = await Promise.all([
+      Promise.all(collectedPromises),
+      externalSubPromise,
+    ]);
 
     // De-duplicated by URL: two endpoints on the same host often publish the
     // same sidecar under different ids.
+    const allSubs = [...collected.flat(), ...externalSubs];
     const seen = new Set<string>();
-    return collected.flat().filter((subtitle) => {
+    return allSubs.filter((subtitle) => {
       if (seen.has(subtitle.url)) return false;
       seen.add(subtitle.url);
       return true;

@@ -11,3 +11,4 @@ export * from "./comments.js";
 export * from "./userSessions.js";
 export * from "./library.js";
 export * from "./progress.js";
+export * from "./playback_reports.js";

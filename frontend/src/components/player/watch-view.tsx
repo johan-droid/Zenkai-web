@@ -33,9 +33,11 @@ import { NextEpisodeOverlay } from "@/components/player/next-episode-overlay";
 import { PlayerHotkeys } from "@/components/player/player-hotkeys";
 import { QualityMenu } from "@/components/player/quality-menu";
 import { ServerSelectionPanel } from "@/components/player/server-selection-panel";
+import { IssueReportModal } from "@/components/player/issue-report-modal";
 import { computeResumePosition, VideoPlayer } from "@/components/player/video-player";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Flag } from "lucide-react";
 
 function formatTimestamp(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -152,6 +154,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   const selectedSourceId = userSelection ?? initialPlanSelection(plans, preferredServer, servers);
   const [execution, setExecution] = useState<PlaybackExecution | null>(null);
   const [playbackFailure, setPlaybackFailure] = useState<string | null>(null);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   // Bumped exactly once (after a the first successful sources refetch), so one
   // automatic stale-selection retry happens per attempt — never an invisible loop.
   const [retryNonce, setRetryNonce] = useState(0);
@@ -508,6 +511,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
         <ServerSelectionPanel
           plans={plans}
           servers={servers}
+          availableAudioLanguages={sourcesQuery.data?.availableAudioLanguages}
           selectedSourceId={selectedSourceId}
           loading={sourcesQuery.isLoading}
           isRefreshing={isRefreshingServers}
@@ -520,7 +524,28 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
           usePlayerStore.getState().setPlaybackRate(rate);
         }} />
         <PlayerHotkeys />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsReportOpen(true)}
+          className="rounded-xl border-white/[0.08] bg-white/[0.03] text-xs text-zinc-300 hover:text-white"
+          title="Report playback problem"
+        >
+          <Flag className="size-3.5 mr-1 text-red-500" />
+          <span>Report</span>
+        </Button>
       </div>
+
+      <IssueReportModal
+        open={isReportOpen}
+        onOpenChange={setIsReportOpen}
+        episodeId={episodeCard?.id ?? `${id}-${episodeNumber}`}
+        animeId={id}
+        providerSlug={execution?.providerSlug}
+        sourceId={selectedSourceId ?? undefined}
+        audioLanguage={language}
+        currentTimeSeconds={currentPlaybackTimeRef.current}
+      />
 
       <div className={cn("grid gap-6", theaterMode ? "" : "lg:grid-cols-[1fr_360px]")}>
         <div className={cn("relative flex flex-col gap-4", theaterMode ? "lg:col-span-2" : "")}>

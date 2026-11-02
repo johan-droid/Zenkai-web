@@ -18,6 +18,14 @@ export const audioTrackSchema = z.enum(["sub", "dub", "multi"]);
 export const playbackMechanismSchema = z.enum(["hls", "progressive", "iframe"]);
 export const playbackDeliverySchema = z.enum(["client", "proxied"]);
 
+export const audioTrackDetailSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  type: audioTrackSchema,
+  isDefault: z.boolean().optional(),
+  providerTrackId: z.string().optional(),
+});
+
 const episodeSummarySchema = z.object({
   id: z.string(),
   episodeNumber: z.number().int(),
@@ -44,6 +52,7 @@ const playbackSourceSchema = z.object({
   quality: z.string().optional(),
   resolution: z.number().optional(),
   language: audioTrackSchema,
+  audioTracks: z.array(audioTrackDetailSchema).optional(),
   subtitles: z.array(subtitleTrackSchema).optional(),
   referer: z.string().optional(),
   headers: z.record(z.string()).optional(),
@@ -65,6 +74,7 @@ const playbackPlanSchema = z.object({
   delivery: playbackDeliverySchema,
   proxyUrl: z.string().optional(),
   language: audioTrackSchema,
+  audioTracks: z.array(audioTrackDetailSchema).optional(),
   quality: z.string().optional(),
   resolution: z.number().optional(),
   referer: z.string().optional(),
@@ -98,6 +108,7 @@ export const playbackSourcesResponseSchema = z.object({
   sourceCount: z.number().int().nonnegative(),
   plans: z.array(playbackPlanSchema),
   planCount: z.number().int().nonnegative(),
+  availableAudioLanguages: z.array(audioTrackDetailSchema).optional(),
   attempts: z.array(providerAttemptSchema),
   skipped: z.array(skippedProviderSchema),
   /** Present only when the shelf is empty; stays distinct per P5 semantics. */

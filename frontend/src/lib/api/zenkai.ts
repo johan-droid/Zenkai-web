@@ -306,6 +306,7 @@ export const episodeCardSchema = z.object({
   durationSeconds: z.number().nullish(),
   thumbnailUrl: z.string().nullish(),
   isFiller: z.boolean(),
+  canonType: z.enum(["canon", "filler", "mixed"]).optional(),
   airingAt: z.string().nullish(),
   airingState: z.enum(["aired", "upcoming", "unknown"]),
   airingSource: z.string().nullish(),
@@ -354,6 +355,15 @@ export type EpisodeNavigation = z.infer<typeof episodeNavigationSchema>;
 export const playbackLanguageSchema = z.enum(["sub", "dub", "multi"]);
 export type PlaybackLanguage = z.infer<typeof playbackLanguageSchema>;
 
+export const audioTrackDetailSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  type: playbackLanguageSchema,
+  isDefault: z.boolean().optional(),
+  providerTrackId: z.string().optional(),
+});
+export type AudioTrackDetail = z.infer<typeof audioTrackDetailSchema>;
+
 const playbackAccessSchema = z.enum(["hls", "mp4", "direct", "embed"]);
 const playbackMechanismSchema = z.enum(["hls", "progressive", "iframe"]);
 const playbackDeliverySchema = z.enum(["client", "proxied"]);
@@ -375,6 +385,7 @@ const playbackSourceSchema = z.object({
   quality: z.string().optional(),
   resolution: z.number().optional(),
   language: playbackLanguageSchema,
+  audioTracks: z.array(audioTrackDetailSchema).optional(),
   subtitles: z.array(subtitleTrackSchema).optional(),
   referer: z.string().optional(),
   priority: z.number(),
@@ -402,6 +413,7 @@ const playbackPlanSchema = z.object({
   delivery: playbackDeliverySchema,
   proxyUrl: z.string().optional(),
   language: playbackLanguageSchema,
+  audioTracks: z.array(audioTrackDetailSchema).optional(),
   quality: z.string().optional(),
   resolution: z.number().optional(),
   validated: z.boolean(),
@@ -492,6 +504,7 @@ export const playbackSourcesResponseSchema = z.object({
   sourceCount: z.number().int().nonnegative(),
   plans: z.array(playbackPlanSchema),
   planCount: z.number().int().nonnegative(),
+  availableAudioLanguages: z.array(audioTrackDetailSchema).optional(),
   attempts: z.array(providerAttemptSchema),
   skipped: z.array(skippedProviderSchema),
   emptyReason: z.enum(["no_streams", "all_failed", "quarantined"]).optional(),
@@ -530,6 +543,7 @@ export const playbackExecutionSchema = z.discriminatedUnion("kind", [
     providerSlug: z.string(),
     providerName: z.string(),
     language: playbackLanguageSchema,
+    audioTracks: z.array(audioTrackDetailSchema).optional(),
     quality: z.string().optional(),
     resolution: z.number().optional(),
     validated: z.boolean(),
@@ -549,6 +563,7 @@ export const playbackExecutionSchema = z.discriminatedUnion("kind", [
     providerSlug: z.string(),
     providerName: z.string(),
     language: playbackLanguageSchema,
+    audioTracks: z.array(audioTrackDetailSchema).optional(),
     validated: z.boolean(),
     playable: z.boolean(),
     subtitles: z.array(subtitleTrackSchema).optional(),
@@ -2102,4 +2117,53 @@ export function fetchMangaProviderAvailability(): Promise<ProviderAvailabilityLi
 /** Fetch novel provider availability only. */
 export function fetchNovelProviderAvailability(): Promise<ProviderAvailabilityList> {
   return getValidated("/api/v1/providers/novel", providerAvailabilitySchema);
+}
+
+/* ------------------------------------------------------------------ */
+/* Playback Issue Reporting Subsystem                                  */
+/* ------------------------------------------------------------------ */
+
+export const playbackIssueCategorySchema = z.enum([
+  "dead_stream",
+  "audio_desync",
+  "buffering",
+  "wrong_episode",
+  "subtitles_missing",
+  "audio_missing",
+  "other",
+]);
+
+export type PlaybackIssueCategory = z.infer<typeof playbackIssueCategorySchema>;
+
+export const playbackIssueInputSchema = z.object({
+  episodeId: z.string().trim().min(1).max(128),
+  animeId: z.string().trim().max(128).optional(),
+  providerSlug: z.string().trim().max(64).optional(),
+  sourceId: z.string().trim().max(256).optional(),
+  issueCategory: playbackIssueCategorySchema,
+  playbackTimestampSeconds: z.number().int().min(0).max(86400).optional(),
+  audioLanguage: z.string().trim().max(32).optional(),
+  subtitleLanguage: z.string().trim().max(64).optional(),
+  userDescription: z.string().trim().max(1000).optional(),
+});
+
+export type PlaybackIssueInput = z.infer<typeof playbackIssueInputSchema>;
+
+export const playbackIssueResponseSchema = z.object({
+  success: z.boolean(),
+  reportId: z.string().optional(),
+  message: z.string().optional(),
+  duplicate: z.boolean().optional(),
+});
+
+export type PlaybackIssueResponse = z.infer<typeof playbackIssueResponseSchema>;
+
+/**
+ * Report a verified playback defect (dead stream, audio desync, missing captions).
+ * Handled via canonical backend route with automatic rate limiting and deduplication.
+ */
+export function reportPlaybackIssue(
+  input: PlaybackIssueInput,
+): Promise<PlaybackIssueResponse> {
+  return postValidated("/api/v1/playback/issues", playbackIssueResponseSchema, input);
 }

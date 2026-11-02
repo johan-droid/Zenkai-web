@@ -22,6 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type {
+  AudioTrackDetail,
   PlaybackLanguage,
   PlaybackPlan,
   ServerAvailabilityItem,
@@ -39,6 +40,7 @@ const LANGUAGES: { value: PlaybackLanguage; label: string }[] = [
 export interface ServerSelectionPanelProps {
   plans: PlaybackPlan[];
   servers?: ServerAvailabilityItem[];
+  availableAudioLanguages?: AudioTrackDetail[];
   selectedSourceId: string | null;
   loading: boolean;
   isRefreshing?: boolean;
@@ -52,6 +54,7 @@ export interface ServerSelectionPanelProps {
 export function ServerSelectionPanel({
   plans,
   servers = [],
+  availableAudioLanguages = [],
   selectedSourceId,
   loading,
   isRefreshing = false,
@@ -191,6 +194,20 @@ export function ServerSelectionPanel({
               ))}
             </div>
           </div>
+
+          {availableAudioLanguages.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-medium text-zinc-400">Available:</span>
+              {availableAudioLanguages.map((track) => (
+                <span
+                  key={track.code}
+                  className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-zinc-300"
+                >
+                  {track.name} ({track.code.toUpperCase()})
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400">

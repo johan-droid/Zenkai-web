@@ -5,10 +5,13 @@ export const siteConfig = {
   description:
     "Anime, manga and novels in one focused place. Discover, track and pick up where you left off — no login required.",
   url: "https://zenkai.app",
+  /**
+   * Verified destinations only. Discord and Telegram were removed here because
+   * they held bare-domain placeholders (`discord.gg`, `t.me`) rather than real
+   * invite or profile URLs — a link in the footer must never be a guess.
+   */
   links: {
     github: "https://github.com/Nyyrox/Zenkai",
-    discord: "https://discord.gg",
-    telegram: "https://t.me",
   },
 } as const;
 

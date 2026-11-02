@@ -1,6 +1,6 @@
 # Zenkai Web — Complete API Inventory
 
-This document represents the complete, verified inventory of all 80 exposed API endpoints in the Zenkai backend. Every endpoint has been verified against backend source implementations (`backend/src/app.ts` and `backend/src/modules/**/routes.ts`).
+This document represents the complete, verified inventory of all 82 exposed API endpoints in the Zenkai backend. Every endpoint has been verified against backend source implementations (`backend/src/app.ts` and `backend/src/modules/**/routes.ts`).
 
 ---
 
@@ -92,6 +92,8 @@ This document represents the complete, verified inventory of all 80 exposed API 
 | PL8 | `POST` | `/api/v1/playback/providers/check` | Public | Force a synchronous re-probe of all stream providers | VERIFIED_FROM_SOURCE |
 | PL9 | `GET` | `/api/v1/playback/manifest` | Public | Relay HLS master/variant playlists and rewrite child segments | VERIFIED_FROM_BOTH |
 | PL10 | `GET` | `/api/v1/playback/subtitle` | Public | CORS-bypassing subtitle relay for sidecar tracks | VERIFIED_FROM_BOTH |
+| PL11 | `POST` | `/api/v1/playback/issues` | Public (Rate-limited) | Report stream, audio, or subtitle defects with auto-deduplication | VERIFIED_FROM_BOTH |
+| PL12 | `GET` | `/api/v1/playback/issues/summary` | Public | Observability issue reports summary grouped by category and provider | VERIFIED_FROM_BOTH |
 
 ---
 

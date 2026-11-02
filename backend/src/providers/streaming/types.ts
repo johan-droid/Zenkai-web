@@ -13,6 +13,17 @@
 export type AccessType = "hls" | "mp4" | "direct" | "embed";
 export type AudioTrack = "sub" | "dub" | "multi";
 
+export interface AudioTrackDetail {
+  /** BCP-47 language tag (e.g. "ja", "en", "hi", "es", "pt"). */
+  code: string;
+  /** Human-readable language name (e.g. "Japanese", "English", "Hindi"). */
+  name: string;
+  /** Audio category: sub, dub, or multi. */
+  type: AudioTrack;
+  isDefault?: boolean;
+  providerTrackId?: string;
+}
+
 export interface ProviderCapabilities {
   languages: AudioTrack[];
   accessTypes: AccessType[];
@@ -40,6 +51,7 @@ export interface PlaybackSource {
   /** Vertical resolution when known; ranking prefers higher. */
   resolution?: number;
   language: AudioTrack;
+  audioTracks?: AudioTrackDetail[];
   subtitles?: Array<{ language: string; url: string; kind?: string }>;
   /** Some CDNs refuse requests without the origin Referer. */
   referer?: string;
@@ -129,6 +141,7 @@ export interface PlaybackPlan {
   proxyUrl?: string;
 
   language: AudioTrack;
+  audioTracks?: AudioTrackDetail[];
   quality?: string;
   resolution?: number;
 

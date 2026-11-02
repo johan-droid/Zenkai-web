@@ -17,3 +17,4 @@ export * from "./schedule";
 export * from "./users";
 export * from "./library";
 export * from "./progress";
+export * from "./playback_reports";

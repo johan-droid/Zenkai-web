@@ -39,12 +39,14 @@ export function Brand({
           sizeClasses.container,
         )}
       >
-        {/* Zenkai vector mark */}
+        {/* Zenkai vector mark. The link already carries the accessible name
+          ("Zenkai home"), so the mark itself must stay silent or screen
+          readers announce the brand twice. */}
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 884 457"
-          role="img"
-          aria-label="Zenkai logo mark"
+          aria-hidden="true"
+          focusable="false"
           className="relative z-10 size-full"
         >
           <path

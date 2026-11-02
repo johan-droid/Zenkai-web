@@ -382,6 +382,7 @@ export class PlaybackGateway {
       ...this.#delivery(access, parsed, source.referer),
 
       language: source.language,
+      ...(source.audioTracks ? { audioTracks: source.audioTracks } : {}),
       quality: source.quality,
       resolution: source.resolution,
 

@@ -335,7 +335,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerProviderRoutes(app);
   registerScheduleRoutes(app, scheduleService);
   const serverService = new ServerAvailabilityService(resolver, providers);
-  registerPlaybackRoutes(app, resolver, metadata, animeRepo, serverService);
+  registerPlaybackRoutes(app, resolver, metadata, animeRepo, serverService, deps.db);
 
   /** Per-provider health, for the observability dashboard (P19). */
   app.get("/api/v1/providers/health", async () => ({

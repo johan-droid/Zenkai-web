@@ -20,6 +20,7 @@
  */
 
 import { airingStateAt } from "../schedule/time.js";
+import { FillerClassifier } from "../../providers/metadata/filler.js";
 import type { AnimeRepository } from "./repository.js";
 
 /**
@@ -46,6 +47,7 @@ export interface EpisodeCard {
   durationSeconds: number | null;
   thumbnailUrl: string | null;
   isFiller: boolean;
+  canonType?: "canon" | "filler" | "mixed";
   /** When it airs or aired. Null when the provider gave no schedule. */
   airingAt: string | null;
   airingState: EpisodeAiringState;
@@ -147,6 +149,23 @@ export class EpisodeService {
       });
     }
 
+    // Enrich with filler classifier data if available
+    try {
+      const parentTitles = animeId ? await this.repo.listParentTitles([animeId]) : [];
+      const titleToQuery = parentTitles[0]?.titleEnglish || parentTitles[0]?.titleRomaji;
+      if (titleToQuery) {
+        const fillerInfo = await FillerClassifier.getForTitle(titleToQuery);
+        for (const ep of episodes) {
+          if (!ep.isFiller && fillerInfo.isFiller(ep.episodeNumber)) {
+            ep.isFiller = true;
+          }
+          ep.canonType = ep.isFiller ? "filler" : fillerInfo.getCanonType(ep.episodeNumber);
+        }
+      }
+    } catch {
+      // Non-blocking enrichment
+    }
+
     const totalCount = episodes.length;
     const airedCount = episodes.filter((episode) => episode.airingState === "aired").length;
 
@@ -242,6 +261,7 @@ function toCard(row: Record<string, any>, now: Date): EpisodeCard {
     durationSeconds: row.durationSeconds ?? null,
     thumbnailUrl: row.thumbnailUrl ?? null,
     isFiller: Boolean(row.isFiller),
+    canonType: (row.canonType as "canon" | "filler" | "mixed") ?? (row.isFiller ? "filler" : undefined),
     airingAt: airingAt ? airingAt.toISOString() : null,
     airingState: airingAt ? airingStateAt(airingAt, now) : (row.airingState ?? "aired"),
     airingSource: row.slotSource ?? row.airingSource ?? null,

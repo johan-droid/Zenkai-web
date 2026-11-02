@@ -10,8 +10,12 @@
  */
 
 import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
+import { and, desc, eq, gt, sql } from "drizzle-orm";
+import type { Db } from "../../db/client.js";
+import { playbackIssueReports } from "../../db/schema/index.js";
 import { AppError } from "../../http/errors.js";
 import { playbackGateway, redactPlaybackUrl } from "../../providers/streaming/gateway.js";
 import { playbackExecutionRequestSchema, toExecution } from "./execution.js";
@@ -42,6 +46,7 @@ export function registerPlaybackRoutes(
   metadata: PlaybackMetadataService,
   animeRepo: AnimeRepository,
   serverService?: ServerAvailabilityService,
+  db?: Db,
 ): void {
   /**
    * Sources for one episode.
@@ -159,6 +164,14 @@ export function registerPlaybackRoutes(
       reply.header("cache-control", "public, max-age=30, s-maxage=60, stale-while-revalidate=30");
     }
 
+    const availableAudioLanguages = Array.from(
+      new Map(
+        result.sources
+          .flatMap((s) => s.audioTracks ?? [])
+          .map((t) => [t.code, t]),
+      ).values(),
+    );
+
     return {
       episode: summarize(episode),
       sources: result.sources,
@@ -174,6 +187,7 @@ export function registerPlaybackRoutes(
       // Providers excluded before any call, with the reason. Exposed so a client
       // can explain an empty shelf rather than guessing at it.
       skipped: result.skipped ?? [],
+      ...(availableAudioLanguages.length > 0 ? { availableAudioLanguages } : {}),
       // Per-server availability when a provider reported it.
       ...(computedServers ? { servers: computedServers } : {}),
       resolutionTimeMs: result.resolutionTimeMs,
@@ -524,6 +538,165 @@ export function registerPlaybackRoutes(
     reply.header("content-type", subtitle.contentType);
     reply.header("cache-control", "no-store");
     return reply.send(subtitle.body);
+  });
+
+  /**
+   * General playback issue reporting route.
+   *
+   * Rate limited to 5 submissions per 15 minutes per IP.
+   * Automatically deduplicates repeated identical reports within 5 minutes.
+   * Never records ephemeral signed URLs or private user tokens.
+   */
+  const playbackIssueBodySchema = z.object({
+    episodeId: z.string().trim().min(1).max(128),
+    animeId: z.string().trim().max(128).optional(),
+    providerSlug: z.string().trim().max(64).optional(),
+    sourceId: z.string().trim().max(256).optional(),
+    issueCategory: z.enum([
+      "dead_stream",
+      "audio_desync",
+      "buffering",
+      "wrong_episode",
+      "subtitles_missing",
+      "audio_missing",
+      "other",
+    ]),
+    playbackTimestampSeconds: z.number().int().min(0).max(86400).optional(),
+    audioLanguage: z.string().trim().max(32).optional(),
+    subtitleLanguage: z.string().trim().max(64).optional(),
+    userDescription: z.string().trim().max(1000).optional(),
+  });
+
+  const issueRateLimitWindowMs = 15 * 60 * 1000; // 15 minutes
+  const maxIssuesPerWindow = 5;
+  const duplicateWindowMs = 5 * 60 * 1000; // 5 minutes
+
+  app.post("/api/v1/playback/issues", async (request, reply) => {
+    const body = parseOrThrow(playbackIssueBodySchema, request.body);
+    const clientIp = request.ip || "127.0.0.1";
+    const ipHash = createHash("sha256").update(clientIp).digest("hex");
+    const userAgent = (request.headers["user-agent"] || "").slice(0, 256);
+
+    if (db) {
+      try {
+        const fifteenMinutesAgo = new Date(Date.now() - issueRateLimitWindowMs);
+        const recentReports = await db
+          .select({ id: playbackIssueReports.id })
+          .from(playbackIssueReports)
+          .where(
+            and(
+              eq(playbackIssueReports.clientIpHash, ipHash),
+              gt(playbackIssueReports.createdAt, fifteenMinutesAgo),
+            ),
+          );
+
+        if (recentReports.length >= maxIssuesPerWindow) {
+          throw AppError.tooManyRequests(
+            "Rate limit exceeded: maximum 5 playback issue reports per 15 minutes. Please try again later.",
+          );
+        }
+
+        // Duplicate check within 5 minutes
+        const fiveMinutesAgo = new Date(Date.now() - duplicateWindowMs);
+        const duplicates = await db
+          .select({ id: playbackIssueReports.id })
+          .from(playbackIssueReports)
+          .where(
+            and(
+              eq(playbackIssueReports.episodeId, body.episodeId),
+              eq(playbackIssueReports.issueCategory, body.issueCategory),
+              eq(playbackIssueReports.clientIpHash, ipHash),
+              gt(playbackIssueReports.createdAt, fiveMinutesAgo),
+            ),
+          )
+          .limit(1);
+
+        if (duplicates.length > 0) {
+          return reply.status(200).send({
+            success: true,
+            reportId: duplicates[0]!.id,
+            message: "Issue already reported and is queued for verification.",
+            duplicate: true,
+          });
+        }
+
+        const [inserted] = await db
+          .insert(playbackIssueReports)
+          .values({
+            episodeId: body.episodeId,
+            animeId: body.animeId,
+            providerSlug: body.providerSlug,
+            sourceId: body.sourceId,
+            issueCategory: body.issueCategory,
+            playbackTimestampSeconds: body.playbackTimestampSeconds,
+            audioLanguage: body.audioLanguage,
+            subtitleLanguage: body.subtitleLanguage,
+            userDescription: body.userDescription,
+            clientIpHash: ipHash,
+            userAgent,
+            status: "open",
+          })
+          .returning({ id: playbackIssueReports.id });
+
+        request.log.info(
+          {
+            reportId: inserted?.id,
+            episodeId: body.episodeId,
+            issueCategory: body.issueCategory,
+            providerSlug: body.providerSlug,
+          },
+          "playback issue report submitted",
+        );
+
+        return reply.status(201).send({
+          success: true,
+          reportId: inserted?.id,
+          message: "Playback issue report submitted successfully.",
+        });
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        request.log.warn({ err }, "failed to persist playback issue report to database");
+      }
+    }
+
+    // Degraded / DB offline fallback
+    return reply.status(200).send({
+      success: true,
+      reportId: `offline-${Date.now()}`,
+      message: "Playback issue recorded (offline fallback).",
+    });
+  });
+
+  app.get("/api/v1/playback/issues/summary", async () => {
+    if (!db) {
+      return { total: 0, byCategory: {}, byProvider: {} };
+    }
+    try {
+      const rows = await db
+        .select({
+          issueCategory: playbackIssueReports.issueCategory,
+          providerSlug: playbackIssueReports.providerSlug,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(playbackIssueReports)
+        .groupBy(playbackIssueReports.issueCategory, playbackIssueReports.providerSlug);
+
+      const byCategory: Record<string, number> = {};
+      const byProvider: Record<string, number> = {};
+      let total = 0;
+
+      for (const row of rows) {
+        const c = row.count || 0;
+        total += c;
+        byCategory[row.issueCategory] = (byCategory[row.issueCategory] || 0) + c;
+        const p = row.providerSlug || "unknown";
+        byProvider[p] = (byProvider[p] || 0) + c;
+      }
+
+      return { total, byCategory, byProvider };
+    } catch {
+      return { total: 0, byCategory: {}, byProvider: {} };
+    }
   });
 }
 

@@ -2,27 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Tv, BookOpen, CalendarDays, Bookmark } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 
-import { isActivePath } from "@/config/nav";
+import { bottomNav, isActivePath, isImmersivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
 
-const MOBILE_NAV_ITEMS = [
-  { label: "Home", href: "/", icon: Home },
-  { label: "Anime", href: "/anime", icon: Tv },
-  { label: "Manga", href: "/manga", icon: BookOpen },
-  { label: "Schedule", href: "/schedule", icon: CalendarDays },
-  { label: "Library", href: "/library", icon: Bookmark },
-];
-
+/**
+ * Fixed bottom bar — the primary navigation surface on phones. It carries only
+ * the highest-value destinations (`bottomNav`), never a copy of the desktop
+ * row, and gets out of the way entirely on playback and reading routes.
+ */
 export function MobileNav() {
   const pathname = usePathname();
+  const shouldReduceMotion = useReducedMotion();
 
-  const isImmersiveMedia =
-    pathname.startsWith("/watch/") ||
-    pathname.startsWith("/read/") ||
-    pathname.startsWith("/read-novel/");
+  const isImmersiveMedia = isImmersivePath(pathname);
 
   if (isImmersiveMedia) return null;
 
@@ -37,7 +31,7 @@ export function MobileNav() {
       aria-label="Mobile Navigation"
     >
       <div className="mx-auto flex max-w-lg items-center justify-around px-2 py-1.5 min-h-[56px]">
-        {MOBILE_NAV_ITEMS.map((item) => {
+        {bottomNav.map((item) => {
           const Icon = item.icon;
           const active = isActivePath(pathname, item.href);
           return (
@@ -47,17 +41,22 @@ export function MobileNav() {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "relative flex min-h-[44px] flex-1 flex-col items-center justify-center rounded-lg py-1.5 transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-signal",
-                active ? "text-white" : "text-zinc-400 hover:text-zinc-200",
+                active ? "text-white" : "text-ink-3 hover:text-ink-2",
               )}
             >
-              {/* Active state: a hairline, not a pill. */}
-              {active && (
-                <motion.span
-                  layoutId="mobileNavActivePill"
-                  transition={{ type: "spring", stiffness: 420, damping: 30 }}
-                  className="absolute inset-x-3 top-0 h-px bg-signal"
-                />
-              )}
+              {/* Active state: a hairline, not a pill. Animated only when the
+                  user has not asked for reduced motion. */}
+              {active ? (
+                shouldReduceMotion ? (
+                  <span aria-hidden className="absolute inset-x-3 top-0 h-px bg-signal" />
+                ) : (
+                  <motion.span
+                    layoutId="mobileNavActivePill"
+                    transition={{ type: "spring", stiffness: 420, damping: 30 }}
+                    className="absolute inset-x-3 top-0 h-px bg-signal"
+                  />
+                )
+              ) : null}
 
               <span className="relative z-10 flex flex-col items-center gap-1">
                 <Icon
@@ -69,8 +68,8 @@ export function MobileNav() {
                 />
                 <span
                   className={cn(
-                    "text-[0.62rem] font-semibold tracking-wide transition-colors",
-                    active ? "font-semibold text-ink-1" : "text-ink-3",
+                    "text-[0.68rem] font-semibold tracking-wide transition-colors",
+                    active ? "text-ink-1" : "text-ink-3",
                   )}
                 >
                   {item.label}

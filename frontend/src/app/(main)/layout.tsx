@@ -10,7 +10,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       <IntroAnimation />
       <AuroraBackground />
       <Navbar />
-      <main className="container-page relative z-10 min-w-0 flex-1 pb-28 pt-4 md:pb-16">
+      {/* Bottom-bar clearance belongs to the footer, which is what the fixed
+          bar actually overlaps. main only needs ordinary breathing room before
+          it — the old pb-28 was a second compensation for the same bar. */}
+      <main className="container-page relative z-10 min-w-0 flex-1 pt-4 pb-10 md:pb-16">
         {children}
       </main>
       <Footer />

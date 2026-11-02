@@ -19,6 +19,7 @@ import { healthRegistry } from "./health.js";
 import { HiAnimeEmbedProvider } from "./hianime-embed.provider.js";
 import { InProcessProvider } from "./inprocess.provider.js";
 import { NovusCloudProvider } from "./novus.provider.js";
+import { ZenkaiApiStreamingProvider } from "./zenkai.provider.js";
 import { TemplateProvider, type TemplateEndpoint } from "./template.provider.js";
 import type { AudioTrack, StreamingProvider } from "./types.js";
 
@@ -170,6 +171,11 @@ export function buildProviders(): StreamingProvider[] {
   // Extracts real HLS master playlists, multi-track captions, and skip markers from cdn.4animo.xyz.
   if (config.NOVUS_ENABLED) {
     providers.push(new NovusCloudProvider());
+  }
+
+  // Zenkai Streaming API provides direct MegaPlay, Vidstream, FlixCloud, and AnimeSalt sources
+  if (config.ZENKAI_STREAMING_ENABLED !== false) {
+    providers.push(new ZenkaiApiStreamingProvider());
   }
 
   // HiAnime embeds are the primary path: the mirror is reachable without a

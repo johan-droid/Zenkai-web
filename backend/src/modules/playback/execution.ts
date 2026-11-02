@@ -19,7 +19,8 @@
 
 import { z } from "zod";
 
-import type { PlaybackPlan } from "../../providers/streaming/types.js";
+import type { AudioTrackDetail, PlaybackPlan } from "../../providers/streaming/types.js";
+import { audioTrackDetailSchema } from "./contract.js";
 
 /**
  * The client's selection.
@@ -63,6 +64,7 @@ export type PlaybackExecution =
       providerSlug: string;
       providerName: string;
       language: "sub" | "dub" | "multi";
+      audioTracks?: AudioTrackDetail[];
       quality?: string;
       resolution?: number;
       validated: boolean;
@@ -79,6 +81,7 @@ export type PlaybackExecution =
       providerSlug: string;
       providerName: string;
       language: "sub" | "dub" | "multi";
+      audioTracks?: AudioTrackDetail[];
       validated: boolean;
       playable: boolean;
       subtitles?: Array<{ language: string; url: string; kind?: string }>;
@@ -103,6 +106,7 @@ export function toExecution(plan: PlaybackPlan): PlaybackExecution {
       providerSlug: plan.providerSlug,
       providerName: plan.providerName,
       language: plan.language,
+      ...(plan.audioTracks ? { audioTracks: plan.audioTracks } : {}),
       validated: plan.validated,
       playable: plan.playable,
       ...(plan.subtitles ? { subtitles: plan.subtitles } : {}),
@@ -120,6 +124,7 @@ export function toExecution(plan: PlaybackPlan): PlaybackExecution {
     providerSlug: plan.providerSlug,
     providerName: plan.providerName,
     language: plan.language,
+    ...(plan.audioTracks ? { audioTracks: plan.audioTracks } : {}),
     ...(plan.quality !== undefined ? { quality: plan.quality } : {}),
     ...(plan.resolution !== undefined ? { resolution: plan.resolution } : {}),
     validated: plan.validated,
@@ -141,6 +146,7 @@ export const playbackExecutionResponseSchema = z.object({
     providerSlug: z.string(),
     providerName: z.string(),
     language: z.enum(["sub", "dub", "multi"]),
+    audioTracks: z.array(audioTrackDetailSchema).optional(),
     quality: z.string().optional(),
     resolution: z.number().optional(),
     validated: z.boolean(),

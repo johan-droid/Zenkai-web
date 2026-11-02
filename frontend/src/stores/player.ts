@@ -35,12 +35,15 @@ export interface PlayerState {
   theaterMode: boolean;
   /** Preferred playback server name or slug (e.g. "Novus HD-1", "novus", "recloud"). */
   preferredServer: string | null;
+  /** Preferred regional audio language code (e.g. "ja", "en", "hi", "es", "pt"). */
+  preferredAudioLanguage: string | null;
   /** Whether to automatically fallback to the next available server if playback fails. */
   autoServerFallback: boolean;
   /** Automatically select the highest-rated/available server when no preferred server is set. */
   autoSelectBestServer: boolean;
 
   setAudio: (audio: AudioPreference) => void;
+  setPreferredAudioLanguage: (preferredAudioLanguage: string | null) => void;
   setAutoplayNext: (value: boolean) => void;
   setAutoPlayNext: (value: boolean) => void;
   setPlaybackRate: (rate: number) => void;
@@ -74,10 +77,12 @@ export const usePlayerStore = create<PlayerState>()(
       showSkipButtons: true,
       theaterMode: false,
       preferredServer: null,
+      preferredAudioLanguage: null,
       autoServerFallback: true,
       autoSelectBestServer: true,
 
       setAudio: (audio) => set({ audio }),
+      setPreferredAudioLanguage: (preferredAudioLanguage) => set({ preferredAudioLanguage }),
       setAutoplayNext: (autoplayNext) => set({ autoplayNext, autoPlayNext: autoplayNext }),
       setAutoPlayNext: (autoPlayNext) => set({ autoplayNext: autoPlayNext, autoPlayNext }),
       setPlaybackRate: (playbackRate) => set({ playbackRate }),
@@ -111,6 +116,7 @@ export const usePlayerStore = create<PlayerState>()(
         showSkipButtons: state.showSkipButtons,
         theaterMode: state.theaterMode,
         preferredServer: state.preferredServer,
+        preferredAudioLanguage: state.preferredAudioLanguage,
         autoServerFallback: state.autoServerFallback,
         autoSelectBestServer: state.autoSelectBestServer,
       }),

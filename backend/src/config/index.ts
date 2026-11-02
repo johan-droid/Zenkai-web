@@ -106,10 +106,14 @@ const schema = z.object({
 
   /** Proxy upstream media through this service (needed for CORS/referer walls). */
   ENABLE_PLAYBACK_PROXY: booleanish.default(false),
+  /** Zenkai Streaming API provider (zenkaii.pages.dev / MegaPlay / Vidstream / FlixCloud / ACDN) */
+  ZENKAI_STREAMING_ENABLED: booleanish.default(true),
   /** Hosts the playback gateway is permitted to fetch from. */
   PLAYBACK_PROXY_ALLOWLIST: z
     .string()
-    .default("cdn.4animo.xyz,novuscloud.buzz,flixera.co,test-streams.mux.dev"),
+    .default(
+      "cdn.4animo.xyz,novuscloud.buzz,flixera.co,test-streams.mux.dev,fetch.nexabloom.top,megaplay.buzz,de3bv.eclipseharbor.world,subs5.strem.io,ravok.buzz,flixcloud.cc,vault-94.rundowncdn.top,fetch9.flixcloud.cc",
+    ),
 
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
