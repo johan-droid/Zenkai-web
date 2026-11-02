@@ -308,7 +308,7 @@ export class MangaService {
       // DB offline
     }
 
-    const key = `manga:chapters:v4:${targetProviderId}:${language}`;
+    const key = `manga:chapters:v5:${targetProviderId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
       if (!isMangaDexId(targetProviderId)) {
         // Not a MangaDex UUID; cannot fetch chapters from provider.
@@ -323,26 +323,35 @@ export class MangaService {
       }
 
       // If MangaDex returned 0 chapters or only unreadable / paywalled external releases,
-      // fallback to Zenkai multi-provider (WeebCentral, etc.)
+      // fallback to Zenkai multi-provider (WeebCentral, ComicK, etc.)
       if (!isUsableChapterList(incoming)) {
         try {
           const detail = await this.getByProviderId(targetProviderId).catch(() => null);
+          const mdDirect = await this.provider.getById(targetProviderId).catch(() => null);
           const allTitles = [
             detail?.canonicalTitle,
             detail?.titles?.primary,
             ...(detail?.titles?.alternates ?? []),
             ...(Array.isArray(detail?.altTitles) ? detail.altTitles : []),
             ...(Array.isArray(detail?.synonyms) ? detail.synonyms : []),
+            (mdDirect as any)?.canonicalTitle,
+            mdDirect?.titles?.primary,
+            ...(mdDirect?.titles?.alternates ?? []),
           ].filter(Boolean) as string[];
 
           const cleanCandidates = this.#cleanTitleCandidates(allTitles);
-          for (const cand of cleanCandidates) {
-            const searchRes = await this.zenkaiProvider.search(cand, 3).catch(() => ({ items: [] }));
-            if (searchRes.items.length > 0) {
-              const zenkaiChs = await this.zenkaiProvider.getChapters(searchRes.items[0].providerId, { language }).catch(() => []);
-              if (zenkaiChs.length > 0 && isUsableChapterList(zenkaiChs)) {
-                incoming = zenkaiChs;
-                break;
+          const sources = ["weebcentral", "comick"];
+          findChapters: for (const src of sources) {
+            for (const cand of cleanCandidates) {
+              const searchRes = await this.zenkaiProvider.search(cand, 3, src).catch(() => ({ items: [] }));
+              if (searchRes.items.length > 0) {
+                for (const item of searchRes.items) {
+                  const zenkaiChs = await this.zenkaiProvider.getChapters(item.providerId, { language }, src).catch(() => []);
+                  if (zenkaiChs.length > 0 && isUsableChapterList(zenkaiChs)) {
+                    incoming = zenkaiChs;
+                    break findChapters;
+                  }
+                }
               }
             }
           }
@@ -356,7 +365,11 @@ export class MangaService {
           return this.repo.upsertChapters(localId, incoming).catch(() => undefined);
         });
       } else {
-        await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
+        // Only upsert if at least one chapter is readable
+        const hasReadable = incoming.some((c) => !c.externalUrl);
+        if (hasReadable) {
+          await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
+        }
       }
 
       return incoming;
@@ -475,6 +488,12 @@ export class MangaService {
           if (Array.isArray(localManga.titles?.alternates)) {
             mangaTitles.push(...localManga.titles.alternates);
           }
+          if (Array.isArray((localManga as any).synonyms)) {
+            mangaTitles.push(...(localManga as any).synonyms);
+          }
+          if (Array.isArray((localManga as any).altTitles)) {
+            mangaTitles.push(...(localManga as any).altTitles);
+          }
         }
       }
 
@@ -495,14 +514,17 @@ export class MangaService {
           const mdMangaId = mdChapter?.data?.relationships?.find((r) => r.type === "manga")?.id;
           if (mdMangaId && mangaTitles.length === 0) {
             const mdManga = await this.getByProviderId(mdMangaId).catch(() => null);
+            const mdDirect = await this.provider.getById(mdMangaId).catch(() => null);
             if (mdManga) {
               if (mdManga.canonicalTitle) mangaTitles.push(mdManga.canonicalTitle);
               if (mdManga.titles?.primary) mangaTitles.push(mdManga.titles.primary);
-              if (mdManga.titles?.english) mangaTitles.push(mdManga.titles.english);
-              if (mdManga.titles?.romanized) mangaTitles.push(mdManga.titles.romanized);
-              if (Array.isArray(mdManga.titles?.alternates)) {
-                mangaTitles.push(...mdManga.titles.alternates);
-              }
+              if (Array.isArray((mdManga as any).synonyms)) mangaTitles.push(...(mdManga as any).synonyms);
+              if (Array.isArray((mdManga as any).altTitles)) mangaTitles.push(...(mdManga as any).altTitles);
+            }
+            if (mdDirect) {
+              if ((mdDirect as any).canonicalTitle) mangaTitles.push((mdDirect as any).canonicalTitle);
+              if (mdDirect.titles?.primary) mangaTitles.push(mdDirect.titles.primary);
+              if (Array.isArray(mdDirect.titles?.alternates)) mangaTitles.push(...mdDirect.titles.alternates);
             }
           }
         } catch {

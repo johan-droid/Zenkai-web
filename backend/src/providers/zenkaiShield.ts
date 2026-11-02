@@ -54,6 +54,20 @@ export class ZenkaiShieldManager {
   }
 
   /**
+   * Solves the SVG-based character placement challenge when `cap: 1`.
+   * Characters are extracted and ordered by their horizontal `x` position.
+   */
+  static solveCaptcha(svg?: string): string | undefined {
+    if (!svg || typeof svg !== "string") return undefined;
+    const matches = [...svg.matchAll(/<text[^>]*x="(\d+)"[^>]*>([^<]+)<\/text>/g)];
+    if (matches.length === 0) return undefined;
+    return matches
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+      .map((m) => m[2])
+      .join("");
+  }
+
+  /**
    * Retrieves or refreshes a valid x-zenkai-shield header object.
    */
   async getShieldHeaders(): Promise<Record<string, string>> {
@@ -119,7 +133,12 @@ export class ZenkaiShieldManager {
         return null;
       }
 
-      const verifyBody = {
+      let answer: string | undefined;
+      if (challenge.cap === 1 && challenge.svg) {
+        answer = ZenkaiShieldManager.solveCaptcha(challenge.svg);
+      }
+
+      const verifyBody: Record<string, any> = {
         cid: challenge.cid,
         salt: challenge.salt,
         difficulty: challenge.difficulty,
@@ -128,6 +147,7 @@ export class ZenkaiShieldManager {
         sig: challenge.sig,
         capSig: challenge.capSig,
         nonce,
+        ...(answer ? { answer } : {}),
       };
 
       const verification = await fetchJson<VerifyResponse>(this.#verifyEndpoint, {
