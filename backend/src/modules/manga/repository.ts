@@ -432,6 +432,27 @@ export class MangaRepository {
   }
 
   /**
+   * Replace all chapters for a manga and language.
+   * Drops previous chapters (e.g. unreadable Manga UP! / K MANGA placeholders)
+   * and inserts the new readable feed cleanly.
+   */
+  async replaceChapters(
+    mangaId: string,
+    language: string,
+    incoming: ProviderChapter[],
+  ): Promise<number> {
+    if (!mangaId) return 0;
+    const lang = language ?? "en";
+
+    await this.db
+      .delete(mangaChapters)
+      .where(and(eq(mangaChapters.mangaId, mangaId), eq(mangaChapters.language, lang)));
+
+    if (!incoming || incoming.length === 0) return 0;
+    return this.upsertChapters(mangaId, incoming);
+  }
+
+  /**
    * Chapter list, oldest first.
    *
    * Ordering is numeric where possible: "10" must sort after "9", which a plain

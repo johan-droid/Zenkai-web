@@ -66,6 +66,15 @@ class MockRepo {
     return incoming.length;
   }
 
+  async replaceChapters(mangaId: string, language: string, incoming: ProviderChapter[]): Promise<number> {
+    for (const [id, ch] of Array.from(this.chapters.entries())) {
+      if (ch.mangaId === mangaId && (!language || ch.language === language)) {
+        this.chapters.delete(id);
+      }
+    }
+    return this.upsertChapters(mangaId, incoming);
+  }
+
   async getLocalIdByProviderId(providerId: string): Promise<string | null> {
     for (const [id, m] of this.manga.entries()) {
       if (m.mangadexId === providerId) return id;
@@ -343,5 +352,104 @@ describe("Manga Chapter Fallback to Zenkai Multi-Provider", () => {
     assert.equal(chapters[0].chapterNumber, "1");
     assert.equal(chapters[0].id, "01J76XZ0NCCTW603KRXSBVP114");
     assert.equal(chapters[1].chapterNumber, "2");
+  });
+
+  it("detects defective database rows (all Manga UP! / missing chapter 1) and replaces them with WeebCentral", async () => {
+    const repo = new MockRepo();
+    const mdProvider = new MockMangaDexProvider();
+    const zenkaiProvider = new MockZenkaiProvider();
+
+    const mangadexId = "bb6c76f7-5f5f-46b6-a800-911145f81b9c";
+    const mangaId = "local-manga-defective";
+
+    repo.manga.set(mangaId, {
+      id: mangaId,
+      mangadexId,
+      canonicalTitle: "Sono Bisque Doll wa Koi o Suru",
+      titles: { primary: "Sono Bisque Doll wa Koi o Suru", alternates: ["My Dress-Up Darling"] },
+    });
+
+    // Seed database with defective Manga UP! chapters starting at 64.2 (Chapter 1 missing)
+    for (let c = 64; c <= 70; c++) {
+      const chId = `defective-ch-${c}`;
+      repo.chapters.set(chId, {
+        id: chId,
+        mangaId,
+        mangadexChapterId: chId,
+        chapterNumber: `${c}.2`,
+        volume: null,
+        title: null,
+        language: "en",
+        pages: 0,
+        scanlationGroup: "Manga UP!",
+        // Note: PostgreSQL rows have no externalUrl column
+        externalUrl: undefined,
+      });
+    }
+
+    // MangaDex upstream returns Manga UP! placeholders
+    mdProvider.chaptersToReturn = [
+      {
+        externalId: "md-115",
+        chapterNumber: "115.5",
+        volume: null,
+        title: null,
+        language: "en",
+        pages: 1,
+        scanlationGroup: "Manga UP!",
+        externalUrl: "https://global.manga-up.com/...",
+      },
+    ];
+
+    zenkaiProvider.searchResults = [
+      {
+        providerId: "01J76XYCMP8059QS9PDPHBMEQW",
+        titles: { primary: "My Dress-Up Darling", alternates: [] },
+        status: "ONGOING",
+        contentRating: "safe",
+        isAdult: false,
+        genres: [],
+        demographics: [],
+        authors: [],
+        artists: [],
+        externalIds: {},
+      },
+    ];
+
+    zenkaiProvider.chapters = [
+      {
+        externalId: "01J76XZ0NCCTW603KRXSBVP114",
+        chapterNumber: "1",
+        volume: null,
+        title: "Chapter 1",
+        language: "en",
+        pages: 51,
+        publishedAt: null,
+        scanlationGroup: "WeebCentral",
+      },
+      {
+        externalId: "01J76XZ0NCCTW603KRXSBVP115",
+        chapterNumber: "2",
+        volume: null,
+        title: "Chapter 2",
+        language: "en",
+        pages: 45,
+        publishedAt: null,
+        scanlationGroup: "WeebCentral",
+      },
+    ];
+
+    const service = new MangaService(repo as any, mdProvider, zenkaiProvider);
+
+    const chapters = await service.getChapters(mangadexId, { language: "en" });
+
+    // Should NOT have returned the defective 64.2-70.2 chapters
+    assert.equal(chapters.length, 2);
+    assert.equal(chapters[0].chapterNumber, "1");
+    assert.equal(chapters[1].chapterNumber, "2");
+    // Verify database was cleanly replaced
+    const dbChapters = await repo.listChapters(mangaId, "en");
+    assert.equal(dbChapters.length, 2);
+    assert.equal(dbChapters[0].chapterNumber, "1");
   });
 });

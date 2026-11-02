@@ -301,13 +301,14 @@ export class MangaService {
 
     try {
       const existing = await this.repo.listChapters(localId, language);
-      const hasReadable = existing.some((ch) => !ch.externalUrl);
-      if (existing.length > 0 && hasReadable) return existing;
+      if (existing.length > 0 && isUsableChapterList(existing)) {
+        return existing;
+      }
     } catch {
       // DB offline
     }
 
-    const key = `manga:chapters:${targetProviderId}:${language}`;
+    const key = `manga:chapters:v4:${targetProviderId}:${language}`;
     const { value } = await cache.remember(key, config.CACHE_TTL_METADATA_S, async () => {
       if (!isMangaDexId(targetProviderId)) {
         // Not a MangaDex UUID; cannot fetch chapters from provider.
@@ -321,10 +322,9 @@ export class MangaService {
         incoming = [];
       }
 
-      // If MangaDex returned 0 chapters or only external release placeholders with 0 pages,
+      // If MangaDex returned 0 chapters or only unreadable / paywalled external releases,
       // fallback to Zenkai multi-provider (WeebCentral, etc.)
-      const hasReadableChapters = incoming.some((ch) => !ch.externalUrl);
-      if (incoming.length === 0 || !hasReadableChapters) {
+      if (!isUsableChapterList(incoming)) {
         try {
           const detail = await this.getByProviderId(targetProviderId).catch(() => null);
           const allTitles = [
@@ -340,7 +340,7 @@ export class MangaService {
             const searchRes = await this.zenkaiProvider.search(cand, 3).catch(() => ({ items: [] }));
             if (searchRes.items.length > 0) {
               const zenkaiChs = await this.zenkaiProvider.getChapters(searchRes.items[0].providerId, { language }).catch(() => []);
-              if (zenkaiChs.length > 0) {
+              if (zenkaiChs.length > 0 && isUsableChapterList(zenkaiChs)) {
                 incoming = zenkaiChs;
                 break;
               }
@@ -351,15 +351,26 @@ export class MangaService {
         }
       }
 
-      await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
+      if (isUsableChapterList(incoming)) {
+        await this.repo.replaceChapters(localId, language, incoming).catch(() => {
+          return this.repo.upsertChapters(localId, incoming).catch(() => undefined);
+        });
+      } else {
+        await this.repo.upsertChapters(localId, incoming).catch(() => undefined);
+      }
+
       return incoming;
     });
 
     if (!Array.isArray(value) || value.length === 0) return [];
 
+    if (!isUsableChapterList(value)) {
+      await cache.delete(key).catch(() => undefined);
+    }
+
     try {
       const list = await this.repo.listChapters(localId, language);
-      if (list.length > 0) {
+      if (list.length > 0 && isUsableChapterList(list)) {
         const extUrlMap = new Map<string, string | null>();
         for (const ch of value) {
           if (ch.externalUrl) {
@@ -537,10 +548,13 @@ export class MangaService {
         result.push(withoutArticle);
       }
 
-      // First 3-4 words for long titles with Japanese particles (e.g. "Sono Bisque Doll wa Koi o Suru" -> "Sono Bisque Doll")
+      // First 2-4 words for long titles with Japanese particles (e.g. "Sono Bisque Doll wa Koi o Suru" -> "Sono Bisque Doll", "Sono Bisque")
       const words = noPunct.split(" ");
       if (words.length > 3) {
         result.push(words.slice(0, 3).join(" "));
+      }
+      if (words.length >= 2) {
+        result.push(words.slice(0, 2).join(" "));
       }
     }
     return Array.from(new Set(result));
@@ -687,4 +701,55 @@ function shape(
 /** Check if a providerId string is a MangaDex UUID (v4 format: 8-4-4-4-12 hex). */
 function isMangaDexId(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/**
+ * Validate that a chapter list is genuinely readable by Zenkai reader.
+ * Returns false if:
+ *  - empty
+ *  - all chapters have externalUrl (external redirects)
+ *  - all chapters belong to known paywalled syndicators (Manga UP!, K MANGA, Bilibili Comics)
+ *  - a serialized title (>= 5 chapters) has no early chapters (chapter <= 2), indicating incomplete descending slice
+ */
+export function isUsableChapterList(
+  chapters: Array<{
+    chapterNumber?: string | null;
+    externalUrl?: string | null;
+    scanlationGroup?: string | null;
+    pages?: number | null;
+  }>,
+): boolean {
+  if (!Array.isArray(chapters) || chapters.length === 0) return false;
+
+  // 1. Must not have externalUrl on all chapters
+  const allExternalUrl = chapters.every((ch) => Boolean(ch.externalUrl));
+  if (allExternalUrl) return false;
+
+  // 2. Must not be purely from known paywalled external syndicators
+  const allPaywalled = chapters.every((ch) => {
+    const grp = (ch.scanlationGroup ?? "").trim().toLowerCase();
+    return grp === "manga up!" || grp === "k manga" || grp === "bilibili comics";
+  });
+  if (allPaywalled) return false;
+
+  // 3. Serialized manga must contain early chapters (e.g. chapter <= 2).
+  // Feeds that only contain chapters >= 10 or >= 64 are incomplete descending pagination slices.
+  if (chapters.length >= 5) {
+    const hasEarlyChapter = chapters.some((ch) => {
+      const num = parseFloat(ch.chapterNumber ?? "");
+      return Number.isFinite(num) && num <= 2;
+    });
+    if (!hasEarlyChapter) return false;
+  }
+
+  // 4. At least one chapter must be readable (no externalUrl, not paywalled group)
+  const hasReadableChapter = chapters.some((ch) => {
+    if (ch.externalUrl) return false;
+    const grp = (ch.scanlationGroup ?? "").trim().toLowerCase();
+    if (grp === "manga up!" || grp === "k manga" || grp === "bilibili comics") return false;
+    return true;
+  });
+  if (!hasReadableChapter) return false;
+
+  return true;
 }
