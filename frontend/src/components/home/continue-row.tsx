@@ -27,7 +27,7 @@ function ContinueCard({ entry }: { entry: ContinueEntry }) {
   return (
     <div
       className={cn(
-        "group/card relative flex w-36 shrink-0 snap-start flex-col select-none sm:w-44",
+        "group/card relative flex w-32 shrink-0 snap-start flex-col select-none sm:w-40 md:w-44",
       )}
     >
       {/* Poster container */}

@@ -100,14 +100,16 @@ export function Navbar() {
           </SearchCommand>
 
           {/* Mobile search trigger */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Search"
-            className="sm:hidden rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08]"
-          >
-            <Search className="size-4.5" />
-          </Button>
+          <SearchCommand>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Search anime and manga"
+              className="sm:hidden size-9 rounded-xl text-zinc-300 hover:text-white hover:bg-white/[0.08] active:scale-95"
+            >
+              <Search className="size-4" />
+            </Button>
+          </SearchCommand>
 
           <MobileMenu pathname={pathname} />
         </div>

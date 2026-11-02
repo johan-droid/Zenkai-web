@@ -12,7 +12,6 @@ import {
   mangaCatalogueItemToMedia,
 } from "@/lib/api/zenkai";
 import { cn } from "@/lib/utils";
-import { tokens } from "@/config/tokens";
 
 export default function HomePage() {
   const home = useHome(10);
@@ -50,221 +49,88 @@ export default function HomePage() {
   });
 
   return (
-    <section
-      className={cn(
-        "relative w-full overflow-x-hidden",
-        "space-y-10 md:space-y-0"
-      )}
-    >
-      {/* ── 1. Cinematic Featured Anime Hero ── */}
-      <section
-        id="hero"
-        className={cn(
-          "relative w-full overflow-hidden rounded-3xl md:rounded-4xl mb-10",
-          "border border-white/[0.08] bg-gradient-to-b from-[#{tokens.colors.navy[950]}] to-[#{tokens.colors.navy[900]}]",
-          "scroll-mt-28"
-        )}
-      >
+    <div className="relative w-full space-y-8 sm:space-y-12 pb-16">
+      {/* ── 1. Featured Anime Spotlight Hero ── */}
+      <section id="hero" className="scroll-mt-28">
         <HeroCarousel
           items={trending.kind === "items" ? trending.items : []}
           isLoading={trending.kind === "loading"}
         />
-        {/* Hero gradient overlay */}
-        <div
-          className={cn(
-            "absolute inset-0 bg-gradient-to-t from-[#101014] via-transparent to-transparent/90 opacity-80 blur-xl md:opacity-60",
-            "opacity-0 md:opacity-80 transition-opacity hover:opacity-100"
-          )}
-        />
       </section>
 
-      {/* ── 2. Continue Watching ── */}
-      <section
-        id="continue"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
+      {/* ── 2. Continue Watching (Rendered only when local progress exists) ── */}
+      <section id="continue" className="scroll-mt-28">
         <ContinueRow />
       </section>
 
-      {/* ── 3. Trending This Week ── */}
-      <section
-        id="trending-week"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
+      {/* ── 3. Trending This Week (Ranked #1 - #10) ── */}
+      <section id="trending" className="scroll-mt-28">
         <MediaRow
           title="Trending This Week"
-          href="/anime"
+          href="/anime?sort=TRENDING_DESC"
           state={trending}
           ranked
         />
       </section>
 
-      {/* ── 4. Currently Airing ── */}
-      <section
-        id="currently-airing"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
+      {/* ── 4. Popular This Season ── */}
+      <section id="seasonal" className="scroll-mt-28">
+        <MediaRow
+          title="Popular This Season"
+          href="/anime?season=current"
+          state={seasonal}
+        />
+      </section>
+
+      {/* ── 5. Currently Airing & New Releases ── */}
+      <section id="airing" className="scroll-mt-28">
         <MediaRow
           title="Currently Airing"
-          href="/anime?airing=true"
+          href="/anime?status=RELEASING"
           state={recent}
         />
       </section>
 
-      {/* ── 5. Upcoming Anime ── */}
-      <section
-        id="upcoming"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
+      {/* ── 6. All-Time Top Rated Anime ── */}
+      <section id="top-rated" className="scroll-mt-28">
         <MediaRow
-          title="Upcoming Anime"
+          title="All-Time Top Rated"
+          href="/anime?sort=SCORE_DESC"
+          state={topRated}
+        />
+      </section>
+
+      {/* ── 7. Popular Anime Movies ── */}
+      <section id="movies" className="scroll-mt-28">
+        <MediaRow
+          title="Popular Anime Movies"
+          href="/anime?format=MOVIE"
+          state={movieShelf}
+        />
+      </section>
+
+      {/* ── 8. Explore by Genre ── */}
+      <section id="genres" className="scroll-mt-28">
+        <GenreChips />
+      </section>
+
+      {/* ── 9. Most Anticipated Upcoming ── */}
+      <section id="upcoming" className="scroll-mt-28">
+        <MediaRow
+          title="Most Anticipated"
           href="/schedule"
           state={upcoming}
         />
       </section>
 
-      {/* ── 6. Popular Anime ── */}
-      <section
-        id="popular"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Popular Anime"
-          href="/anime"
-          state={popular}
-        />
-      </section>
-
-      {/* ── 7. Hidden Gems ── */}
-      <section
-        id="hidden-gems"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Hidden Gems"
-          href="/anime?hidden=true"
-          state={popular}
-        />
-      </section>
-
-      {/* ── 8. Recently Added ── */}
-      <section
-        id="recently-added"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Recently Added"
-          href="/anime?new=true"
-          state={recent}
-        />
-      </section>
-
-      {/* ── 9. Personalized Recommendations ── */}
-      <section
-        id="recommendations"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Personalized Recommendations"
-          href="/anime"
-          state={popular}
-        />
-      </section>
-
-      {/* ── 10. Genre-Based Collections ── */}
-      <section
-        id="genre-collections"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <GenreChips />
-      </section>
-
-      {/* ── 11. Seasonal Anime Collections ── */}
-      <section
-        id="seasonal"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Seasonal Anime"
-          href="/anime?season=true"
-          state={seasonal}
-        />
-      </section>
-
-      {/* ── 12. Recently Updated Episodes ── */}
-      <section
-        id="updated-episodes"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Recently Updated Episodes"
-          href="/anime"
-          state={recent}
-        />
-      </section>
-
-      {/* ── 13. Random Anime Discovery ── */}
-      <section
-        id="random-discovery"
-        className={cn(
-          "relative w-full mb-10",
-          "scroll-mt-28"
-        )}
-      >
-        <MediaRow
-          title="Random Anime Discovery"
-          href="/anime/random"
-          state={popular}
-        />
-      </section>
-
-      {/* ── 14. Top Manga & Light Novels ── */}
-      <section
-        id="manga"
-        className={cn(
-          "relative w-full",
-          "scroll-mt-28"
-        )}
-      >
+      {/* ── 10. Top Manga & Light Novels ── */}
+      <section id="manga" className="scroll-mt-28">
         <MediaRow
           title="Top Manga & Light Novels"
           href="/manga"
           state={mangaShelf}
         />
       </section>
-    </section>
+    </div>
   );
 }

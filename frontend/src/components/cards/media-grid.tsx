@@ -15,7 +15,7 @@ export function MediaGrid({
   return (
     <div
       className={cn(
-        "grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6",
+        "grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6",
         className,
       )}
     >
@@ -32,9 +32,13 @@ export function MediaGrid({
 
 export function MediaGridSkeleton({ count = 18 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {Array.from({ length: count }).map((_, index) => (
-        <Skeleton key={index} className="aspect-[2/3] rounded-2xl" />
+        <div key={index} className="flex flex-col gap-2">
+          <Skeleton className="aspect-[2/3] w-full rounded-xl bg-white/[0.05]" />
+          <Skeleton className="h-3.5 w-4/5 rounded bg-white/[0.05]" />
+          <Skeleton className="h-2.5 w-1/2 rounded bg-white/[0.03]" />
+        </div>
       ))}
     </div>
   );

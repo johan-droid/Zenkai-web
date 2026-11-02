@@ -67,7 +67,7 @@ function ShelfBody({
     return (
       <div className="no-scrollbar -mx-1 flex gap-3.5 overflow-hidden px-1 pb-2">
         {Array.from({ length: 7 }).map((_, i) => (
-          <div key={i} className="w-36 shrink-0 sm:w-44">
+          <div key={i} className="w-32 shrink-0 sm:w-40 md:w-44">
             <div className="aspect-[2/3] w-full rounded-xl border border-white/[0.06] bg-[#16161c] animate-pulse" />
             <div className="mt-2.5 flex flex-col gap-1.5">
               <div className="h-3 w-4/5 rounded bg-white/10 animate-pulse" />
@@ -107,7 +107,7 @@ function ShelfBody({
               media={media}
               index={i}
               rank={ranked ? i + 1 : undefined}
-              className="w-36 shrink-0 snap-start sm:w-44"
+              className="w-32 shrink-0 snap-start sm:w-40 md:w-44"
             />
           ))}
         </div>

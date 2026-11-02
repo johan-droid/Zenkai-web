@@ -195,7 +195,7 @@ export default function HistoryPage() {
           description="Once you start watching or reading, your progress will appear here so you can pick up where you left off."
         />
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {displayedEntries.map((entry) => (
             <HistoryCard
               key={`${entry.kind}-${entry.mediaId}-${entry.unit}`}

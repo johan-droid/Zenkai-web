@@ -162,19 +162,21 @@ export function BrowseView({ kind }: { kind: MediaKind }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="glass flex flex-col gap-4 rounded-2xl p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            <SlidersHorizontal className="size-3.5" /> Genre
+        <div className="flex flex-col gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            <SlidersHorizontal className="size-3.5 text-[#C51F3A]" /> Genre
           </span>
-          {GENRES.map((item) => (
-            <FilterChip
-              key={item}
-              active={genre === item}
-              onClick={() => toggle("genre", item)}
-            >
-              {item}
-            </FilterChip>
-          ))}
+          <div className="no-scrollbar -mx-1 flex snap-x gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap">
+            {GENRES.map((item) => (
+              <FilterChip
+                key={item}
+                active={genre === item}
+                onClick={() => toggle("genre", item)}
+              >
+                {item}
+              </FilterChip>
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">

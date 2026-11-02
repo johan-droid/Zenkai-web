@@ -2,16 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Tv, BookOpen, CalendarDays } from "lucide-react";
+import { Home, Tv, BookOpen, CalendarDays, Bookmark } from "lucide-react";
+import { motion } from "motion/react";
 
 import { isActivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
+import { EASINGS } from "@/config/animations";
 
 const MOBILE_NAV_ITEMS = [
   { label: "Home", href: "/", icon: Home },
   { label: "Anime", href: "/anime", icon: Tv },
   { label: "Manga", href: "/manga", icon: BookOpen },
   { label: "Schedule", href: "/schedule", icon: CalendarDays },
+  { label: "Library", href: "/library", icon: Bookmark },
 ];
 
 export function MobileNav() {
@@ -29,12 +32,12 @@ export function MobileNav() {
       className={cn(
         "fixed inset-x-0 bottom-0 z-50 md:hidden",
         "pb-[env(safe-area-inset-bottom)]",
-        "border-t border-white/[0.04]",
-        "bg-[#0e0e12]/95 backdrop-blur-xl",
+        "border-t border-white/[0.08]",
+        "bg-[#0e0e13]/95 backdrop-blur-2xl shadow-2xl shadow-black",
       )}
       aria-label="Mobile Navigation"
     >
-      <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-0.5">
+      <div className="mx-auto flex max-w-lg items-center justify-around px-2 py-1.5 min-h-[56px]">
         {MOBILE_NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = isActivePath(pathname, item.href);
@@ -44,24 +47,33 @@ export function MobileNav() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1 transition-colors duration-150 outline-none",
-                active ? "text-white" : "text-zinc-400 hover:text-zinc-300",
+                "relative flex flex-1 flex-col items-center justify-center py-1.5 transition-colors duration-150 outline-none select-none min-h-[44px]",
+                active ? "text-white" : "text-zinc-400 hover:text-zinc-200",
               )}
             >
-              {/* Active pill – thinner */}
+              {/* Fluid active indicator pill */}
               {active && (
-                <span className="absolute inset-x inset-y-0 rounded-xl bg-white/5 ring-1 ring-white/5"/>
+                <motion.span
+                  layoutId="mobileNavActivePill"
+                  transition={{ type: "spring", stiffness: 420, damping: 30 }}
+                  className="absolute inset-x-1.5 inset-y-0.5 rounded-xl bg-white/[0.08] ring-1 ring-white/10"
+                />
               )}
 
-              <span className="relative z-10 flex flex-col items-center gap-0.5">
+              <span className="relative z-10 flex flex-col items-center gap-1">
                 <Icon
                   className={cn(
-                    "size-3.5 transition-transform duration-150",
-                    active ? "text-[#c8102a] scale-105" : "text-zinc-400",
+                    "size-4.5 transition-all duration-200",
+                    active ? "text-[#C51F3A] scale-110 drop-shadow-[0_0_8px_rgba(197,31,58,0.5)]" : "text-zinc-400",
                   )}
                   aria-hidden
                 />
-                <span className="text-[0.56rem] font-semibold tracking-wide">
+                <span
+                  className={cn(
+                    "text-[0.62rem] font-semibold tracking-wide transition-colors",
+                    active ? "text-white font-bold" : "text-zinc-400",
+                  )}
+                >
                   {item.label}
                 </span>
               </span>
