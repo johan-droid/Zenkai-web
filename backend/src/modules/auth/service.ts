@@ -31,9 +31,17 @@ const DUMMY_HASH =
   "scrypt$16384,8,1$00000000000000000000000000000000$00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 
 export const updateProfileSchema = z.object({
-  displayName: z.string().max(64).optional(),
-  bio: z.string().max(500).optional(),
-  avatarUrl: z.string().url("Invalid avatar URL").max(1024).optional().nullable(),
+  displayName: z.string().trim().max(64).optional(),
+  bio: z.string().trim().max(500).optional(),
+  avatarUrl: z
+    .string()
+    .url("Invalid avatar URL")
+    .max(1024)
+    .refine((url) => /^https?:\/\//i.test(url), {
+      message: "Avatar URL must use http or https protocol",
+    })
+    .optional()
+    .nullable(),
 });
 
 export interface AuthResult {

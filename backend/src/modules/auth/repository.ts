@@ -8,6 +8,21 @@ import { config } from "../../config/index.js";
 // In production, rotate this regularly and store in a secrets manager
 const settingsEncryption = new SettingsEncryption(config.SETTINGS_ENCRYPTION_PASSPHRASE);
 
+async function decryptUserSettings(raw: unknown): Promise<Record<string, any>> {
+  if (!raw) return {};
+  if (typeof raw === "string" && (raw.startsWith("$") || raw.includes(":"))) {
+    try {
+      return await settingsEncryption.decrypt(raw);
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === "object" && raw !== null) {
+    return raw as Record<string, any>;
+  }
+  return {};
+}
+
 export interface UserRow {
   id: string;
   username: string;
@@ -75,17 +90,7 @@ export class AuthRepository {
         settings: users.settings,
       });
 
-    // Decrypt settings if encrypted blob exists
-    let decryptedSettings: Record<string, any> = {};
-    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.settings && typeof row.settings === "object") {
-      decryptedSettings = row.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.settings);
 
     return {
       id: row.id,
@@ -120,17 +125,7 @@ export class AuthRepository {
 
     if (!row) return null;
 
-    // Decrypt settings if encrypted blob exists
-    let decryptedSettings: Record<string, any> = {};
-    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.settings && typeof row.settings === "object") {
-      decryptedSettings = row.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.settings);
 
     return {
       id: row.id,
@@ -165,17 +160,7 @@ export class AuthRepository {
 
     if (!row) return null;
 
-    // Decrypt settings
-    let decryptedSettings: Record<string, any> = {};
-    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.settings && typeof row.settings === "object") {
-      decryptedSettings = row.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.settings);
 
     return {
       id: row.id,
@@ -210,17 +195,7 @@ export class AuthRepository {
 
     if (!row) return null;
 
-    // Decrypt settings
-    let decryptedSettings: Record<string, any> = {};
-    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.settings && typeof row.settings === "object") {
-      decryptedSettings = row.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.settings);
 
     return {
       id: row.id,
@@ -250,17 +225,7 @@ export class AuthRepository {
 
     if (!row) return null;
 
-    // Decrypt settings
-    let decryptedSettings: Record<string, any> = {};
-    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.settings && typeof row.settings === "object") {
-      decryptedSettings = row.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.settings);
 
     return {
       id: row.id,
@@ -330,17 +295,7 @@ export class AuthRepository {
 
     if (!row) return null;
 
-    // Decrypt user settings
-    let decryptedSettings: Record<string, any> = {};
-    if (row.user.settings && typeof row.user.settings === "string" && row.user.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.user.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.user.settings && typeof row.user.settings === "object") {
-      decryptedSettings = row.user.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.user.settings);
 
     return {
       session: {
@@ -441,17 +396,7 @@ export class AuthRepository {
 
     if (!row) return null;
 
-    // Decrypt settings for return
-    let decryptedSettings: Record<string, any> = {};
-    if (row.settings && typeof row.settings === "string" && row.settings.startsWith("$")) {
-      try {
-        decryptedSettings = await settingsEncryption.decrypt(row.settings as string);
-      } catch {
-        decryptedSettings = {};
-      }
-    } else if (row.settings && typeof row.settings === "object") {
-      decryptedSettings = row.settings as Record<string, any>;
-    }
+    const decryptedSettings = await decryptUserSettings(row.settings);
 
     return {
       id: row.id,

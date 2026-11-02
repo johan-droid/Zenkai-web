@@ -178,6 +178,37 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     reply.code(404).send({ error: "not_found", message: `no route for ${request.url}` });
   });
 
+  /**
+   * Baseline HTTP Security Headers and Cache Isolation (SEC-02).
+   *
+   * Injects defense-in-depth headers on all API responses:
+   * - nosniff: Prevents browsers from MIME-sniffing away from the declared content-type
+   * - frame-options: Prevents clickjacking by blocking embedding inside untrusted iframes
+   * - referrer-policy: Limits leakage of query parameters or private paths to third parties
+   * - strict-transport-security: Enforces HTTPS in production environments
+   * - cache-control: Forces private/no-store on user-specific or authenticated endpoints
+   */
+  app.addHook("onSend", async (request, reply) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "SAMEORIGIN");
+    reply.header("referrer-policy", "strict-origin-when-cross-origin");
+    if (config.NODE_ENV === "production") {
+      reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
+    }
+
+    const url = request.raw.url || request.url;
+    // Cache isolation: Ensure sensitive or authenticated responses are never retained in shared edge/CDN caches
+    if (
+      url.startsWith("/api/v1/user") ||
+      url.startsWith("/api/v1/auth/me") ||
+      url.startsWith("/api/v1/auth/profile") ||
+      request.user
+    ) {
+      reply.header("cache-control", "private, no-cache, no-store, must-revalidate");
+      reply.header("pragma", "no-cache");
+    }
+  });
+
   const animeRepo = new AnimeRepository(deps.db);
   const providers =
     deps.providers ??
@@ -287,17 +318,6 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     timestamp: new Date().toISOString(),
   }));
 
-  /** Per-provider health, for the observability dashboard (P19). */
-  app.get("/api/v1/providers/health", async () => ({
-    providers: resolver.health(),
-    snapshot: healthRegistry.snapshot(),
-  }));
-
-  /** Clear quarantined providers so a recovered one is retried. */
-  app.post("/api/v1/providers/reset", async () => ({
-    cleared: healthRegistry.resetQuarantined(),
-  }));
-
   const authRepo = new AuthRepository(deps.db);
   const authService = new AuthService(authRepo);
   const libraryRepo = new LibraryRepository(deps.db);
@@ -315,16 +335,39 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   const serverService = new ServerAvailabilityService(resolver, providers);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo, serverService);
 
+  /** Per-provider health, for the observability dashboard (P19). */
+  app.get("/api/v1/providers/health", async () => ({
+    providers: resolver.health(),
+    snapshot: healthRegistry.snapshot(),
+  }));
+
+  /** Clear quarantined providers so a recovered one is retried (authenticated callers only). */
+  app.post("/api/v1/providers/reset", async (request) => {
+    if (!request.user) {
+      throw AppError.unauthorized("Authentication required to reset provider quarantine");
+    }
+    return {
+      cleared: healthRegistry.resetQuarantined(),
+    };
+  });
+
   const execFileAsync = promisify(execFile);
 
   /**
    * Media and image proxy for CDN referer-gated assets (WeebCentral, ComicK, Lnori).
+   * Protected with SSRF URL guard, DNS re-check, route rate limiting, and header sanity validation.
    */
-  /**
-   * Media and image proxy for CDN referer-gated assets (WeebCentral, ComicK, Lnori).
-   * Protected with SSRF URL guard, DNS re-check, and header sanity validation.
-   */
-  app.get("/api/v1/proxy", async (request, reply) => {
+  app.get(
+    "/api/v1/proxy",
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: 60_000,
+        },
+      },
+    },
+    async (request, reply) => {
     const { url, referer } = request.query as { url?: string; referer?: string };
     if (!url || !url.startsWith("http")) {
       return reply.code(400).send({ error: "bad_request", message: "url parameter is required and must be an http(s) URL" });

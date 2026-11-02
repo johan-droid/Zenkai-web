@@ -12,6 +12,7 @@ import { config } from "../../config/index.js";
 import { fetchJson } from "../../http/client.js";
 import { AppError } from "../../http/errors.js";
 import { stripHtml } from "../../domain/media.js";
+import { zenkaiShield } from "../zenkaiShield.js";
 
 export interface NovelSummary {
   id: string;
@@ -199,7 +200,8 @@ export class NovelProvider {
   async searchScraper(queryText: string, source = "novelfire"): Promise<NovelSummary[]> {
     try {
       const url = `${this.#scraperEndpoint}/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(queryText)}`;
-      const res = await fetchJson<{ results: Array<any> }>(url, { timeoutMs: 4000, retries: 0 });
+      const headers = await zenkaiShield.getShieldHeaders();
+      const res = await fetchJson<{ results: Array<any> }>(url, { headers, timeoutMs: 6000, retries: 1 });
       if (!res?.results || !Array.isArray(res.results)) return [];
 
       return res.results.map((r) => ({
@@ -230,7 +232,8 @@ export class NovelProvider {
   async getScraperHome(source = "novelfire"): Promise<{ popular: NovelSummary[]; latest: NovelSummary[]; rankings: NovelSummary[] }> {
     try {
       const url = `${this.#scraperEndpoint}/home?source=${encodeURIComponent(source)}`;
-      const res = await fetchJson<{ popular?: any[]; latest?: any[]; rankings?: any[] }>(url, { timeoutMs: 4000, retries: 0 });
+      const headers = await zenkaiShield.getShieldHeaders();
+      const res = await fetchJson<{ popular?: any[]; latest?: any[]; rankings?: any[] }>(url, { headers, timeoutMs: 8000, retries: 1 });
       const mapItem = (r: any): NovelSummary => ({
         id: r.slug || r.id,
         slug: r.slug || r.id,
@@ -306,7 +309,8 @@ export class NovelProvider {
     const slug = String(id);
     try {
       const url = `${this.#scraperEndpoint}/detail?source=${encodeURIComponent(source)}&slug=${encodeURIComponent(slug)}`;
-      const res = await fetchJson<{ detail?: any }>(url, { timeoutMs: 15000 });
+      const headers = await zenkaiShield.getShieldHeaders();
+      const res = await fetchJson<{ detail?: any }>(url, { headers, timeoutMs: 15000, retries: 1 });
       if (res?.detail) {
         const d = res.detail;
         return {
@@ -400,7 +404,8 @@ export class NovelProvider {
     if (slug) {
       try {
         const url = `${this.#scraperEndpoint}/chapters?source=${encodeURIComponent(source)}&slug=${encodeURIComponent(slug)}`;
-        const res = await fetchJson<{ chapters?: Array<{ slug: string; title: string; number: string }> }>(url, { timeoutMs: 4500, retries: 0 });
+        const headers = await zenkaiShield.getShieldHeaders();
+        const res = await fetchJson<{ chapters?: Array<{ slug: string; title: string; number: string }> }>(url, { headers, timeoutMs: 15000, retries: 1 });
         if (res?.chapters && Array.isArray(res.chapters) && res.chapters.length > 0) {
           const list = res.chapters.slice(0, 300);
           return list.map((ch, idx) => {
@@ -471,12 +476,13 @@ export class NovelProvider {
     if (slug) {
       try {
         const url = `${this.#scraperEndpoint}/read?source=${encodeURIComponent(source)}&novelSlug=${encodeURIComponent(slug)}&chapterSlug=${encodeURIComponent(targetChapterSlug)}`;
+        const headers = await zenkaiShield.getShieldHeaders();
         const res = await fetchJson<{
           title?: string;
           paragraphs?: string[];
           prevChapterSlug?: string | null;
           nextChapterSlug?: string | null;
-        }>(url, { timeoutMs: 4500, retries: 0 });
+        }>(url, { headers, timeoutMs: 15000, retries: 1 });
 
         if (res?.paragraphs && Array.isArray(res.paragraphs) && res.paragraphs.length > 0) {
           // Clean out aggregator watermarks / disclaimers from the end if present
@@ -514,14 +520,15 @@ export class NovelProvider {
     const total = novel.chapters && novel.chapters > 0 ? Math.min(novel.chapters, 100) : 24;
     const cleanDesc = novel.description ? stripHtml(novel.description) : "";
 
+    const descParagraphs = cleanDesc
+      ? cleanDesc.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0)
+      : [];
+
     const paragraphs: string[] = [
-      `Welcome to Chapter ${chapterNum} of "${novel.title}".`,
-      cleanDesc ? `Synopsis Overview:\n${cleanDesc}` : "",
-      `Volume ${Math.ceil(chapterNum / 10)}, Chapter ${chapterNum}.`,
-      `The journey continues in this installment of ${novel.title}. Immerse yourself in the story as the narrative deepens with the events surrounding our main protagonists.`,
-      `As the wind rustled through the courtyard, a quiet anticipation settled over the horizon. Every decision made up to this moment led directly to the path lying ahead.`,
-      `"There are things in this world that cannot be compromised," echoed the thought in silence. Through adversity, resolve only becomes clearer.`,
-      `End of Chapter ${chapterNum}. Proceed to the next chapter to continue reading.`,
+      `Overview for Chapter ${chapterNum} of "${novel.title}".`,
+      ...descParagraphs,
+      `Volume ${Math.ceil(chapterNum / 10)}, Chapter ${chapterNum}. Published status: ${novel.status}.`,
+      `Reading text is synchronizing from provider ${source}.`,
     ].filter(Boolean);
 
     return {

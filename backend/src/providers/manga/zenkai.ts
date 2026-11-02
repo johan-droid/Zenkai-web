@@ -3,10 +3,12 @@
  *
  * Implements MangaProvider contract while delegating to the reverse-engineered
  * multi-provider infrastructure from the Zenkai Android & Web ecosystem.
+ * Automatically injects Zenkai Shield authentication headers.
  */
 
 import { fetchJson } from "../../http/client.js";
 import { AppError } from "../../http/errors.js";
+import { zenkaiShield } from "../zenkaiShield.js";
 import type {
   ChapterPages,
   ChapterQuery,
@@ -38,7 +40,9 @@ export class ZenkaiMangaProvider implements MangaProvider {
 
   async healthCheck(): Promise<boolean> {
     try {
+      const headers = await zenkaiShield.getShieldHeaders();
       const res = await fetchJson<{ trending?: any[] }>(`${this.#endpoint}/home?source=${encodeURIComponent(this.defaultSource)}`, {
+        headers,
         timeoutMs: 5000,
       });
       return Boolean(res?.trending);
@@ -50,7 +54,9 @@ export class ZenkaiMangaProvider implements MangaProvider {
   async browse(query: MangaBrowseQuery): Promise<Page<MangaSummary>> {
     const source = this.defaultSource;
     const url = `${this.#endpoint}/home?source=${encodeURIComponent(source)}`;
+    const headers = await zenkaiShield.getShieldHeaders();
     const data = await fetchJson<{ trending?: any[]; latest?: any[]; newRelease?: any[] }>(url, {
+      headers,
       timeoutMs: 15000,
     });
 
@@ -65,7 +71,8 @@ export class ZenkaiMangaProvider implements MangaProvider {
 
   async search(queryText: string, limit = 20, source = this.defaultSource): Promise<Page<MangaSummary>> {
     const url = `${this.#endpoint}/search?q=${encodeURIComponent(queryText)}&source=${encodeURIComponent(source)}`;
-    const data = await fetchJson<{ results?: any[] }>(url, { timeoutMs: 15000 });
+    const headers = await zenkaiShield.getShieldHeaders();
+    const data = await fetchJson<{ results?: any[] }>(url, { headers, timeoutMs: 15000 });
     const items = (data.results ?? []).slice(0, limit).map((m: any) => this.#toSummary(m, source));
 
     return {
@@ -78,7 +85,8 @@ export class ZenkaiMangaProvider implements MangaProvider {
 
   async getById(id: string, source = this.defaultSource): Promise<MangaDetail | null> {
     const url = `${this.#endpoint}/chapters?id=${encodeURIComponent(id)}&source=${encodeURIComponent(source)}`;
-    const data = await fetchJson<{ id: string; chapters?: any[] }>(url, { timeoutMs: 15000 });
+    const headers = await zenkaiShield.getShieldHeaders();
+    const data = await fetchJson<{ id: string; chapters?: any[] }>(url, { headers, timeoutMs: 15000 });
     if (!data?.id) return null;
 
     const chapters = data.chapters ?? [];
@@ -103,7 +111,8 @@ export class ZenkaiMangaProvider implements MangaProvider {
 
   async getChapters(id: string, query?: ChapterQuery, source = this.defaultSource): Promise<ProviderChapter[]> {
     const url = `${this.#endpoint}/chapters?id=${encodeURIComponent(id)}&source=${encodeURIComponent(source)}`;
-    const data = await fetchJson<{ id: string; chapters?: any[] }>(url, { timeoutMs: 20000 });
+    const headers = await zenkaiShield.getShieldHeaders();
+    const data = await fetchJson<{ id: string; chapters?: any[] }>(url, { headers, timeoutMs: 20000 });
     if (!data?.chapters || !Array.isArray(data.chapters)) return [];
 
     return data.chapters.map((ch: any) => ({
@@ -120,7 +129,8 @@ export class ZenkaiMangaProvider implements MangaProvider {
 
   async getChapterPages(chapterId: string, source = this.defaultSource): Promise<ChapterPages> {
     const url = `${this.#endpoint}/pages?chapterId=${encodeURIComponent(chapterId)}&source=${encodeURIComponent(source)}`;
-    const data = await fetchJson<{ chapterId: string; pages?: string[] }>(url, { timeoutMs: 25000 });
+    const headers = await zenkaiShield.getShieldHeaders();
+    const data = await fetchJson<{ chapterId: string; pages?: string[] }>(url, { headers, timeoutMs: 25000 });
     if (!data?.pages || !Array.isArray(data.pages) || data.pages.length === 0) {
       throw new AppError("upstream_error", `No pages returned for chapter ${chapterId}`, 502);
     }

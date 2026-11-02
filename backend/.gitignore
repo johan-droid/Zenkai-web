@@ -4,8 +4,11 @@ node_modules/
 # Build output
 dist/
 build/
+app.js
+app.cjs
 *.tsbuildinfo
 *.tsbuildinfo.old
+tsconfig.tsbuildinfo
 
 # Environment
 .env
@@ -14,10 +17,13 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+*.env
 !.env.example
+!.env.test.example
 
 # Logs
 *.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
@@ -36,6 +42,7 @@ data/
 # Test output
 coverage/
 .nyc_output/
+test-results/
 
 # Editors / IDEs
 .idea/
@@ -44,6 +51,7 @@ coverage/
 *.swo
 *~
 .cursor/
+.windsurf/
 
 # OS files
 .DS_Store
