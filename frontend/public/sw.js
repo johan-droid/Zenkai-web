@@ -1,19 +1,12 @@
-const CACHE_NAME = "zenkai-pwa-v2";
+const CACHE_NAME = "zenkai-pwa-v3";
 const STATIC_ASSETS = [
   "/",
-  "/anime",
-  "/manga",
-  "/schedule",
-  "/library",
-  "/history",
-  "/settings",
-  "/search",
   "/assets/zenkai-logo-transparent.svg",
   "/assets/app_logo.png",
   "/assets/zenkai-hero.svg",
 ];
 
-// Install event: cache static app shell
+// Install event: cache the app shell for offline use
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -39,7 +32,26 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch event: Network-first for API, Stale-While-Revalidate for pages/static
+// Store a copy only when the response is actually cacheable (200, not 404)
+function putInCache(request, response) {
+  if (!response || response.status !== 200 || response.type === "opaque") {
+    return response;
+  }
+  const copy = response.clone();
+  caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+  return response;
+}
+
+// Network first, cache only as an offline fallback.
+// Never serve stale HTML or hashed /_next/ assets: a previous deploy's HTML
+// points at CSS/JS chunk hashes that no longer exist, which leaves the page
+// completely unstyled.
+function networkFirst(request, fallback) {
+  return fetch(request)
+    .then((response) => putInCache(request, response))
+    .catch(() => caches.match(request).then((cached) => cached || fallback));
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -67,43 +79,24 @@ self.addEventListener("fetch", (event) => {
 
   // API Requests: Network-first with cache fallback
   if (url.pathname.startsWith("/api/")) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  // Pages and Next.js build assets: network-first, offline fallback only
+  if (request.mode === "navigate" || url.pathname.startsWith("/_next/")) {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request);
-        })
+      networkFirst(request, request.mode === "navigate" ? caches.match("/") : undefined)
     );
     return;
   }
 
-  // Static Assets / Pages: Stale-While-Revalidate
+  // Other static assets (logos, icons): stale-while-revalidate
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request)
-        .then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.status === 200 &&
-            !networkResponse.headers.get("content-type")?.includes("video")
-          ) {
-            const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return networkResponse;
-        })
-        .catch(() => {
-          // If offline and page request, fallback to root shell
-          if (request.mode === "navigate") {
-            return caches.match("/");
-          }
-        });
+        .then((networkResponse) => putInCache(request, networkResponse))
+        .catch(() => cachedResponse);
 
       return cachedResponse || fetchPromise;
     })
