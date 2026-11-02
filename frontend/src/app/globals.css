@@ -15,35 +15,32 @@
 :root {
   color-scheme: dark;
 
-  /* surfaces, warm near-black, tinted toward the crimson anchor */
+  /* surfaces — warm near-black, one tint for depth */
   --surface-0: oklch(0.145 0.008 20);
   --surface-1: oklch(0.185 0.010 20);
   --surface-2: oklch(0.235 0.012 20);
-  --surface-3: oklch(0.295 0.014 20);
 
-  /* ink */
+  /* ink — three tones for text hierarchy */
   --ink-1: oklch(0.965 0.004 20);
   --ink-2: oklch(0.785 0.010 20);
   --ink-3: oklch(0.660 0.012 20);
 
-  /* one signal */
+  /* one signal — the crimson accent, used sparingly for primary actions */
   --signal: oklch(0.540 0.200 22);
   --signal-hover: oklch(0.480 0.200 22);
   --signal-soft: oklch(0.680 0.160 22);
   --signal-ink: oklch(0.990 0.002 20);
-  --gold: oklch(0.800 0.120 82);
-  --danger: oklch(0.620 0.200 25);
 
   /* rules */
   --line: oklch(0.970 0.004 20 / 0.10);
   --line-strong: oklch(0.970 0.004 20 / 0.18);
 
   /* radii, one per nesting level */
-  --radius-panel: 1.25rem;
-  --radius-card: 0.75rem;
-  --radius-control: 0.625rem;
+  --radius-panel: 1rem;
+  --radius-card: 0.5rem;
+  --radius-control: 0.5rem;
 
-  /* spacing scale */
+  /* spacing scale — 4px base unit */
   --space-3xs: 0.125rem;
   --space-2xs: 0.25rem;
   --space-xs: 0.5rem;
@@ -56,22 +53,22 @@
   --space-4xl: 9rem;
 
   /* section rhythm, mixed */
-  --section-gap-s: 5rem;
-  --section-gap: 7rem;
-  --section-gap-l: 9rem;
+  --section-gap-s: 3rem;
+  --section-gap: 5rem;
+  --section-gap-l: 7rem;
 
-  /* type */
-  --text-display: clamp(2.25rem, 3.9vw, 4rem);
-  --text-section: clamp(1.75rem, 2.6vw, 2.5rem);
-  --text-title: 1.375rem;
-  --text-lead: 1.1875rem;
+  /* type — clamp() for fluid responsive typography */
+  --text-display: clamp(2.25rem, 3.5vw, 3.75rem);
+  --text-section: clamp(1.75rem, 2.4vw, 2.25rem);
+  --text-title: 1.25rem;
+  --text-lead: 1.125rem;
   --text-md: 1rem;
   --text-sm: 0.875rem;
 
-  /* motion */
-  --dur-micro: 120ms;
-  --dur-short: 220ms;
-  --dur-long: 420ms;
+  /* motion — purposeful, not decorative */
+  --dur-micro: 150ms;
+  --dur-short: 200ms;
+  --dur-long: 350ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* shadcn bridge */
@@ -87,8 +84,8 @@
   --secondary-foreground: var(--ink-1);
   --muted: var(--surface-2);
   --muted-foreground: var(--ink-2);
-  --accent: var(--surface-2);
-  --accent-foreground: var(--ink-1);
+  --accent: var(--signal);
+  --accent-foreground: var(--signal-ink);
   --destructive: var(--danger);
   --border: var(--line);
   --input: var(--line-strong);
@@ -103,10 +100,8 @@
   --sidebar-border: var(--line);
   --sidebar-ring: var(--signal);
   --chart-1: var(--signal);
-  --chart-2: var(--signal-soft);
+  --chart-2: var(--ink-2);
   --chart-3: var(--ink-2);
-  --chart-4: var(--gold);
-  --chart-5: var(--ink-3);
 }
 
 @theme inline {
@@ -140,7 +135,6 @@
   --color-signal-hover: var(--signal-hover);
   --color-signal-soft: var(--signal-soft);
   --color-signal-ink: var(--signal-ink);
-  --color-gold: var(--gold);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
 
@@ -155,8 +149,6 @@
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-display: var(--font-sans);
@@ -305,43 +297,28 @@
 
 @utility ambient {
   background-color: var(--surface-0);
+  /* static crimson bloom — one subtle accent, never animated, under 12% */
   background-image: radial-gradient(
     60rem 32rem at 50% -12%,
-    color-mix(in oklab, var(--signal) 12%, transparent),
+    var(--signal) 12%,
     transparent 70%
   );
 }
 
 /* matte surfaces kept for the rest of the app */
-@utility glass {
+@utility matte {
   background: var(--surface-1);
   border: 1px solid var(--line);
 }
 
-@utility glass-strong {
+@utility matte-strong {
   background: var(--surface-1);
-  border: 1px solid var(--line);
-}
-
-@utility glass-panel {
-  background: var(--surface-1);
-  border: 1px solid var(--line);
-}
-
-@utility glass-hover {
-  transition:
-    background-color var(--dur-short) var(--ease-out),
-    border-color var(--dur-short) var(--ease-out);
+  border: 1px solid var(--line-strong);
 }
 
 @utility glass-card {
   background: var(--surface-1);
   border: 1px solid var(--line);
-}
-
-@utility glass-brand {
-  background: color-mix(in oklab, var(--signal) 12%, transparent);
-  border: 1px solid color-mix(in oklab, var(--signal) 34%, transparent);
 }
 
 /* ── Keyframes ──────────────────────────────────────────────────────────── */
@@ -362,7 +339,7 @@
     var(--surface-1) 75%
   );
   background-size: 800px 100%;
-  animation: skeleton-shimmer 1.8s linear infinite;
+  animation: skeleton-shimmer var(--dur-long) var(--ease-out);
 }
 
 @keyframes hero-art-in {

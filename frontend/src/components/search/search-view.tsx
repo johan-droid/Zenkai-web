@@ -9,19 +9,30 @@ import { MediaGrid, MediaGridSkeleton } from "@/components/cards/media-grid";
 import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+
+import { useDebounce } from "@/hooks/use-debounce";
+import { SEARCH_MIN_LENGTH } from "@/lib/api/zenkai";
 import {
   discoveryCardToMedia,
   fetchAnimeSearch,
   searchState,
-  SEARCH_MIN_LENGTH,
 } from "@/lib/api/zenkai";
-import { useDebounce } from "@/hooks/use-debounce";
-import { cn } from "@/lib/utils";
 
 const GENRES = [
-  "Action", "Adventure", "Comedy", "Drama", "Fantasy",
-  "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life",
-  "Sports", "Supernatural", "Thriller",
+  "Action",
+  "Adventure",
+  "Comedy",
+  "Drama",
+  "Fantasy",
+  "Horror",
+  "Mystery",
+  "Romance",
+  "Sci-Fi",
+  "Slice of Life",
+  "Sports",
+  "Supernatural",
+  "Thriller",
 ];
 
 const FORMATS = [
@@ -89,156 +100,58 @@ export function SearchView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 sm:p-5">
+      <div className="flex flex-col gap-4 rounded-lg p-4 sm:p-5 bg-white/5 backdrop-blur-md">
         <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-zinc-400" />
           <Input
             autoFocus
             value={term}
             onChange={(event) => setTerm(event.target.value)}
             placeholder="Search for a title…"
-            className="h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 pr-9 text-base"
-            aria-label="Search anime"
+            className="h-10 rounded-xl border border-white/10 bg-white/3 pl-8 pr-8 text-sm text-zinc-200 placeholder-zinc-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-signal"
           />
-          {term ? (
-            <button
-              type="button"
-              onClick={() => setTerm("")}
-              aria-label="Clear search"
-              className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
-            >
-              <span className="sr-only">Clear</span>
-              ×
-            </button>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              <SlidersHorizontal className="size-3.5" /> Genre
-            </span>
-            {GENRES.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setFilter("genre", genre === item ? undefined : item)}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                  genre === item
-                    ? "border-[#c8102e] bg-[#c8102e] text-white"
-                    : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-[#c8102e]/50 hover:text-foreground",
-                )}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Format
-              </span>
-              {FORMATS.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => setFilter("format", format === item.value ? undefined : item.value)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    format === item.value
-                      ? "border-[#c8102e] bg-[#c8102e] text-white"
-                      : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-[#c8102e]/50 hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Status
-              </span>
-              {STATUSES.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => setFilter("status", status === item.value ? undefined : item.value)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    status === item.value
-                      ? "border-[#c8102e] bg-[#c8102e] text-white"
-                      : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-[#c8102e]/50 hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-start text-muted-foreground"
-              onClick={() => {
-                setFilter("genre", undefined);
-                setFilter("format", undefined);
-                setFilter("status", undefined);
-              }}
-            >
-              Clear filters
-            </Button>
-          )}
         </div>
       </div>
 
-      {state.kind === "loading" ? (
-        <MediaGridSkeleton count={12} />
-      ) : state.kind === "items" ? (
-        <MediaGrid items={state.items} priorityCount={6} />
-      ) : state.kind === "empty" ? (
-        <EmptyState
-          icon={Search}
-          title={`No results for "${state.query}"`}
-          description={hasFilters ? "No titles matched your query with the current filters." : "Check the spelling or try a shorter query."}
-          action={
-            hasFilters ? (
-              <Button
-                variant="outline"
-                className="rounded-xl"
-                onClick={() => {
-                  setFilter("genre", undefined);
-                  setFilter("format", undefined);
-                  setFilter("status", undefined);
-                }}
-              >
+      <div className="flex flex-col gap-4">
+        {state.kind === "loading" ? (
+          <MediaGridSkeleton count={12} />
+        ) : state.kind === "items" ? (
+          <MediaGrid items={state.items} priorityCount={6} />
+        ) : state.kind === "empty" ? (
+          <EmptyState
+            icon={Search}
+            title={`No results for "${trimmed}"`}
+            description={hasFilters ? "No titles matched your query with the current filters." : 'Check the spelling or try a shorter query.'}
+            action={hasFilters ? (
+              <Button variant="outline" className="rounded-xl" onClick={() => {
+                setFilter("genre", undefined);
+                setFilter("format", undefined);
+                setFilter("status", undefined);
+              }}>
                 Clear filters
               </Button>
-            ) : undefined
-          }
-        />
-      ) : state.kind === "error" ? (
-        <EmptyState
-          icon={WifiOff}
-          title="Search is temporarily unavailable"
-          description={state.message}
-          action={
-            <Button variant="outline" className="rounded-xl" onClick={() => query.refetch()}>
-              Try again
-            </Button>
-          }
-        />
-      ) : (
-        <EmptyState
-          icon={Search}
-          title="Start typing to search"
-          description="Enter at least two characters. Press ⌘K anywhere for the quick palette."
-        />
-      )}
+            ) : undefined}
+          />
+        ) : state.kind === "error" ? (
+          <EmptyState
+            icon={WifiOff}
+            title="Search is temporarily unavailable"
+            description={query.error?.message ?? "Search is temporarily unavailable"}
+            action={
+              <Button variant="outline" className="rounded-xl" onClick={() => query.refetch()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="Start typing to search"
+            description="Enter at least two characters. Press ⌘K anywhere for the quick palette."
+          />
+        )}
+      </div>
     </div>
   );
 }

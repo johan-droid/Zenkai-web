@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Search,
   Settings,
-  User,
 } from "lucide-react";
 
 import { Brand } from "@/components/layout/brand";
@@ -24,8 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
   Sheet,
@@ -52,7 +50,7 @@ export function Navbar() {
 
         {/* Desktop Nav Links */}
         <nav
-          className="hidden items-center gap-1 lg:flex ml-2"
+          className="hidden items-center gap-1 lg:flex ml-2 w-full max-w-[calc(100%-4rem)]"
           aria-label="Primary Navigation"
         >
           {navSections[0]!.items.map((item) => {
@@ -97,136 +95,19 @@ export function Navbar() {
               className="hidden h-9 w-48 sm:flex lg:w-60 justify-start gap-2.5 rounded-xl border border-white/[0.08] bg-[#16161c]/80 px-3 text-xs text-zinc-400 hover:border-white/20 hover:bg-[#1e1e26] hover:text-white transition-all backdrop-blur-md"
             >
               <Search className="size-3.5 text-zinc-400" />
-              <span>Search anime, manga…</span>
-              <kbd className="ml-auto rounded-md border border-white/10 bg-[#101014] px-1.5 py-0.5 text-[0.62rem] font-semibold text-zinc-400">
-                ⌘K
-              </kbd>
+              <span>Search</span>
             </Button>
           </SearchCommand>
 
-          {/* Mobile search icon */}
+          {/* Mobile search trigger */}
           <Button
             variant="ghost"
             size="icon"
             aria-label="Search"
             className="sm:hidden rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08]"
-            asChild
           >
-            <Link href="/search">
-              <Search className="size-4" />
-            </Link>
+            <Search className="size-4.5" />
           </Button>
-
-          {/* History */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="History"
-            title="History"
-            className="hidden lg:flex rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors duration-200"
-            asChild
-          >
-            <Link href="/history">
-              <History className="size-4" />
-            </Link>
-          </Button>
-
-          {/* Settings */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Settings"
-            title="Settings"
-            className="hidden lg:flex rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors duration-200"
-            asChild
-          >
-            <Link href="/settings">
-              <Settings className="size-4" />
-            </Link>
-          </Button>
-
-          {/* User Account */}
-          {isAuthenticated && user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="User Account Menu"
-                  className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-[#16161c] text-white transition-all duration-200 hover:border-[#C51F3A]/60 hover:ring-2 hover:ring-[#C51F3A]/30"
-                >
-                  <span className="text-xs font-bold uppercase">
-                    {user.username.slice(0, 2)}
-                  </span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-56 rounded-2xl border border-white/10 bg-[#16161c]/95 p-1.5 shadow-2xl backdrop-blur-xl"
-              >
-                <div className="flex flex-col px-3 py-2.5">
-                  <span className="text-sm font-bold text-white">
-                    {user.displayName || user.username}
-                  </span>
-                  <span className="text-xs text-zinc-400">@{user.username}</span>
-                </div>
-                <DropdownMenuSeparator className="bg-white/10" />
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/user/${user.username}`}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
-                  >
-                    <User className="size-3.5 text-zinc-400" />
-                    <span>Public Profile</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/library"
-                    className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
-                  >
-                    <Bookmark className="size-3.5 text-zinc-400" />
-                    <span>My Library</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => void syncNow()}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
-                >
-                  <RefreshCw className="size-3.5 text-zinc-400" />
-                  <span>Sync Cloud Now</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/settings"
-                    className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white"
-                  >
-                    <Settings className="size-3.5 text-zinc-400" />
-                    <span>Preferences</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-white/10" />
-                <DropdownMenuItem
-                  onClick={() => void logout()}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-[#ff4a68] hover:bg-[#C51F3A]/20 hover:text-white"
-                >
-                  <LogOut className="size-3.5" />
-                  <span>Log out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              asChild
-              className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/[0.08] hover:text-white lg:flex transition-all duration-200"
-            >
-              <Link href="/settings">
-                <User className="size-3.5" />
-                <span>Sign In</span>
-              </Link>
-            </Button>
-          )}
 
           <MobileMenu pathname={pathname} />
         </div>
@@ -251,10 +132,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
           <Menu className="size-4" />
         </Button>
       </SheetTrigger>
-      <SheetContent
-        side="right"
-        className="w-72 border-white/10 bg-[#101014]/95 p-0 backdrop-blur-2xl"
-      >
+      <SheetContent side="right">
         <div className="flex flex-col h-full">
           <SheetTitle className="px-5 pt-5 pb-4 border-b border-white/10">
             <Brand />
