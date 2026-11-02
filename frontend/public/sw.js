@@ -61,6 +61,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // CRITICAL: Never intercept cross-origin requests (cdn.4animo.xyz, novuscloud.buzz, etc.)
+  // These will fail CORS and the SW returns undefined, breaking the page.
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
   // Never intercept Range requests (avoids Cache API DOMException 206 for video/audio streams)
   if (request.headers.has("range")) {
     return;
