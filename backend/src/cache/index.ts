@@ -16,11 +16,41 @@ import { config } from "../config/index.js";
 /** Minimal surface the cache needs from a Redis connection. */
 export interface CacheRedisClient {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, mode: "EX", ttl: number): Promise<unknown>;
+  set(key: string, value: string, mode?: "EX", ttl?: number): Promise<unknown>;
   del(key: string): Promise<unknown>;
   /** Seconds until the key expires; -1 when the key has no expiry, -2 when absent. */
   ttl(key: string): Promise<number>;
-  on(event: string, listener: () => void): unknown;
+  on?(event: string, listener: () => void): unknown;
+}
+
+export interface UpstashRedisLike {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, opts?: { ex?: number }): Promise<unknown>;
+  del(...keys: string[]): Promise<number>;
+  ttl(key: string): Promise<number>;
+}
+
+/** Adapter that bridges @upstash/redis REST client to CacheRedisClient interface. */
+export function createUpstashRedisAdapter(client: UpstashRedisLike): CacheRedisClient {
+  return {
+    async get(key: string): Promise<string | null> {
+      const val = await client.get<string>(key);
+      if (val === null || val === undefined) return null;
+      return typeof val === "string" ? val : JSON.stringify(val);
+    },
+    async set(key: string, value: string, _mode?: "EX", ttl?: number): Promise<unknown> {
+      if (ttl !== undefined && ttl > 0) {
+        return client.set(key, value, { ex: ttl });
+      }
+      return client.set(key, value);
+    },
+    async del(key: string): Promise<unknown> {
+      return client.del(key);
+    },
+    async ttl(key: string): Promise<number> {
+      return client.ttl(key);
+    },
+  };
 }
 
 interface MemoryEntry {
@@ -82,9 +112,25 @@ export class Cache {
   attachRedis(client: CacheRedisClient): void {
     this.#redis = client;
     this.#redisHealthy = true;
-    client.on("error", () => {
-      this.#redisHealthy = false;
-    });
+    if (typeof client.on === "function") {
+      client.on("error", () => {
+        this.#redisHealthy = false;
+      });
+      client.on("ready", () => {
+        this.#redisHealthy = true;
+      });
+      client.on("connect", () => {
+        this.#redisHealthy = true;
+      });
+    }
+  }
+
+  isHealthy(): boolean {
+    return this.#redisHealthy;
+  }
+
+  isAttached(): boolean {
+    return this.#redis !== null;
   }
 
   async get<T>(key: string): Promise<T | undefined> {

@@ -49,6 +49,9 @@ const schema = z.object({
 
   /** Redis is optional: the cache degrades to an in-process LRU when absent. */
   REDIS_URL: z.string().optional(),
+  /** Upstash Redis REST credentials (alternative or complementary to REDIS_URL). */
+  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 
   /** Applied to every outbound provider request. */
   PROVIDER_HTTP_TIMEOUT_MS: z.coerce.number().int().min(500).default(8000),
@@ -156,8 +159,19 @@ function load(): Config {
 
   const value = parsed.data;
 
+  let redisUrl = value.REDIS_URL;
+  if (!redisUrl && value.UPSTASH_REDIS_REST_URL && value.UPSTASH_REDIS_REST_TOKEN) {
+    try {
+      const parsedUrl = new URL(value.UPSTASH_REDIS_REST_URL);
+      redisUrl = `rediss://default:${value.UPSTASH_REDIS_REST_TOKEN}@${parsedUrl.hostname}:6379`;
+    } catch {
+      // Ignored if URL parsing fails
+    }
+  }
+
   return {
     ...value,
+    REDIS_URL: redisUrl,
     playbackProxyAllowlist: (value.PLAYBACK_PROXY_ALLOWLIST ?? "")
       .split(",")
       .map((host) => host.trim().toLowerCase())

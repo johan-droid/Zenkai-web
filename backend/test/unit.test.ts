@@ -277,3 +277,82 @@ describe("normalisation", () => {
     assert.equal(explicit.totalEpisodes, null, "an explicit null is a real answer");
   });
 });
+
+describe("Upstash Redis Cache Adapter", () => {
+  it("translates get, set with ex, ttl, and del correctly", async () => {
+    const { Cache, createUpstashRedisAdapter } = await import("../src/cache/index.js");
+
+    const storage = new Map<string, { value: unknown; ttl: number }>();
+    const mockUpstash = {
+      async get<T = unknown>(key: string): Promise<T | null> {
+        return (storage.get(key)?.value as T) ?? null;
+      },
+      async set(key: string, value: unknown, opts?: { ex?: number }) {
+        storage.set(key, { value, ttl: opts?.ex ?? -1 });
+        return "OK";
+      },
+      async del(...keys: string[]) {
+        let count = 0;
+        for (const k of keys) {
+          if (storage.delete(k)) count++;
+        }
+        return count;
+      },
+      async ttl(key: string) {
+        return storage.get(key)?.ttl ?? -2;
+      },
+    };
+
+    const adapter = createUpstashRedisAdapter(mockUpstash);
+    const cache = new Cache();
+    cache.attachRedis(adapter);
+
+    assert.equal(cache.isHealthy(), true);
+    assert.equal(cache.isAttached(), true);
+
+    await cache.set("test:upstash:key", { hello: "world" }, 300);
+
+    const retrieved = await cache.get<{ hello: string }>("test:upstash:key");
+    assert.deepEqual(retrieved, { hello: "world" });
+
+    // Verify raw storage in mock Upstash
+    assert.ok(storage.has("test:upstash:key"));
+    assert.equal(storage.get("test:upstash:key")?.ttl, 300);
+
+    await cache.delete("test:upstash:key");
+    assert.equal(await cache.get("test:upstash:key"), undefined);
+    assert.equal(storage.has("test:upstash:key"), false);
+  });
+
+  it("verifies live Upstash Redis connection if credentials are configured", async () => {
+    const { config } = await import("../src/config/index.js");
+    if (!config.UPSTASH_REDIS_REST_URL || !config.UPSTASH_REDIS_REST_TOKEN) {
+      return; // Skip if credentials are not in environment
+    }
+
+    const { Redis: UpstashRedis } = await import("@upstash/redis");
+    const { Cache, createUpstashRedisAdapter } = await import("../src/cache/index.js");
+
+    const upstash = new UpstashRedis({
+      url: config.UPSTASH_REDIS_REST_URL,
+      token: config.UPSTASH_REDIS_REST_TOKEN,
+      automaticDeserialization: false,
+    });
+
+    const ping = await upstash.ping();
+    assert.equal(ping, "PONG");
+
+    const cache = new Cache();
+    cache.attachRedis(createUpstashRedisAdapter(upstash));
+
+    const testKey = `test:live:${Date.now()}`;
+    await cache.set(testKey, { zenkai: "live-cache-test" }, 60);
+
+    const readBack = await cache.get<{ zenkai: string }>(testKey);
+    assert.deepEqual(readBack, { zenkai: "live-cache-test" });
+
+    await cache.delete(testKey);
+    const afterDelete = await cache.get(testKey);
+    assert.equal(afterDelete, undefined);
+  });
+});

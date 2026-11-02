@@ -2,9 +2,10 @@ import { sql as rawSql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres, { type Sql } from "postgres";
 import { Redis } from "ioredis";
+import { Redis as UpstashRedis } from "@upstash/redis";
 
 import { config } from "../config/index.js";
-import { cache } from "../cache/index.js";
+import { cache, createUpstashRedisAdapter } from "../cache/index.js";
 import * as schema from "./schema/index.js";
 
 const url =
@@ -134,7 +135,27 @@ export async function createResources(): Promise<DbHandle> {
   const db = drizzle(guarded, { schema });
   (db as any).rawClient = sql;
 
-  if (config.REDIS_URL) {    // `lazyConnect` plus a short retry ceiling: a dead Redis degrades the cache
+  let connectedRedis = false;
+
+  // Upstash Redis via official HTTP REST SDK (ideal for stateless requests and serverless environments)
+  if (config.UPSTASH_REDIS_REST_URL && config.UPSTASH_REDIS_REST_TOKEN) {
+    try {
+      const upstash = new UpstashRedis({
+        url: config.UPSTASH_REDIS_REST_URL,
+        token: config.UPSTASH_REDIS_REST_TOKEN,
+        automaticDeserialization: false,
+      });
+      await upstash.ping();
+      cache.attachRedis(createUpstashRedisAdapter(upstash));
+      connectedRedis = true;
+    } catch {
+      // Degrades or falls through to REDIS_URL
+    }
+  }
+
+  // Standard TCP/TLS Redis connection (ioredis)
+  if (!connectedRedis && config.REDIS_URL) {
+    // `lazyConnect` plus a short retry ceiling: a dead Redis degrades the cache
     // to memory rather than stalling boot.
     const redis = new Redis(config.REDIS_URL, {
       lazyConnect: true,
