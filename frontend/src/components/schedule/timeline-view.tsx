@@ -387,7 +387,7 @@ export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
                 </div>
 
                 {/* Calendar Cells */}
-                <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                <div className="grid min-w-0 grid-cols-7 gap-1 sm:gap-2">
                   {monthCalendarDays.map((cell) => {
                     const dayEntries = monthDensity.get(cell.dateKey) ?? [];
                     const count = dayEntries.length;
@@ -400,7 +400,7 @@ export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
                         onClick={() => setSelectedMonthDateKey(cell.dateKey)}
                         disabled={!cell.isCurrentMonth}
                         className={cn(
-                          "flex flex-col items-center justify-between p-1.5 sm:p-2.5 rounded-xl min-h-[56px] sm:min-h-[70px] border transition-all text-left relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal",
+                          "relative flex min-w-0 flex-col items-center justify-between rounded-xl border p-1 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal min-h-[56px] sm:min-h-[70px] sm:p-2.5",
                           !cell.isCurrentMonth && "opacity-25 pointer-events-none border-transparent",
                           cell.isCurrentMonth && "glass hover:bg-surface-2 border-line",
                           isToday && "border-signal/50",
@@ -422,7 +422,7 @@ export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
                           <div className="flex items-center gap-1 mt-1">
                             <span
                               className={cn(
-                                "text-[10px] sm:text-xs font-mono font-bold px-1.5 py-0.2 rounded-full",
+                                "rounded-full px-1 py-0.5 font-mono font-bold text-[9px] sm:px-1.5 sm:text-xs",
                                 count >= 5
                                   ? "bg-signal text-signal-ink"
                                   : "bg-surface-3 text-ink-1 border border-line"
@@ -441,8 +441,8 @@ export function TimelineView({ initialTimeZone = "UTC" }: TimelineViewProps) {
               {/* Day Inspector for Month View */}
               {selectedMonthDateKey && (
                 <section className="flex flex-col gap-3" aria-label="Selected day schedule">
-                  <div className="flex items-baseline justify-between border-b border-line pb-2">
-                    <div className="flex items-baseline gap-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line pb-2">
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                       <h3 className="text-base font-bold text-foreground">
                         {selectedMonthDateKey === todayDateKey ? "Today" : selectedMonthDateKey}
                       </h3>

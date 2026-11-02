@@ -97,43 +97,43 @@ export function ScheduleHeader({
   }, [now, timeZone]);
 
   return (
-    <header className="flex flex-col gap-4 border-b border-line pb-4" aria-label="Schedule controls">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <header className="flex flex-col gap-4 border-b border-white/[0.08] pb-5" aria-label="Schedule controls">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         {/* Title & Context */}
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-              Schedule
-            </h1>
-            <span className="text-xs uppercase font-mono px-2 py-0.5 rounded-full bg-signal/15 text-signal font-semibold border border-signal/25">
-              Airwave
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
+        <div className="flex min-w-0 flex-col gap-2">
+          <p className="flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.2em] text-signal">
+            <span className="tabular-nums">{clockString}</span>
+            <span className="text-ink-3/60">/</span>
+            <span>{currentTz.label}</span>
+          </p>
+          <h1 className="text-[clamp(1.9rem,4.6vw,2.75rem)] font-black leading-[1.02] tracking-[-0.035em] text-foreground">
+            Schedule
+          </h1>
+          <p className="max-w-xl text-sm text-ink-2">
             {VIEW_DESCRIPTIONS[currentView]}
           </p>
         </div>
 
         {/* Command Toolbar */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {/* Timezone Dropdown */}
           <div className="relative" ref={tzRef}>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="glass gap-2 h-9 border border-line"
+              className="h-10 gap-2 rounded-md px-2 text-ink-2 hover:bg-white/[0.05] hover:text-ink-1"
               onClick={() => setTzOpen(!tzOpen)}
               aria-expanded={tzOpen}
               aria-haspopup="listbox"
               aria-label={`Timezone selector: currently ${currentTz.label}`}
             >
-              <Globe className="size-4 text-signal" aria-hidden="true" />
-              <span className="text-xs font-semibold">{currentTz.label}</span>
+              <Globe className="size-3.5 text-ink-3" aria-hidden="true" />
+              <span className="text-xs font-medium">{currentTz.label}</span>
             </Button>
 
             {tzOpen && (
               <div
-                className="absolute right-0 top-full mt-1.5 z-50 glass rounded-xl border border-line-strong shadow-2xl overflow-hidden min-w-[220px] max-h-72 overflow-y-auto"
+                className="absolute left-0 top-full z-50 mt-1.5 max-h-[min(18rem,50dvh)] min-w-[220px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-white/10 bg-surface-1 shadow-2xl shadow-black/60 sm:left-auto sm:right-0"
                 role="listbox"
                 aria-label="Available timezones"
               >
@@ -163,28 +163,30 @@ export function ScheduleHeader({
 
           {/* Today Button */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             className={cn(
-              "glass gap-1.5 h-9 border border-line",
-              currentView === "today" && "bg-surface-2 border-line-strong text-signal"
+              "h-10 gap-1.5 rounded-md px-2 text-xs font-medium",
+              currentView === "today"
+                ? "text-signal hover:bg-white/[0.05]"
+                : "text-ink-2 hover:bg-white/[0.05] hover:text-ink-1",
             )}
             onClick={() => onViewChange("today")}
             aria-pressed={currentView === "today"}
           >
-            <Calendar className="size-3.5 text-signal" aria-hidden="true" />
-            <span className="text-xs font-semibold">Today</span>
+            <Calendar className="size-3.5" aria-hidden="true" />
+            <span>Today</span>
           </Button>
 
           {/* Search anime filter */}
-          <div className="relative flex-1 sm:w-60 min-w-[160px]">
+          <div className="relative min-w-[160px] flex-1 sm:w-60">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" aria-hidden="true" />
             <Input
               type="search"
               placeholder="Filter anime..."
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
-              className="pl-8 pr-8 h-9 text-xs bg-surface-1 border border-line rounded-xl focus:ring-1 focus:ring-signal"
+              className="h-10 rounded-md border border-white/10 bg-transparent pl-8 pr-8 text-xs focus-visible:border-white/25 focus-visible:ring-1 focus-visible:ring-signal"
               aria-label="Filter schedule by anime title"
             />
             {searchQuery && (
@@ -200,13 +202,13 @@ export function ScheduleHeader({
 
           {/* My Anime Watchlist Filter */}
           <Button
-            variant={watchlistFilter ? "default" : "outline"}
+            variant="ghost"
             size="sm"
             className={cn(
-              "glass gap-1.5 h-9 border border-line transition-all text-xs font-semibold",
+              "h-10 gap-1.5 rounded-md px-2 text-xs font-medium transition-colors",
               watchlistFilter
-                ? "bg-signal text-signal-ink hover:bg-signal-hover border-signal"
-                : "text-foreground hover:text-signal"
+                ? "text-signal hover:bg-white/[0.05]"
+                : "text-ink-2 hover:bg-white/[0.05] hover:text-ink-1",
             )}
             onClick={() => onWatchlistFilterChange(!watchlistFilter)}
             aria-pressed={watchlistFilter}
@@ -232,9 +234,9 @@ export function ScheduleHeader({
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
         {/* Live Clock */}
         <div className="flex items-center gap-2">
-          <Clock className="size-3.5 text-signal animate-pulse" aria-hidden="true" />
-          <span className="font-mono tabular-nums text-foreground font-semibold">{clockString}</span>
-          <span className="text-[11px] text-muted-foreground font-mono">({timeZone})</span>
+          <Clock className="size-3.5 text-ink-3" aria-hidden="true" />
+          <span className="font-mono font-semibold text-ink-1 tabular-nums">{clockString}</span>
+          <span className="font-mono text-[11px] text-ink-3">{timeZone}</span>
         </div>
 
         {/* Counter Summary */}

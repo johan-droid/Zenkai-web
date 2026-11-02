@@ -1,80 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import {
-  Compass,
-  Flame,
-  Hash,
-  Heart,
-  Rocket,
-  Shield,
-  Smile,
-  Sparkles,
-  Swords,
-  Zap,
-} from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 import { useGenres } from "@/hooks/use-home";
 import { cn } from "@/lib/utils";
 
-const GENRE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  Action: Swords,
-  Adventure: Compass,
-  Comedy: Smile,
-  Drama: Sparkles,
-  Fantasy: Sparkles,
-  Horror: Flame,
-  Romance: Heart,
-  "Sci-Fi": Rocket,
-  Mystery: Shield,
-  Supernatural: Zap,
-};
-
 /**
- * Genre discovery cards, listing the genres that actually exist in the catalogue.
+ * Genre discovery index.
  * Reads `GET /api/v1/genres` (database-backed) rather than a hard-coded list.
+ * Presented as a scannable text index instead of a field of pill buttons.
  */
-export function GenreChips({ className }: { className?: string }) {
+export function GenreChips({ className, index }: { className?: string; index?: number }) {
   const { data: genres, isLoading } = useGenres();
 
   return (
-    <section className={cn("flex flex-col gap-3.5", className)}>
-      {/* Header */}
-      <div className="flex items-center gap-2.5">
-        <span className="h-5 w-1 rounded-full bg-gradient-to-b from-[#C51F3A] to-[#E02E4D] shadow-sm shadow-[#C51F3A]/40" />
-        <h2 className="text-lg font-bold tracking-tight text-white sm:text-xl">
+    <section className={cn("flex flex-col gap-3", className)}>
+      <div className="flex min-w-0 items-baseline gap-3 border-b border-white/[0.07] pb-2.5">
+        {typeof index === "number" ? (
+          <span className="font-mono text-[0.62rem] font-medium tracking-[0.18em] text-signal tabular-nums">
+            {String(index).padStart(2, "0")}
+          </span>
+        ) : null}
+        <h2 className="truncate text-[1.05rem] font-bold tracking-[-0.01em] text-ink-1 sm:text-xl">
           Browse by Genre
         </h2>
       </div>
 
-      <div className="no-scrollbar -mx-1 flex flex-wrap gap-2.5 px-1 pb-1">
+      <div className="grid grid-cols-2 gap-x-7 sm:grid-cols-3 lg:grid-cols-4">
         {isLoading
           ? Array.from({ length: 12 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-9 rounded-xl border border-white/[0.06] bg-[#16161c] animate-pulse"
-                style={{ width: `${75 + (i % 5) * 16}px` }}
-              />
+              <div key={i} className="border-b border-white/[0.06] py-3.5">
+                <div className="h-3 w-2/3 animate-pulse rounded bg-white/[0.07]" />
+              </div>
             ))
-          : (genres ?? []).map((genre) => {
-              const Icon = GENRE_ICONS[genre] ?? Hash;
-              return (
-                <Link
-                  key={genre}
-                  href={`/anime?genre=${encodeURIComponent(genre)}`}
-                  className={cn(
-                    "group flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold sm:text-sm",
-                    "border border-white/[0.08] bg-[#16161c]/80 text-zinc-300 backdrop-blur-md",
-                    "transition-all duration-200",
-                    "hover:border-[#C51F3A]/50 hover:bg-[#C51F3A]/10 hover:text-white hover:scale-105 active:scale-95",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
-                  )}
-                >
-                  <Icon className="size-3.5 text-zinc-400 transition-colors duration-200 group-hover:text-[#ff4a68]" />
-                  <span>{genre}</span>
-                </Link>
-              );
-            })}
+          : (genres ?? []).map((genre) => (
+              <Link
+                key={genre}
+                href={`/anime?genre=${encodeURIComponent(genre)}`}
+                className="group flex min-h-11 items-center justify-between gap-2 border-b border-white/[0.06] text-sm text-ink-2 transition-colors hover:text-ink-1 focus-visible:outline-none focus-visible:text-ink-1"
+              >
+                <span className="truncate">{genre}</span>
+                <ArrowUpRight
+                  className="size-3.5 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                  aria-hidden="true"
+                />
+              </Link>
+            ))}
       </div>
     </section>
   );

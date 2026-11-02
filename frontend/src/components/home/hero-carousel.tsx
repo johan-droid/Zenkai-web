@@ -190,167 +190,161 @@ function HeroItem({
       onTouchStart={onPause}
       onTouchEnd={onResume}
       className={cn(
-        "relative w-full overflow-hidden rounded-2xl md:rounded-3xl",
-        "border border-white/[0.08] bg-[#101014]",
-        "min-h-[460px] sm:min-h-[520px] md:min-h-[580px] lg:min-h-[620px]",
-        "shadow-2xl shadow-black/80",
+        "relative w-full overflow-hidden rounded-xl border border-white/[0.08] bg-surface-1",
+        "min-h-[clamp(390px,62dvh,560px)]",
       )}
     >
       {/* Background Cinematic Art with Smooth Transitions */}
       <div className="absolute inset-0 size-full overflow-hidden">
-        {art ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={active.id}
-            src={art}
-            alt=""
-            referrerPolicy="no-referrer"
-            fetchPriority="high"
-            onError={(e) => {
-              if (coverUrl && e.currentTarget.src !== coverUrl) {
-                e.currentTarget.src = coverUrl;
-              }
-            }}
-            className="size-full object-cover object-[center_25%] transition-transform duration-700 ease-out"
-          />
+        {art || coverUrl ? (
+          <picture>
+            {/* Phones get the portrait key art (sharper, more editorial);
+                wider screens use the cinematic banner when one exists. */}
+            {art && art !== coverUrl ? (
+              <source media="(min-width: 768px)" srcSet={art} />
+            ) : null}
+            <img
+              key={active.id}
+              src={coverUrl ?? art ?? undefined}
+              alt=""
+              referrerPolicy="no-referrer"
+              fetchPriority="high"
+              onError={(e) => {
+                if (art && e.currentTarget.src !== art) {
+                  e.currentTarget.src = art;
+                }
+              }}
+              className="size-full object-cover object-[center_22%] md:object-[center_25%]"
+            />
+          </picture>
         ) : (
-          <div className="size-full bg-[#16161c]" />
+          <div className="size-full bg-surface-2" />
         )}
 
-        {/* Multi-Layer Darkening Gradients */}
-        {/* Layer 1: Bottom-to-top darkening gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#101014] via-[#101014]/75 to-transparent" />
-
-        {/* Layer 2: Left-to-right darkening gradient on md/lg screens */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#101014] via-[#101014]/90 to-transparent md:w-[75%]" />
-
-        {/* Layer 3: Top edge vignette for navbar contrast */}
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[#101014]/60 to-transparent" />
+        {/* Two local gradients only: legibility at the bottom, breathing room on wide screens. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-surface-0 via-surface-0/80 to-surface-0/5" />
+        <div className="absolute inset-0 hidden bg-gradient-to-r from-surface-0 via-surface-0/45 to-transparent md:block" />
       </div>
 
       {/* Content Container */}
-      <div className="relative z-10 flex min-h-[460px] sm:min-h-[520px] md:min-h-[580px] lg:min-h-[620px] flex-col justify-end p-6 sm:p-10 md:p-14 lg:p-16">
-        <div className="max-w-2xl sm:max-w-3xl">
-          {/* Badge Row */}
-          <div className="flex flex-wrap items-center gap-2 pb-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#C51F3A]/40 bg-[#C51F3A]/20 px-3 py-1 text-xs font-bold text-white backdrop-blur-md">
-              <span className="size-1.5 rounded-full bg-[#C51F3A] animate-pulse" />
-              SPOTLIGHT #{index + 1}
-            </span>
+      <div className="relative z-10 flex min-h-[clamp(390px,62dvh,560px)] flex-col justify-end px-5 pb-5 pt-20 sm:px-8 sm:pb-8 sm:pt-24 md:px-12 md:pb-9 lg:px-14">
+        <div className="max-w-xl lg:max-w-2xl">
+          {/* Editorial kicker instead of a pile of pills. */}
+          <p className="flex items-center gap-2.5 font-mono text-[0.62rem] font-medium uppercase tracking-[0.18em] text-signal">
+            <span className="h-px w-6 bg-signal/70" aria-hidden="true" />
+            Featured · {String(index + 1).padStart(2, "0")}
+          </p>
 
-            {active.format && active.format !== "UNKNOWN" ? (
-              <span className="rounded-md border border-white/10 bg-[#16161c]/80 px-2 py-0.5 text-xs font-semibold text-zinc-300 backdrop-blur-md">
-                {active.format}
-              </span>
-            ) : null}
-
-            {seasonText ? (
-              <span className="rounded-md border border-white/10 bg-[#16161c]/80 px-2 py-0.5 text-xs font-semibold text-zinc-300 backdrop-blur-md">
-                {seasonText}
-              </span>
-            ) : null}
-
-            {epInfoBadge ? (
-              <span className="rounded-md border border-white/10 bg-[#16161c]/80 px-2 py-0.5 text-xs font-semibold text-zinc-300 backdrop-blur-md">
-                {epInfoBadge}
-              </span>
-            ) : null}
-
-            {score ? (
-              <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-[#16161c]/80 px-2 py-0.5 text-xs font-bold text-[#f5c518] backdrop-blur-md">
-                <Star className="size-3 fill-[#f5c518] text-[#f5c518]" />
-                {score}
-              </span>
-            ) : null}
-
-            {genres.map((g) => (
-              <span
-                key={g}
-                className="hidden sm:inline-block rounded-md border border-white/[0.08] bg-white/[0.05] px-2 py-0.5 text-xs font-medium text-zinc-400 backdrop-blur-md"
-              >
-                {g}
-              </span>
-            ))}
-          </div>
-
-          {/* Title */}
-          <h1 className="text-2xl font-black tracking-tight text-white sm:text-4xl md:text-5xl lg:text-6xl drop-shadow-md line-clamp-2">
+          <h1 className="mt-3 text-balance text-[clamp(1.65rem,6.2vw,3.25rem)] font-black leading-[1.04] tracking-[-0.035em] text-white">
             {title}
           </h1>
 
-          {/* Synopsis */}
+          {/* Facts on one line; artwork stays dominant. */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.72rem] font-medium text-ink-2">
+            {[
+              active.format && active.format !== "UNKNOWN" ? active.format : null,
+              seasonText,
+              epInfoBadge,
+              active.status && active.status !== "UNKNOWN"
+                ? active.status.replaceAll("_", " ")
+                : null,
+            ]
+              .filter(Boolean)
+              .map((fact, i) => (
+                <span key={`${fact}-${i}`} className="flex items-center gap-2.5">
+                  {i > 0 ? (
+                    <span className="text-ink-3/50" aria-hidden="true">
+                      /
+                    </span>
+                  ) : null}
+                  <span>{fact}</span>
+                </span>
+              ))}
+            {score ? (
+              <span className="flex items-center gap-1">
+                <span className="px-1 text-ink-3/50" aria-hidden="true">
+                  /
+                </span>
+                <Star className="size-3 fill-signal text-signal" aria-hidden="true" />
+                {score}
+              </span>
+            ) : null}
+          </div>
+
+          {genres.length ? (
+            <p className="mt-1.5 truncate text-[0.7rem] tracking-wide text-ink-3">
+              {genres.join("  ·  ")}
+            </p>
+          ) : null}
+
           {active.description ? (
-            <p className="mt-3.5 text-xs sm:text-sm md:text-base text-zinc-300/90 leading-relaxed line-clamp-2 sm:line-clamp-3 max-w-2xl drop-shadow">
+            <p className="mt-2.5 line-clamp-2 max-w-lg text-[0.8rem] leading-relaxed text-ink-2">
               {sanitizeSynopsis(active.description)}
             </p>
           ) : null}
 
-          {/* Primary CTA Buttons */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            {/* Watch / Continue CTA */}
+          <div className="mt-5 flex items-center gap-2.5">
             <Link
               href={watchUrl}
               className={cn(
-                "inline-flex h-11 sm:h-12 items-center gap-2.5 rounded-xl px-5 sm:px-7 text-sm font-bold text-white transition-all duration-200",
-                "bg-[#C51F3A] hover:bg-[#a81730] active:scale-95",
-                "shadow-lg shadow-[#C51F3A]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white",
+                "inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-signal px-5 text-sm font-bold text-white",
+                "transition-colors duration-150 hover:bg-signal-hover",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
               )}
             >
-              <Play className="size-4 fill-white" />
+              <Play className="size-4 fill-white" aria-hidden="true" />
               <span>{watchLabel}</span>
             </Link>
 
-            {/* View Details CTA */}
             <Link
               href={mediaHref(active)}
               className={cn(
-                "inline-flex h-11 sm:h-12 items-center gap-2 rounded-xl px-4 sm:px-6 text-sm font-semibold text-zinc-200 transition-all duration-200",
-                "border border-white/15 bg-white/[0.08] hover:bg-white/[0.16] hover:text-white backdrop-blur-md active:scale-95",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
+                "inline-flex h-11 shrink-0 items-center gap-2 rounded-md border border-white/20 px-4 text-sm font-semibold text-ink-1",
+                "transition-colors duration-150 hover:border-white/40 hover:bg-white/[0.06]",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
               )}
             >
-              <Info className="size-4" />
+              <Info className="size-4" aria-hidden="true" />
               <span>Details</span>
             </Link>
 
-            {/* Interactive Watchlist Button */}
             <button
               type="button"
               onClick={watchlist.toggleWatchlist}
               disabled={watchlist.isUpdating}
+              aria-pressed={watchlist.isSaved}
               aria-label={
                 watchlist.isSaved
                   ? `Remove ${title} from Watchlist`
                   : `Add ${title} to Watchlist`
               }
               className={cn(
-                "inline-flex h-11 sm:h-12 items-center gap-2 rounded-xl px-4 sm:px-5 text-sm font-semibold transition-all duration-200 backdrop-blur-md active:scale-95 outline-none",
+                "flex size-11 shrink-0 items-center justify-center rounded-md border transition-colors duration-150",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
                 watchlist.isSaved
-                  ? "border border-[#C51F3A] bg-[#C51F3A]/20 text-[#ff4a68] hover:bg-[#C51F3A]/30"
-                  : "border border-white/15 bg-white/[0.08] text-zinc-300 hover:bg-white/[0.16] hover:text-white",
-                "focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
+                  ? "border-signal/60 bg-signal/15 text-signal-soft"
+                  : "border-white/20 text-ink-2 hover:border-white/40 hover:text-ink-1",
               )}
             >
               {watchlist.isSaved ? (
-                <>
-                  <Check className="size-4 text-[#ff4a68]" />
-                  <span>In Watchlist</span>
-                </>
+                <Check className="size-4" aria-hidden="true" />
               ) : (
-                <>
-                  <Bookmark className="size-4" />
-                  <span>Watchlist</span>
-                </>
+                <Bookmark className="size-4" aria-hidden="true" />
               )}
             </button>
           </div>
         </div>
 
-        {/* Carousel Bottom Controls */}
+        {/* Minimal carousel chrome: position counter, bars on wide screens, arrows. */}
         {items.length > 1 ? (
-          <div className="mt-8 flex items-center justify-between gap-4 border-t border-white/[0.08] pt-4 sm:pt-5">
-            {/* Slide Indicators */}
-            <div className="flex items-center gap-1.5">
+          <div className="mt-6 flex items-center justify-between gap-4 border-t border-white/[0.08] pt-2">
+            <span className="font-mono text-[0.65rem] tracking-[0.16em] text-ink-3 tabular-nums">
+              <span className="text-ink-1">{String(index + 1).padStart(2, "0")}</span>
+              <span className="px-1.5">/</span>
+              {String(items.length).padStart(2, "0")}
+            </span>
+
+            <div className="hidden items-center gap-0.5 sm:flex">
               {items.map((item, i) => (
                 <button
                   key={item.id}
@@ -358,47 +352,36 @@ function HeroItem({
                   aria-label={`Slide ${i + 1}: ${displayTitle(item.title)}`}
                   aria-current={i === index}
                   onClick={() => onSelectIndex(i)}
-                  className="group/dot relative h-6 px-1 flex items-center outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A] rounded-md"
+                  className="group/dot flex h-11 items-center rounded-md px-1 outline-none focus-visible:outline-2 focus-visible:outline-signal"
                 >
                   <span
                     className={cn(
-                      "block h-1.5 rounded-full transition-all duration-300 ease-out",
+                      "block h-0.5 rounded-full transition-all duration-300 ease-out",
                       i === index
-                        ? "w-8 bg-[#C51F3A] shadow-sm shadow-[#C51F3A]/50"
-                        : "w-2.5 bg-white/20 group-hover/dot:bg-white/40",
+                        ? "w-6 bg-signal"
+                        : "w-2.5 bg-white/25 group-hover/dot:bg-white/50",
                     )}
                   />
                 </button>
               ))}
             </div>
 
-            {/* Prev / Next Navigation Arrows */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 aria-label="Previous featured anime"
                 onClick={onPrev}
-                className={cn(
-                  "flex size-9 sm:size-10 items-center justify-center rounded-xl",
-                  "border border-white/10 bg-[#16161c]/80 text-zinc-300 backdrop-blur-md",
-                  "transition-all duration-200 hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
-                )}
+                className="flex size-11 items-center justify-center rounded-md text-ink-2 transition-colors hover:bg-white/[0.06] hover:text-ink-1 focus-visible:outline-2 focus-visible:outline-signal"
               >
-                <ChevronLeft className="size-4 sm:size-5" />
+                <ChevronLeft className="size-4" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 aria-label="Next featured anime"
                 onClick={onNext}
-                className={cn(
-                  "flex size-9 sm:size-10 items-center justify-center rounded-xl",
-                  "border border-white/10 bg-[#16161c]/80 text-zinc-300 backdrop-blur-md",
-                  "transition-all duration-200 hover:border-white/30 hover:bg-white/10 hover:text-white active:scale-95",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
-                )}
+                className="flex size-11 items-center justify-center rounded-md text-ink-2 transition-colors hover:bg-white/[0.06] hover:text-ink-1 focus-visible:outline-2 focus-visible:outline-signal"
               >
-                <ChevronRight className="size-4 sm:size-5" />
+                <ChevronRight className="size-4" aria-hidden="true" />
               </button>
             </div>
           </div>

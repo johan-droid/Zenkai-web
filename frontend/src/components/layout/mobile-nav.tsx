@@ -7,7 +7,6 @@ import { motion } from "motion/react";
 
 import { isActivePath } from "@/config/nav";
 import { cn } from "@/lib/utils";
-import { EASINGS } from "@/config/animations";
 
 const MOBILE_NAV_ITEMS = [
   { label: "Home", href: "/", icon: Home },
@@ -47,31 +46,31 @@ export function MobileNav() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex flex-1 flex-col items-center justify-center py-1.5 transition-colors duration-150 outline-none select-none min-h-[44px]",
+                "relative flex min-h-[44px] flex-1 flex-col items-center justify-center rounded-lg py-1.5 transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-signal",
                 active ? "text-white" : "text-zinc-400 hover:text-zinc-200",
               )}
             >
-              {/* Fluid active indicator pill */}
+              {/* Active state: a hairline, not a pill. */}
               {active && (
                 <motion.span
                   layoutId="mobileNavActivePill"
                   transition={{ type: "spring", stiffness: 420, damping: 30 }}
-                  className="absolute inset-x-1.5 inset-y-0.5 rounded-xl bg-white/[0.08] ring-1 ring-white/10"
+                  className="absolute inset-x-3 top-0 h-px bg-signal"
                 />
               )}
 
               <span className="relative z-10 flex flex-col items-center gap-1">
                 <Icon
                   className={cn(
-                    "size-4.5 transition-all duration-200",
-                    active ? "text-[#C51F3A] scale-110 drop-shadow-[0_0_8px_rgba(197,31,58,0.5)]" : "text-zinc-400",
+                    "size-4.5 transition-colors duration-150",
+                    active ? "text-signal" : "text-ink-3",
                   )}
                   aria-hidden
                 />
                 <span
                   className={cn(
                     "text-[0.62rem] font-semibold tracking-wide transition-colors",
-                    active ? "text-white font-bold" : "text-zinc-400",
+                    active ? "font-semibold text-ink-1" : "text-ink-3",
                   )}
                 >
                   {item.label}

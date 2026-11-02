@@ -19,7 +19,7 @@ const VIEWS: { value: ViewMode; label: string; description: string }[] = [
 export function TimeHorizonSwitcher({ currentView, onViewChange }: TimeHorizonSwitcherProps) {
   return (
     <div
-      className="glass rounded-xl p-1.5 flex gap-1 border border-line"
+      className="flex gap-5 border-b border-white/[0.08]"
       role="tablist"
       aria-label="Schedule time horizon"
     >
@@ -34,10 +34,12 @@ export function TimeHorizonSwitcher({ currentView, onViewChange }: TimeHorizonSw
             id={`${view.value}-horizon-tab`}
             onClick={() => onViewChange(view.value)}
             className={cn(
-              "flex-1 flex flex-col items-center justify-center py-2 px-3 rounded-lg text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal",
+              "relative flex min-w-0 flex-1 flex-col items-center justify-center px-2 pt-1 pb-2.5 text-xs font-medium transition-colors",
+              "after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-signal after:transition-opacity",
+              "focus-visible:outline-none focus-visible:text-ink-1 focus-visible:after:opacity-100 sm:text-sm",
               isSelected
-                ? "bg-surface-2 text-signal shadow-sm border border-line-strong"
-                : "text-muted-foreground hover:text-foreground hover:bg-surface-1"
+                ? "text-ink-1 after:opacity-100"
+                : "text-ink-3 after:opacity-0 hover:text-ink-1",
             )}
           >
             <span>{view.label}</span>

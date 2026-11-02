@@ -209,6 +209,9 @@ export async function updateUserProfile(updates: {
 
 /**
  * Fetch the currently authenticated user's settings.
+ * NOTE: The backend repository supports encrypted settings storage, but the HTTP route
+ * `/api/v1/auth/settings` is not currently exposed in Fastify route registration.
+ * Device preferences are intentionally maintained in local storage via `@/lib/preferences`.
  */
 export async function fetchUserSettings(): Promise<UserSettings> {
   try {
@@ -223,6 +226,7 @@ export async function fetchUserSettings(): Promise<UserSettings> {
 
 /**
  * Update authenticated user's settings.
+ * NOTE: The backend route `/api/v1/auth/settings` is pending route registration.
  */
 export async function updateUserSettings(updates: Partial<UserSettings>): Promise<UserSettings> {
   const res = await authedFetch<UserSettings>("/api/v1/auth/settings", {

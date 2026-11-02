@@ -59,7 +59,7 @@ describe("Zenkai Design System & Mobile Acceptance Criteria", () => {
     );
   });
 
-  it("Phase 3 & 9: Accessibility allows zoom and respects user scaling", () => {
+  it("Phase 3 & 9: Accessibility allows zoom and respects safe areas", () => {
     const layout = read("src/app/layout.tsx");
     assert.ok(
       !layout.includes("userScalable: false"),
@@ -68,6 +68,10 @@ describe("Zenkai Design System & Mobile Acceptance Criteria", () => {
     assert.ok(
       !layout.includes("maximumScale: 1"),
       "RootLayout must never constrain maximumScale to 1",
+    );
+    assert.ok(
+      layout.includes('viewportFit: "cover"'),
+      "RootLayout must opt into safe-area insets on notched devices",
     );
   });
 
@@ -89,19 +93,100 @@ describe("Zenkai Design System & Mobile Acceptance Criteria", () => {
     );
   });
 
-  it("Phase 7: Cinematic intro is within 600-1200ms range and respects reduced motion", () => {
+  it("Phase 7: Cinematic intro is within the 1-2s window and respects reduced motion", () => {
     const intro = read("src/components/intro/IntroAnimation.tsx");
     assert.ok(
       intro.includes("sessionStorage"),
       "Intro must use session storage to avoid repeating on every navigation",
     );
     assert.ok(
-      intro.includes("prefers-reduced-motion") || intro.includes("useReducedMotion"),
+      intro.includes("prefers-reduced-motion"),
       "Intro must check prefers-reduced-motion for instant bypass",
     );
+
+    const duration = Number(
+      intro.match(/INTRO_DURATION_MS\s*=\s*(\d+)/)?.[1],
+    );
     assert.ok(
-      intro.includes("800") || intro.includes("750") || intro.includes("900"),
-      "Intro duration should be within recommended 600-1200ms window",
+      duration >= 1000 && duration <= 2000,
+      `Intro duration must be 1-2s, received ${duration}ms`,
+    );
+
+    // A hard-stop timer is what guarantees the overlay can never strand the UI.
+    assert.ok(
+      intro.includes("INTRO_HARD_STOP_MS"),
+      "Intro must carry a hard-stop teardown timer",
+    );
+    assert.ok(
+      /phase === "done"\s*\)\s*return null/.test(intro),
+      "Intro must unmount itself after completion so it cannot block interaction",
+    );
+    assert.ok(
+      intro.includes("keydown"),
+      "Intro must be dismissible from the keyboard",
+    );
+  });
+
+  it("Phase 7: Intro visual layer uses transform/opacity and mobile-safe padding", () => {
+    const globalsCss = read("src/app/globals.css");
+    assert.ok(globalsCss.includes(".zenkai-intro"), "Intro styles must live in globals.css");
+    assert.ok(
+      globalsCss.includes("intro-sweep"),
+      "Intro must include the atmospheric light sweep",
+    );
+    assert.ok(
+      globalsCss.includes("env(safe-area-inset-top)"),
+      "Full-screen intro must respect the top safe area on notched devices",
+    );
+  });
+
+  it("Phase 3: Every navigation destination is reachable at every width", () => {
+    const navbar = read("src/components/layout/navbar.tsx");
+    assert.ok(
+      navbar.includes("primaryNav.map"),
+      "Desktop navigation must render all primary destinations, not only section 0",
+    );
+    assert.ok(
+      navbar.includes("primaryNav") &&
+        (navbar.includes("xl:hidden") || navbar.includes("lg:hidden")),
+      "A drawer trigger must remain available below the desktop nav breakpoint",
+    );
+    assert.ok(
+      navbar.includes("env(safe-area-inset-top)"),
+      "Sticky header must pad for the notch/status bar",
+    );
+  });
+
+  it("Phase 3: Overlays are bounded by the viewport and use dvh", () => {
+    const sheet = read("src/components/ui/sheet.tsx");
+    assert.ok(sheet.includes("h-dvh"), "Side sheets must use dvh, not vh");
+    assert.ok(
+      sheet.includes("w-[min(88vw,22rem)]"),
+      "Sheets must never exceed the small-phone viewport width",
+    );
+
+    const dialog = read("src/components/ui/dialog.tsx");
+    assert.ok(
+      dialog.includes("max-h-[calc(100dvh-2rem)]"),
+      "Dialogs must be height-bounded so they fit inside the visible viewport",
+    );
+
+    const command = read("src/components/ui/command.tsx");
+    assert.ok(
+      command.includes("dvh"),
+      "Command palette must account for mobile viewport height changes",
+    );
+  });
+
+  it("Phase 3 & 5: Touch-only surfaces are visible and tappable without hover", () => {
+    const mediaCard = read("src/components/cards/media-card.tsx");
+    assert.ok(
+      mediaCard.includes("opacity-100") && mediaCard.includes("sm:opacity-0"),
+      "Watchlist quick action must be visible on touch devices, hover-revealed only on desktop",
+    );
+    assert.ok(
+      mediaCard.includes("after:-inset-1.5"),
+      "Card quick action must expand its hit area toward a 44px touch target",
     );
   });
 

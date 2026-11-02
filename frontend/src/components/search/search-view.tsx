@@ -9,7 +9,6 @@ import { MediaGrid, MediaGridSkeleton } from "@/components/cards/media-grid";
 import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import { useDebounce } from "@/hooks/use-debounce";
@@ -157,7 +156,7 @@ export function SearchView() {
                     type="button"
                     onClick={() => setFilter("format", f.value)}
                     className={cn(
-                      "rounded-lg px-2.5 py-1 text-xs font-medium transition-all outline-none",
+                      "min-h-10 rounded-lg px-3 py-2 text-xs font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
                       isSelected
                         ? "bg-[#C51F3A] text-white shadow-sm shadow-[#C51F3A]/40 font-semibold"
                         : "bg-white/[0.05] text-zinc-400 hover:text-white hover:bg-white/[0.08]",
@@ -179,7 +178,7 @@ export function SearchView() {
                     type="button"
                     onClick={() => setFilter("status", s.value)}
                     className={cn(
-                      "rounded-lg px-2.5 py-1 text-xs font-medium transition-all outline-none",
+                      "min-h-10 rounded-lg px-3 py-2 text-xs font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
                       isSelected
                         ? "bg-white/20 text-white font-semibold ring-1 ring-white/30"
                         : "bg-white/[0.05] text-zinc-400 hover:text-white hover:bg-white/[0.08]",
@@ -213,7 +212,7 @@ export function SearchView() {
                   type="button"
                   onClick={() => setFilter("genre", isSelected ? undefined : g)}
                   className={cn(
-                    "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all outline-none snap-start",
+                    "min-h-10 shrink-0 snap-start rounded-lg px-3 py-2 text-xs font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-[#C51F3A]",
                     isSelected
                       ? "border border-[#C51F3A] bg-[#C51F3A]/20 text-white font-semibold shadow-sm"
                       : "border border-white/[0.06] bg-white/[0.03] text-zinc-400 hover:text-white hover:bg-white/[0.08]",

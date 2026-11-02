@@ -3,7 +3,7 @@
 import { ContinueRow } from "@/components/home/continue-row";
 import { GenreChips } from "@/components/home/genre-chips";
 import { HeroCarousel } from "@/components/home/hero-carousel";
-import { MediaRow } from "@/components/home/media-row";
+import { MediaRow, RankedList } from "@/components/home/media-row";
 import { useAnimeMovies, useHome, useMangaShelf } from "@/hooks/use-home";
 import {
   catalogueToShelfState,
@@ -11,7 +11,6 @@ import {
   homeSectionToShelfState,
   mangaCatalogueItemToMedia,
 } from "@/lib/api/zenkai";
-import { cn } from "@/lib/utils";
 
 export default function HomePage() {
   const home = useHome(10);
@@ -27,7 +26,6 @@ export default function HomePage() {
   const seasonal = homeSectionToShelfState(home.data?.seasonal, homeFlags);
   const recent = homeSectionToShelfState(home.data?.recent, homeFlags);
   const topRated = homeSectionToShelfState(home.data?.topRated, homeFlags);
-  const popular = homeSectionToShelfState(home.data?.popular, homeFlags);
   const upcoming = homeSectionToShelfState(home.data?.upcoming, homeFlags);
 
   const mangaItems = manga.data
@@ -49,7 +47,7 @@ export default function HomePage() {
   });
 
   return (
-    <div className="relative w-full space-y-8 sm:space-y-12 pb-16">
+    <div className="relative w-full space-y-9 pb-16 md:space-y-12">
       {/* ── 1. Featured Anime Spotlight Hero ── */}
       <section id="hero" className="scroll-mt-28">
         <HeroCarousel
@@ -70,6 +68,7 @@ export default function HomePage() {
           href="/anime?sort=TRENDING_DESC"
           state={trending}
           ranked
+          index={1}
         />
       </section>
 
@@ -79,6 +78,7 @@ export default function HomePage() {
           title="Popular This Season"
           href="/anime?season=current"
           state={seasonal}
+          index={2}
         />
       </section>
 
@@ -88,15 +88,17 @@ export default function HomePage() {
           title="Currently Airing"
           href="/anime?status=RELEASING"
           state={recent}
+          index={3}
         />
       </section>
 
       {/* ── 6. All-Time Top Rated Anime ── */}
       <section id="top-rated" className="scroll-mt-28">
-        <MediaRow
+        <RankedList
           title="All-Time Top Rated"
           href="/anime?sort=SCORE_DESC"
           state={topRated}
+          index={4}
         />
       </section>
 
@@ -106,12 +108,13 @@ export default function HomePage() {
           title="Popular Anime Movies"
           href="/anime?format=MOVIE"
           state={movieShelf}
+          index={5}
         />
       </section>
 
       {/* ── 8. Explore by Genre ── */}
       <section id="genres" className="scroll-mt-28">
-        <GenreChips />
+        <GenreChips index={6} />
       </section>
 
       {/* ── 9. Most Anticipated Upcoming ── */}
@@ -120,6 +123,7 @@ export default function HomePage() {
           title="Most Anticipated"
           href="/schedule"
           state={upcoming}
+          index={7}
         />
       </section>
 
@@ -129,6 +133,7 @@ export default function HomePage() {
           title="Top Manga & Light Novels"
           href="/manga"
           state={mangaShelf}
+          index={8}
         />
       </section>
     </div>

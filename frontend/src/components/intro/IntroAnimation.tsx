@@ -1,111 +1,142 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { EASINGS } from "@/config/animations";
+import { useCallback, useEffect, useState } from "react";
 
 /**
  * Zenkai Cinematic Startup Intro
- * 
- * Non-blocking, accessible startup reveal for the Zenkai anime experience.
- * - Duration: ~800ms total
- * - Guarded by sessionStorage so it only shows once per session.
- * - Instantly skipped if prefers-reduced-motion is active.
- * - Fully dismissible on click or key press.
- * - Automatically unmounts from DOM after completion.
+ *
+ * A short, branded entry that runs once per browser session.
+ *
+ * - ~1.7s from veil to reveal (inside the 1–2s budget), then removed from the
+ *   DOM entirely so it can never intercept clicks, focus, or scrolling.
+ * - Pure CSS animation: no extra JavaScript frame work on low-powered phones.
+ * - Bypassed immediately (and remembered) under `prefers-reduced-motion`.
+ * - Dismissible with click, Escape, or any key press.
+ * - A hard teardown timer guarantees the overlay cannot outlive its welcome
+ *   even if the compositor drops frames.
  */
+
+const INTRO_SEEN_KEY = "zenkai_intro_seen";
+const INTRO_DURATION_MS = 1700;
+/** Longest possible lifetime, including the exit transition. */
+const INTRO_HARD_STOP_MS = 2600;
+
+type Phase = "idle" | "playing" | "leaving" | "done";
+
 export function IntroAnimation() {
-  const [visible, setVisible] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
 
-  useEffect(() => {
-    // Check if already viewed in this session
+  const dismiss = useCallback(() => {
     try {
-      if (sessionStorage.getItem("zenkai_intro_seen") === "1") {
-        return;
-      }
+      sessionStorage.setItem(INTRO_SEEN_KEY, "1");
     } catch {
-      // Ignore storage errors in private browsing
+      // Ignore storage failures; the overlay still tears down.
     }
-
-    // Check reduced motion preference
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
-
-    setVisible(true);
-
-    const timer = setTimeout(() => {
-      setVisible(false);
-      try {
-        sessionStorage.setItem("zenkai_intro_seen", "1");
-      } catch {}
-    }, 850);
-
-    return () => clearTimeout(timer);
+    setPhase("leaving");
   }, []);
 
-  const handleDismiss = () => {
-    setVisible(false);
+  useEffect(() => {
+    let seen = false;
     try {
-      sessionStorage.setItem("zenkai_intro_seen", "1");
-    } catch {}
-  };
+      seen = sessionStorage.getItem(INTRO_SEEN_KEY) === "1";
+    } catch {
+      // Storage can throw in private browsing; show the intro in that case.
+    }
+
+    const markSeen = () => {
+      try {
+        sessionStorage.setItem(INTRO_SEEN_KEY, "1");
+      } catch {
+        // Non-fatal: the intro simply runs again next time.
+      }
+    };
+
+    const reducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (seen || reducedMotion) {
+      markSeen();
+      const skipTimer = window.setTimeout(() => setPhase("done"), 0);
+      return () => window.clearTimeout(skipTimer);
+    }
+
+    // Start on the next tick rather than synchronously inside the effect. The
+    // overlay is opaque from its first frame, so this costs no visible content
+    // flash and keeps the effect from cascading renders.
+    const startTimer = window.setTimeout(() => setPhase("playing"), 0);
+    const leaveTimer = window.setTimeout(() => setPhase("leaving"), INTRO_DURATION_MS);
+    const removeTimer = window.setTimeout(() => {
+      markSeen();
+      setPhase("done");
+    }, INTRO_DURATION_MS + 300);
+    const hardStopTimer = window.setTimeout(() => {
+      markSeen();
+      setPhase("done");
+    }, INTRO_HARD_STOP_MS);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(removeTimer);
+      window.clearTimeout(hardStopTimer);
+    };
+  }, []);
+
+  // Any key press (Escape included) skips the rest of the sequence.
+  useEffect(() => {
+    if (phase !== "playing" && phase !== "leaving") return;
+
+    const onKeyDown = () => dismiss();
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [phase, dismiss]);
+
+  // Once leaving, unmount on a timer rather than relying on an animation event
+  // that a backgrounded tab may never fire.
+  useEffect(() => {
+    if (phase !== "leaving") return;
+    const timer = window.setTimeout(() => setPhase("done"), 280);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  if (phase === "idle" || phase === "done") return null;
 
   return (
-    <AnimatePresence>
-      {visible ? (
-        <motion.div
-          key="zenkai-intro"
-          initial={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.28, ease: EASINGS.easeOut }}
-          onClick={handleDismiss}
-          className="fixed inset-0 z-[100] flex cursor-pointer select-none items-center justify-center bg-[#09090c]/98 backdrop-blur-2xl"
-          role="presentation"
-          aria-hidden="true"
-        >
-          {/* Subtle radial ambient bloom behind logo */}
-          <div className="pointer-events-none absolute size-72 rounded-full bg-[#C51F3A]/15 blur-3xl" />
+    <div
+      className="zenkai-intro"
+      data-leaving={phase === "leaving" ? "true" : undefined}
+      onClick={dismiss}
+      role="presentation"
+      aria-hidden="true"
+    >
+      <div className="zenkai-intro__glow" />
+      <div className="zenkai-intro__sweep" />
 
-          <motion.div
-            initial={{ scale: 0.88, opacity: 0, filter: "blur(8px)" }}
-            animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }}
-            exit={{ scale: 1.05, opacity: 0, filter: "blur(4px)" }}
-            transition={{ duration: 0.5, ease: EASINGS.easeOut }}
-            className="relative z-10 flex flex-col items-center gap-3 text-center"
+      <div className="zenkai-intro__stage">
+        <div className="zenkai-intro__mark">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 884 457"
+            aria-hidden="true"
+            className="size-full"
           >
-            {/* Logo Mark */}
-            <div className="relative flex size-16 items-center justify-center rounded-2xl border border-white/10 bg-[#16161f] p-3 shadow-2xl shadow-[#C51F3A]/20 ring-1 ring-white/10">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 884 457"
-                role="img"
-                aria-label="Zenkai logo"
-                className="size-full"
-              >
-                <path
-                  className="fill-[#C51F3A]"
-                  d="M728 0H301L173 151l135-94h254L0 454h577l137-155-144 98H187L728 0Z"
-                />
-                <path
-                  className="fill-white/90"
-                  d="M884 0h-93L248 377h93L884 0Z"
-                />
-              </svg>
-            </div>
+            <path
+              className="fill-signal"
+              d="M728 0H301L173 151l135-94h254L0 454h577l137-155-144 98H187L728 0Z"
+            />
+            <path
+              className="fill-white/90"
+              d="M884 0h-93L248 377h93L884 0Z"
+            />
+          </svg>
+        </div>
 
-            {/* Wordmark */}
-            <div className="flex flex-col items-center">
-              <span className="text-2xl font-black tracking-[0.22em] text-white">
-                ZENKAI
-              </span>
-              <span className="text-[0.62rem] font-bold tracking-[0.4em] text-[#C51F3A]">
-                全開 · STREAMING
-              </span>
-            </div>
-          </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+        <div className="zenkai-intro__word">
+          <span className="zenkai-intro__brand">ZENKAI</span>
+          <span className="zenkai-intro__tagline">全開 · STREAMING</span>
+        </div>
+      </div>
+    </div>
   );
 }

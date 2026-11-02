@@ -7,6 +7,9 @@ export const viewport: Viewport = {
   themeColor: "#0b0a0a",
   width: "device-width",
   initialScale: 1,
+  // Extend under notches/rounded corners; the shell pads itself with
+  // env(safe-area-inset-*) where content could otherwise be clipped.
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {

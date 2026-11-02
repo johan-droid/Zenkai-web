@@ -227,7 +227,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
 
   if (contentQuery.isLoading) {
     return (
-      <div className="min-h-screen bg-[#07070a] flex items-center justify-center text-zinc-100">
+      <div className="min-h-dvh bg-[#07070a] flex items-center justify-center text-zinc-100">
         <Loader2 className="size-8 animate-spin text-[#c8102e]" />
         <p className="ml-2 text-sm text-muted-foreground font-medium">Loading chapter {chapterNumber}...</p>
       </div>
@@ -236,7 +236,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
 
   if (contentQuery.isError || !content) {
     return (
-      <div className="min-h-screen bg-[#07070a] flex flex-col items-center justify-center text-zinc-100 p-6">
+      <div className="min-h-dvh bg-[#07070a] flex flex-col items-center justify-center text-zinc-100 p-6">
         <p className="text-base text-red-400 font-semibold">Could not load this chapter content.</p>
         <Button variant="outline" className="glass rounded-xl mt-4" onClick={() => contentQuery.refetch()}>
           Try again
@@ -246,7 +246,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
   }
 
   const readerClasses = cn(
-    "min-h-screen flex flex-col",
+    "min-h-dvh flex flex-col",
     getThemeClass(theme),
     isFullscreen ? "fixed inset-0 z-50 overflow-hidden" : "",
   );
@@ -265,7 +265,7 @@ export function NovelReader({ novelId, chapterNumber }: NovelReaderProps) {
         <div className="flex items-center gap-2">
           <Link
             href={`/novel/${novelId}`}
-            className="group flex items-center gap-2 rounded-xl outline-none"
+            className="group flex items-center gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-signal"
             aria-label="Back to Novel"
           >
             <BookOpen className="size-5 text-[#c8102e] group-hover:scale-110 transition-transform" />

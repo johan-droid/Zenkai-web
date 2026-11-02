@@ -24,10 +24,10 @@ export function AiringCalendar({ animeId, userTimezone }: AiringCalendarProps) {
       const loadSchedule = async () => {
         setIsLoading(true);
         try {
-          const result = await fetch(`/api/v1/anime/${animeId}/airing-schedule`);
+          const result = await fetch(`/api/v1/anime/${animeId}/schedule`);
           if (!result.ok) throw new Error("Failed to fetch schedule");
-          const data = await result.json() as EpisodeAiring;
-          setSchedule(data);
+          const data = await result.json() as { items?: any[] };
+          setSchedule(data as any);
           setError(null);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Unknown error");

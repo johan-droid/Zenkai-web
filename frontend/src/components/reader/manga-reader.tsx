@@ -302,7 +302,7 @@ export function MangaReader({
       return { width: "100%", height: "auto" };
     }
     if (fitMode === "height") {
-      return { width: "auto", height: "100vh" };
+      return { width: "auto", height: "100dvh" };
     }
     return { width: `${zoom}%`, height: "auto" };
   }, [fitMode, zoom]);
@@ -578,7 +578,7 @@ function PagedView({
   return (
     <div
       className="mx-auto flex max-w-6xl items-center justify-center gap-4 p-4"
-      style={{ minHeight: "calc(100vh - 160px)" }}
+      style={{ minHeight: "calc(100dvh - 160px)" }}
     >
       {isDouble ? (
         <>
@@ -676,12 +676,12 @@ function ReaderShell({
   toolbar?: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#07070a] text-zinc-100">
+    <div className="min-h-dvh bg-[#07070a] text-zinc-100">
       <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#09090e]/90 px-4 py-2.5 backdrop-blur-2xl">
         <div className="flex items-center gap-3">
           <Link
             href={mangaRoute ?? "/manga"}
-            className="group flex items-center gap-2 rounded-xl outline-none"
+            className="group flex items-center gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-signal"
             aria-label="Back to Manga"
           >
             <div className="relative flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#14141d] to-[#20202c] p-1 shadow-md shadow-black/40 ring-1 ring-white/10 transition-transform duration-200 group-hover:scale-105">

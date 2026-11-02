@@ -21,7 +21,10 @@ export function Brand({
   return (
     <Link
       href={href}
-      className={cn("group flex items-center gap-2.5 outline-none select-none", className)}
+      className={cn(
+        "group flex select-none items-center gap-2.5 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal",
+        className,
+      )}
       aria-label="Zenkai home"
     >
       {/* Logo mark */}

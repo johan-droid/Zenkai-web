@@ -261,11 +261,11 @@ export default function LibraryPage() {
       ) : null}
 
       <Tabs defaultValue="watching">
-        <TabsList className="glass rounded-xl">
+        <TabsList className="no-scrollbar glass max-w-full overflow-x-auto rounded-xl">
           {LIBRARY_STATUSES.map(({ value, label }) => {
             const count = statusCounts?.ok ? statusCounts.value[value] : undefined;
             return (
-              <TabsTrigger key={value} value={value} className="gap-2">
+              <TabsTrigger key={value} value={value} className="min-h-11 shrink-0 gap-2 px-2.5 sm:min-h-8">
                 <span>{label}</span>
                 {typeof count === "number" && count > 0 && (
                   <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

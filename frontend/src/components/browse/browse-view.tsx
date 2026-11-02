@@ -161,12 +161,12 @@ export function BrowseView({ kind }: { kind: MediaKind }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="glass flex flex-col gap-4 rounded-2xl p-4">
-        <div className="flex flex-col gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-            <SlidersHorizontal className="size-3.5 text-[#C51F3A]" /> Genre
+      <div className="flex flex-col gap-4 border-b border-white/[0.07] pb-4">
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.18em] text-ink-3">
+            Genre
           </span>
-          <div className="no-scrollbar -mx-1 flex snap-x gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap">
+          <div className="no-scrollbar -mx-1 flex snap-x gap-4 overflow-x-auto px-1 sm:flex-wrap">
             {GENRES.map((item) => (
               <FilterChip
                 key={item}
@@ -179,7 +179,7 @@ export function BrowseView({ kind }: { kind: MediaKind }) {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex flex-wrap items-start gap-x-8 gap-y-2">
           {kind === "anime" && (
             <FilterGroup label="Format">
               {ANIME_FORMATS.map((item) => (
@@ -207,12 +207,16 @@ export function BrowseView({ kind }: { kind: MediaKind }) {
           </FilterGroup>
 
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
+            <span className="font-mono text-[0.65rem] text-ink-3 tabular-nums">
               {total.toLocaleString()} titles
             </span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="glass rounded-xl">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-md border border-white/10 px-2.5 text-[0.7rem] text-ink-2 hover:border-white/25 hover:text-ink-1"
+                >
                   Sort: {sortLabel(kind, sort)}
                 </Button>
               </DropdownMenuTrigger>
@@ -235,7 +239,7 @@ export function BrowseView({ kind }: { kind: MediaKind }) {
           <Button
             variant="ghost"
             size="sm"
-            className="self-start text-muted-foreground"
+            className="self-start px-0 text-[0.7rem] text-ink-3 hover:text-ink-1"
             onClick={() => {
               set("genre");
               set("format");
@@ -308,8 +312,8 @@ function FilterGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <span className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.18em] text-ink-3">
         {label}
       </span>
       {children}
@@ -331,10 +335,12 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        "relative min-h-9 shrink-0 px-0.5 py-1.5 text-xs font-medium transition-colors",
+        "after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-signal after:transition-opacity",
+        "focus-visible:outline-none focus-visible:text-ink-1 focus-visible:after:opacity-100",
         active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border/60 bg-background/60 text-muted-foreground hover:border-primary/50 hover:text-foreground",
+          ? "text-ink-1 after:opacity-100"
+          : "text-ink-3 after:opacity-0 hover:text-ink-1",
       )}
     >
       {children}

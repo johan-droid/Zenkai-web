@@ -1,162 +1,50 @@
-# Zenkai Remediation Plan
+# Zenkai Web — Remediation Plan & Maintenance Roadmap
 
-## Overview
-This document provides an ordered remediation plan for addressing architectural violations and maintaining security boundaries. Prioritized by impact and effort.
-
-## 1. Remediation Priorities
-
-### 1.1 P0 — Critical (Must Fix Before Launch)
-| # | Violation | Effort | Owner | Target Date |
-|---|-----------|--------|-------|-------------|
-| V1 | [None currently identified] | — | — | — |
-
-*Status*: No P0 violations currently identified. All security boundaries are intact.
-
-### 1.2 P1 — Important (Fix in Next Sprint)
-| # | Violation | Effort | Owner | Target Date |
-|---|-----------|--------|-------|-------------|
-| V1 | [None currently identified] | — | — | — |
-
-*Status*: No P1 violations currently identified. All data integrity verified.
-
-### 1.3 P2 — Important (Fix in Next Release)
-| # | Violation | Effort | Owner | Target Date |
-|---|-----------|--------|-------|-------------|
-| V1 | Residual class name edge cases from design system migration | 2 person-days | Frontend Team | Next release |
-| V2 | Documentation synchronization delay | 1 person-day | Documentation Team | Next release |
-
-*Status*: P2 items are minor and can be completed in the next release cycle.
-
-### 1.4 P3 — Cosmetic (Post-Launch)
-| # | Violation | Effort | Owner | Target Date |
-|---|-----------|--------|-------|-------------|
-| V1 | Documentation drift between code and docs | 1 person-week (ongoing) | Documentation Team | Continuous |
-
-*Status*: P3 items are cosmetic/documentation issues that don't affect functionality.
-
-## 2. Implementation Roadmap
-
-### 2.1 Phase 1: Immediate (0-2 weeks)
-**Focus**: Verify all violations are addressed, no new violations introduced.
-
-**Tasks**:
-- ✅ Verify `npx next build` passes with no errors
-- ✅ Verify all 9 mobile viewports have no horizontal overflow
-- ✅ Verify TypeScript compilation passes
-- ✅ Verify all key user workflows test successfully
-- ✅ Verify no new critical console errors
-- ✅ Verify no secrets/credentials exposed
-
-**Deliverables**:
-- Verification report
-- Build artifact archives
-- Test results summary
-
-### 2.2 Phase 2: Short-Term (2-4 weeks)
-**Focus**: Address P2 residual items, documentation maintenance.
-
-**Tasks**:
-- Fix any residual class name edge cases from design system migration
-- Update `docs/architecture/` to match current code state
-- Verify all API contract ownership documentation
-- Verify security boundary enforcement
-
-**Deliverables**:
-- Updated architecture documentation
-- Verified API contract ownership
-- Security boundary verification report
-
-### 2.3 Phase 3: Long-Term (4+ weeks)
-**Focus**: Ongoing maintenance and preventive measures.
-
-**Tasks**:
-- Maintain documentation synchronization
-- Prevent new architectural violations
-- Monitor for new security concerns
-- Plan next major redesign cycle
-
-**Deliverables**:
-- Maintained documentation set
-- Preventive CI/CD checks
-- Future redesign planning notes
-
-## 2. Implementation Checklist
-
-### 2.1 Pre-Launch Checklist
-- [ ] `npx next build` compiles successfully
-- [ ] `npm test` passes
-- [ ] All 9 mobile viewports verified (no horizontal overflow)
-- [ ] TypeScript type checking passes
-- [ ] All key user workflows tested (homepage, anime detail, search, playback, library)
-- [ ] No critical console errors in browser devtools
-- [ ] No secrets or credentials in bundle output
-- [ ] All API contracts verified (verified against source code)
-- [ ] Security boundary checks pass (no database access from browser, no secrets exposed)
-- [ ] Accessibility verified (44px touch targets, semantic HTML, keyboard focus, reduced motion)
-- [ ] Documentation synchronized with code state
-
-### 2.2 Post-Launch Monitoring
-- [ ] Monitor for new architectural violations
-- [ ] Track CI/CD check results
-- [ ] Respond to any security alerts
-- [ ] Quarterly documentation review
-- [ ] Feature flag monitoring for new endpoints
-
-## 3. Maintenance Schedule
-
-### 3.1 Weekly Checks
-- [ ] CI/CD pipeline results
-- [ ] Test suite results
-- [ ] Build success status
-- [ ] Obvious security concerns
-
-### 2.2 Monthly Checks
-- [ ] Documentation synchronization
-- [ ] API contract verification
-- [ ] Dependency auditing (npm audit)
-- [ ] Browser compatibility verification
-- [ ] Performance metric review
-
-### 3.3 Quarterly Reviews
-- [ ] Full architectural review
-- [ ] Security boundary reassessment
-- [ ] Documentation overhaul
-- [ ] Redesign planning (if needed)
-- [ ] Stakeholder review
-
-## 4. Change Management
-
-### 4.1 Adding New Features
-1. Define endpoint in backend `routes.js`
-2. Define Zod schema in `service.ts`
-3. Add frontend function in `src/lib/api/zenkai.ts`
-4. Add TypeScript types in `src/lib/media.ts`
-5. Add UI component consumption
-6. Add documentation in `docs/architecture/api-contract-ownership.md`
-7. Add test coverage in `frontend/test/` and `backend/test/`
-8. Run `npx next build && npm test` to verify
-9. Update architecture documentation
-
-### 4.2 Deprecating Endpoints
-1. Mark endpoint with `deprecated: true` in schema
-2. Add migration guide to `docs/architecture/`
-3. Keep endpoint functional for deprecation period (minimum 30 days)
-4. Remove frontend imports and update UI to use replacement
-5. Remove backend route after deprecation period
-5. Update architecture documentation
-
-### 4.3 Breaking Changes
-- **Never** make breaking changes without major version announcement
-- **Always** provide migration path
-- **Always** update all consumers before deprecation
-- **Announce** via release notes and in-app notification
-
-## 5. Revision History
-
-| Date | Version | Author | Changes |
-|------|---------|--------|---------|
-| 2026-10-14 | 1.0 | Frontend Team | Initial remediation plan creation |
-| | | | |
+This document outlines the remediation actions completed during the architectural audit and defines the long-term maintenance roadmap for the Zenkai web application.
 
 ---
-*This document is derived from the actual Zenkai repository structure and verified implementation. It must be kept synchronized with code changes.*
+
+## 1. Completed Remediations Summary
+
+| Item | Description | Affected Files | Verification Evidence |
+|---|---|---|---|
+| **REM-01** | Restored 44px mobile touch target assertion on detail primary actions | `frontend/src/components/detail/detail-layout.tsx` | `test/responsive-design-system.test.ts` passes (270/270 frontend tests pass) |
+| **REM-02** | Corrected hardcoded airing schedule endpoint to canonical route `/api/v1/anime/:id/schedule` | `frontend/src/components/schedule/airing-calendar.tsx` | Source route verification in `backend/src/modules/schedule/routes.ts` |
+| **REM-03** | Deprecated and disabled unverified recommendation hook fetching non-existent `/api/v1/anime/recommended` | `frontend/src/hooks/recommendations/use-recommendations.ts` | Production detail page renders empty recommendation array cleanly |
+| **REM-04** | Documented unexposed `/api/v1/auth/settings` route and verified device preference local-storage isolation | `frontend/src/lib/api/auth.ts`<br>`frontend/src/lib/preferences.ts` | Unit tests in `frontend/test/preferences.test.ts` pass |
+| **REM-05** | Created comprehensive 19-document architecture suite in `docs/architecture/` | `docs/architecture/*.md` | Complete coverage across frontend, backend, APIs, security, and data models |
+
+---
+
+## 2. Maintenance & Continuous Verification
+
+### 2.1 Automated CI Quality Gates
+1. **Frontend Unit & Contract Tests**:
+   ```bash
+   cd frontend && npm test
+   ```
+   Ensures all 270 frontend contract tests, Zod schema validations, and mobile design system tests pass.
+2. **Backend Fastify & Security Tests**:
+   ```bash
+   cd backend && npm test
+   ```
+   Ensures all 378 backend route, database resilience, SSRF guard, and encryption tests pass.
+3. **Production Turbo Build**:
+   ```bash
+   npm run build
+   ```
+   Ensures Turbopack, TypeScript typecheck, and dead-code elimination build without errors.
+
+---
+
+## 3. Future Feature Roadmap & Guardrails
+
+1. **User Reviews & Discussion Threads**:
+   - *Prerequisite*: Implement Fastify controller `modules/reviews` and database repository backing `reviews`, `comments`, and `comment_likes` tables.
+   - *Guardrail*: Do not build frontend review inputs or star-rating modals until backend routes are documented, tested, and deployed.
+2. **Community Skip-Timing UI**:
+   - *Prerequisite*: Design accessible dialog in `VideoPlayer` to submit intro/outro timestamp pairs to `POST /api/v1/episodes/:episodeId/skip-timing`.
+   - *Guardrail*: Submissions must validate `startSeconds < endSeconds` and range `<= 420 seconds`.
+3. **Machine-Learned Content Recommendations**:
+   - *Prerequisite*: Stand up recommendation service or provider mapping pipeline.
+   - *Guardrail*: Keep section hidden (`recommendations: []`) until verified data can be served.

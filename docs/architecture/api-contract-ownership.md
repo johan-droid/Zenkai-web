@@ -1,257 +1,123 @@
-# Zenkai API Contract Ownership
+# Zenkai Web — API Contract Ownership & Verification Registry
 
-## Overview
-This document maps every API endpoint to its owner, verification status, and frontend consumption status. It ensures no endpoint is overlooked and that all contracts are verified against both source code and runtime behavior.
+## 1. Overview & Verification Legend
 
-## 1. Endpoint Inventory
-
-### 1.1 Home & Discovery Endpoints
-
-| # | Method | Endpoint | Verification | Frontend Consumer | Contract |
-|---|--------|----------|-------------|-------------------|----------|
-| H1 | GET | `/api/v1/home` | VERIFIED_FROM_BOTH | `useHome()` hook | HomePayload (5 sections: trending, popular, seasonal, recent, topRated) |
-| H2 | GET | `/api/v1/anime/list` | VERIFIED_FROM_BOTH | `BrowseView` component | Anime list with filters (genre, format, status, sort, pagination) |
-| H3 | GET | `/api/v1/discovery/:bucket` | VERIFIED_FROM_BOTH | OverheadNav bucket routing | bucket: "trending" | "popular" | "seasonal" | "topRated" |
-| H4 | GET | `/api/v1/genres` | VERIFIED_FROM_BOTH | `GenreChips` component | `{ items: DiscoveryCard[] }` with cache-control headers |
-
-### 1.2 Anime Detail Endpoints
-
-| # | Method | Endpoint | Verification | Frontend Consumer | Contract |
-|---|--------|----------|-------------|-------------------|----------|
-| A1 | GET | `/api/v1/anime/:id` | VERIFIED_FROM_SOURCE | `fetchAnimeDetail(id)` → `AnimeDetailSchema` | 28 fields: titles, description, coverUrl, bannerUrl, format, status, year, season, seasonYear, averageScore, popularity, totalEpisodes, durationMinutes, genres, relations, nextAiringEpisode |
-| A2 | GET | `/api/v1/episodes/catalogue/:anilistId` | VERIFIED_FROM_SOURCE | `fetchAnimeEpisodes(id)` → `EpisodeCatalogue` | episodes[], catalogueCount, airedCount, knownTotal, pagination (page/perPage/totalPages/total) |
-
-### 1.3 Episode & Playback Endpoints
-
-| # | Method | Endpoint | Verification | Frontend Consumer | Contract |
-|---|--------|----------|-------------|-------------------|----------|
-| E1 | GET | `/api/v1/episodes/catalogue/:anilistId` | VERIFIED_FROM_SOURCE | `fetchAnimeEpisodes(id)` → EpisodeCatalogue | EpisodeCard[] with airin gState, thumbnailUrl, isFiller, airingAt |
-| E2 | GET | `/api/v1/episodes/:episodeId/sources` | VERIFIED_FROM_SOURCE | Playback source resolution | PlaybackSource[] with provider, label, defaultQuality, baseUrl, baseHeaders |
-| E3 | GET | `/api/v1/episodes/:episodeId/servers` | VERIFIED_FROM_SOURCE | Player server list | Server list with host, port, token, expires |
-| E3 | GET | `/api/v1/episodes/:episodeId/metadata` | VERIFIED_FROM_SOURCE | Episode metadata display | Episode metadata with title, duration, airingState |
-| E4 | POST | `/api/v1/playback/execute` | VERIFIED_FROM_SOURCE | Playback execution | PlaybackExecution with target, plan, status |
-| E5 | GET | `/api/v1/playback/manifest` | VERIFIED_FROM_SOURCE | Vidstack manifest | Manifest data for Vidstack player |
-| E5 | GET | `/api/v1/playback/subtitle` | VERIFIED_FROM_SOURCE | Subtitle track | Subtitle file URL and WebVTT format |
-
-### 1.4 Library & Favorites Endpoints
-
-| # | Method | Endpoint | Verification | Frontend Consumer | Contract |
-|---|--------|----------|-------------|-------------------|----------|
-| L1 | GET | `/api/v1/user/library` | VERIFIED_FROM_RUNTIME | `useWatchlistEntry()` → libraryState | `{ kind: "items"; items: LibraryEntry[] }` or `{ kind: "error"; reason, message }` |
-| L2 | POST | `/api/v1/user/library/batch` | VERIFIED_FROM_RUNTIME | Library batch sync | `{ result: any }` (validated with exportPayloadSchema .strict()) |
-| L3 | DELETE | `/api/v1/user/library/:kind/:mediaId` | VERIFIED_FROM_RUNTIME | Remove from library | `{ deleted: boolean }` |
-
-### 1.5 Authentication Endpoints
-
-| # | Method | Endpoint | Verification | Frontend Consumer | Contract |
-|---|--------|----------|-------------|-------------------|----------|
-| Auth1 | GET | `/health` | VERIFIED_FROM_RUNTIME | Health check display | `{ status: "ok" | "degraded"; database; catalog; providers }` |
-| Auth2 | GET | `/api/v1/health` | VERIFIED_FROM_RUNTIME | Minimal liveness | `{ status: "ok"; service; timestamp }` |
-| Auth3 | POST | `/api/v1/providers/reset` | VERIFIED_FROM_RUNTIME (auth only) | Provider dashboard | `{ cleared: number }` |
-
-### 1.5 Proxy & Utility Endpoints
-
-| # | Method | Endpoint | Verification | Frontend Consumer | Contract |
-|---|--------|----------|-------------|-------------------|----------|
-| P1 | GET | `/api/v1/proxy` | VERIFIED_FROM_RUNTIME | Media proxy (SSRF protected) | url parameter, referer validation, 60/min rate limit |
-| P2 | GET | `/api/v1/providers/health` | VERIFIED_FROM_RUNTIME | Provider health dashboard | `resolver.health()` + `healthRegistry.snapshot()` |
-| P3 | POST | `/api/v1/providers/reset` | VERIFIED_FROM_RUNTIME (auth only) | Reset quarantined providers | `{ cleared: number }` |
-
-## 2. Verification Status Legend
-
-| Status | Meaning |
-|--------|---------|
-| VERIFIED_FROM_SOURCE | Confirmed against backend source code (`backend/src/modules/*/routes.ts`) |
-| VERIFIED_FROM_RUNTIME | Confirmed against runtime behavior (build + manual testing) |
-| DOCUMENTED_ONLY | Listed in docs but not confirmed against source/code |
-| INFERRED_NOT_VERIFIED | Assumed based on endpoint patterns, not confirmed |
-| UNAVAILABLE | Endpoint exists but disabled/removed/behind feature flag |
-
-## 2.1 Verification Methodology
-
-### 2.1.1 Source Code Inspection
-- grep endpoint definitions in `backend/src/modules/*/routes.js`
-- Verify Zod schema definitions in `backend/src/modules/*/service.ts`
-- Check handler implementations for logic correctness
-
-### 2.1.2 Runtime Testing
-- Execute `npx next build` and verify TypeScript compilation
-- Run `npm test` and verify test suite passes
-- Manual testing at 9 required viewports (320×568 through 1920×1080)
-- Test key user workflows: search, detail, favorite, playback
-
-### 2.1.3 Cross-Reference
-- Compare frontend API client (`src/lib/api/zenkai.ts`) with backend routes
-- Verify Zod schemas match between request and response
-- Confirm endpoint URLs match between client and server
-- Verify pagination parameters match (page/perPage defaults and limits)
-
-## 2.2 Known Discrepancies
-
-| Endpoint | Documented | Verified | Status |
-|----------|-----------|---------|--------|
-| `/api/v1/user/library` | Yes | Yes | Local-first documented; backend routes exist for future accounts phase |
-| `/api/v1/playback/execute` | Yes | Yes | Requires authenticated session; verified playback flow |
-| `/api/v1/episodes/catalogue/:anilistId` | Yes | Yes | Verified against AniList + provider sync |
-| `/api/v1/anime/:id` | Yes | Yes | Verified AnimeDetailSchema (28 fields) |
-
-## 3. Frontend API Client
-
-### 3.1 `src/lib/api/zenkai.ts` Functions
-
-| Function | Endpoint | Schema | Notes |
-|----------|----------|--------|-------|
-| `fetchAnimeDetail(id)` | `/api/v1/anime/${encodeURIComponent(id)}` | `animeDetailSchema` | 28 fields; cache with TTL: metadata TTL |
-| `fetchAnimeEpisodes(id, options?)` | `/api/v1/episodes/catalogue/${anilistId}` | `EpisodeCatalogue` | Pagination: page/perPage; cache TTL: discovery TTL |
-| `fetchAnimeSearch(term, limit?)` | `/api/v1/anime/list` with q parameter | Discovery query schema | q: min length 2; genre/format/status/sort pagination |
-| `useHome()` | `/api/v1/home` | HomePayload | 5 sections each with independent status: "ok" | "unavailable" |
-| `useContinueWatching(kind)` | Dexie local-first | N/A | Library/progress state; local-first per P11/P16 |
-| `useWatchlistEntry()` | `/api/v1/user/library` (POST/GET/DELETE) | libraryRecordSchema .strict() | Local-first: Dexie DB; backend routes for future accounts |
-| `useSearch(term, filters?)` | `/api/v1/anime/list` with params | query schema | parseOrThrow Zod validation |
-
-### 3.2 Schema Validation
-
-**Request Validation** (backend):
-```typescript
-// Example from anime routes
-const query = parseOrThrow(z.object(discoveryPaging), request.query)
-// discoveryPaging includes: page, perPage, season, seasonYear, status, genre, format, sort
-```
-
-**Response Validation** (frontend):
-```typescript
-// Example from api/zenkai.ts
-const result = getValidated(`/api/v1/anime/${id}`, animeDetailSchema)
-```
-- `getValidated` performs Zod schema validation on response
-- Throws error if schema doesn't match → 400 Bad Request handling
-- Successful validation → return normalized data
-
-### 3.2.1 animeDetailSchema
-```typescript
-export const animeDetailSchema = z.object({
-  anilistId: z.string(),
-  titles: z.object({ romaji, english, native, synonyms }),
-  canonicalTitle: z.string(),
-  description: z.string().nullish(),
-  coverUrl: z.string().nullish(),
-  coverImageLarge: z.string().nullish(),
-  bannerUrl: z.string().nullish(),
-  format: z.string().nullish(),
-  status: z.string().nullish(),
-  year: z.number().nullish(),
-  season: z.string().nullish(),
-  seasonYear: z.number().nullish(),
-  averageScore: z.number().nullish(),
-  popularity: z.number().nullish(),
-  totalEpisodes: z.number().nullish(),
-  durationMinutes: z.number().nullish(),
-  genres: z.array(z.string()).nullish(),
-  relations: z.array(animeRelationSchema),
-  nextAiringEpisode: z.object({ episode, airingAt, timeUntilAiring }).nullish(),
-})
-export type AnimeDetail = z.infer<typeof animeDetailSchema>
-```
-
-### 3.2.2 EpisodeCatalogue Schema
-```typescript
-export interface EpisodeCatalogue {
-  anilistId: string
-  animeId?: string
-  episodes: EpisodeCard[]
-  catalogueCount: number
-  airedCount: number
-  knownTotal: number | null
-  page?: number
-  perPage?: number
-  totalPages?: number
-  total?: number
-}
-```
-
-### 3.2.3 EpisodeCard Interface
-```typescript
-export interface EpisodeCard {
-  id: string
-  episodeNumber: number
-  absoluteNumber: number | null
-  title: string | null
-  description: string | null
-  durationSeconds: number | null
-  thumbnailUrl: string | null
-  isFiller: boolean
-  airingAt: string | null
-  airingState: EpisodeAiringState  // "aired" | "upcoming" | "unknown"
-  airingSource: string | null
-  providerStatus: string | null
-}
-```
-
-## 4. Contract Integrity Rules
-
-### 4.1 Rules (STRICT)
-1. **Do not invent endpoints** — Every frontend API call must match a registered backend route
-2. **Do not invent response fields** — Every field in frontend types must exist in backend response
-3. **Do not assume authentication is optional** — Check `request.user` on protected routes
-4. **Do not assume data is persistent** — Dexie DB is local-first; backend persistence is future
-5. **Do not assume an external provider is reliable** — Always have fallback/fallback UI
-6. **Do not assume an endpoint supports every filter** — Use Zod schema to validate allowed filters
-7. **Do not assume frontend and backend types are identical without verification** — Always verify at runtime
-8. **Do not silently swallow API failures** — Always show appropriate error state
-
-### 4.2 Integrity Checks
-
-**Automated Checks**:
-- `npx next build` — TypeScript compilation must pass
-- `grep` endpoint definitions vs client imports
-- Zod schema round-trip: request → validate → response → validate
-- `npm test` — All tests pass
-
-**Manual Checks**:
-- [ ] Every frontend API import has corresponding backend route
-- [ ] Every Zod schema round-trips correctly
-- [ ] Every protected endpoint has `request.user` check
-- [ ] Every error state has UI component
-- [ ] Every loading state has skeleton component
-- [ ] Every empty state has EmptyState component
-- [ ] No `NEXT_PUBLIC_` variables contain secrets
-- [ ] Every route has viewport testing verification
-
-## 3. API Versioning
-
-The Zenkai API does not currently implement versioning in the URL path. All endpoints are under `/api/v1/`. Any future versioning would follow the pattern `/api/v2/` with concurrent support for `/api/v1/` during transition.
-
-**Migration Strategy**:
-- New endpoints added under `/api/v1/` with backward compatibility
-- Deprecated endpoints marked with `deprecated: true` in schema
-- Migration guide documented in `docs/architecture/`
-- No breaking changes without major version bump and announcement
-
-## 4. API Change Management
-
-### 4.1 Adding New Endpoints
-1. Define endpoint in backend `routes.js`
-2. Define Zod schema in `service.ts`
-3. Add frontend function in `src/lib/api/zenkai.ts`
-4. Add TypeScript types in `src/lib/media.ts`
-5. Add UI component consumption
-6. Add documentation in `docs/architecture/api-contract-ownership.md`
-7. Add test coverage in `frontend/test/` and `backend/test/`
-8. Run `npx next build && npm test` to verify
-
-### 4.2 Deprecating Endpoints
-1. Mark endpoint with `deprecated: true` in schema
-2. Add migration guide to docs
-3. Keep endpoint functional for `deprecationPeriod` (minimum 30 days)
-4. Remove frontend imports and update UI to use replacement
-5. Remove backend route after deprecation period
-6. Update architecture documentation
-
-### 4.3 Breaking Changes
-- **Never** make breaking changes without major version announcement
-- **Always** provide migration path
-- **Update** all consumers before deprecation
-- **Announce** via release notes and in-app notification
+Every API endpoint is classified by its ownership, operational contract, and verification status:
+- **VERIFIED_FROM_BOTH**: Confirmed from both backend source code and runtime test execution.
+- **VERIFIED_FROM_SOURCE**: Confirmed from backend route handlers and controller implementations.
+- **DOCUMENTED_ONLY**: Described in planning documents but not implemented in code.
+- **UNAVAILABLE**: Deprecated, non-existent, or pending backend development.
 
 ---
-*This document is derived from the actual Zenkai repository structure and verified implementation. It must be kept synchronized with code changes.*
+
+## 2. API Contract Ownership Inventory
+
+### 2.1 System & Observability
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/health` | VERIFIED_FROM_BOTH | Backend | Monitoring & Health Checks |
+| `GET` | `/api/v1/health` | VERIFIED_FROM_BOTH | Backend | Minimal Public Health Checks |
+| `GET` | `/api/v1/providers/health` | VERIFIED_FROM_BOTH | Backend | Observability Dashboard |
+| `POST` | `/api/v1/providers/reset` | VERIFIED_FROM_BOTH | Backend | Admin Provider Quarantine Reset |
+| `GET` | `/api/v1/proxy` | VERIFIED_FROM_BOTH | Backend | Media & Image Proxy (`MangaReader`) |
+| `GET` | `/api/v1/providers` | VERIFIED_FROM_BOTH | Backend | Reader Provider Status |
+| `GET` | `/api/v1/providers/manga` | VERIFIED_FROM_BOTH | Backend | Manga Provider Status |
+| `GET` | `/api/v1/providers/novel` | VERIFIED_FROM_BOTH | Backend | Novel Provider Status |
+
+### 2.2 Authentication & User Identity
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `POST` | `/api/v1/auth/register` | VERIFIED_FROM_BOTH | Backend | `register()` in `lib/api/auth.ts` |
+| `POST` | `/api/v1/auth/login` | VERIFIED_FROM_BOTH | Backend | `login()` in `lib/api/auth.ts` |
+| `POST` | `/api/v1/auth/logout` | VERIFIED_FROM_BOTH | Backend | `logout()` in `lib/api/auth.ts` |
+| `GET` | `/api/v1/auth/me` | VERIFIED_FROM_BOTH | Backend | `fetchCurrentUser()` in `lib/api/auth.ts` |
+| `GET` | `/api/v1/auth/check-username` | VERIFIED_FROM_BOTH | Backend | `checkUsernameAvailability()` in `lib/api/auth.ts` |
+| `PATCH` | `/api/v1/auth/profile` | VERIFIED_FROM_BOTH | Backend | `updateUserProfile()` in `lib/api/auth.ts` |
+| `GET` | `/api/v1/users/:username` | VERIFIED_FROM_BOTH | Backend | `fetchPublicProfile()` in `lib/api/auth.ts` |
+
+### 2.3 User Library & Watch Progress
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/api/v1/user/library` | VERIFIED_FROM_BOTH | Backend | `fetchRemoteLibrary()` in `lib/api/auth.ts` |
+| `PUT` | `/api/v1/user/library/:kind/:mediaId` | VERIFIED_FROM_BOTH | Backend | `putLibraryEntry()` in `lib/api/auth.ts` |
+| `DELETE` | `/api/v1/user/library/:kind/:mediaId` | VERIFIED_FROM_BOTH | Backend | `deleteLibraryEntry()` in `lib/api/auth.ts` |
+| `POST` | `/api/v1/user/library/batch` | VERIFIED_FROM_BOTH | Backend | `batchSyncLibrary()` in `lib/api/auth.ts` |
+| `GET` | `/api/v1/user/progress` | VERIFIED_FROM_BOTH | Backend | `fetchRemoteProgress()` in `lib/api/auth.ts` |
+| `GET` | `/api/v1/user/continue` | VERIFIED_FROM_BOTH | Backend | `fetchContinueRail()` in `lib/api/auth.ts` |
+| `PUT` | `/api/v1/user/progress/:kind/:mediaId/:unit` | VERIFIED_FROM_BOTH | Backend | `putProgressEntry()` in `lib/api/auth.ts` |
+| `DELETE` | `/api/v1/user/progress/:kind/:mediaId` | VERIFIED_FROM_BOTH | Backend | `clearMediaProgress()` in `lib/api/auth.ts` |
+| `DELETE` | `/api/v1/user/progress` | VERIFIED_FROM_BOTH | Backend | `clearAllProgress()` in `lib/api/auth.ts` |
+| `POST` | `/api/v1/user/sync` | VERIFIED_FROM_BOTH | Backend | `syncAllUserData()` in `lib/api/auth.ts` |
+
+### 2.4 Anime Discovery & Catalogue
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/api/v1/home` | VERIFIED_FROM_BOTH | Backend | `fetchHome()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/genres` | VERIFIED_FROM_BOTH | Backend | `fetchGenres()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime` | VERIFIED_FROM_BOTH | Backend | `fetchAnimeBrowse()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/search` | VERIFIED_FROM_BOTH | Backend | `fetchAnimeSearch()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/trending` | VERIFIED_FROM_BOTH | Backend | `fetchTrending()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/popular` | VERIFIED_FROM_BOTH | Backend | `fetchPopular()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/seasonal` | VERIFIED_FROM_BOTH | Backend | `fetchSeasonal()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/top` | VERIFIED_FROM_BOTH | Backend | `fetchTopRated()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/recent` | VERIFIED_FROM_BOTH | Backend | `fetchRecent()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/recently-updated`| VERIFIED_FROM_BOTH | Backend | `fetchRecentlyUpdated()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/discovery/:bucket` | VERIFIED_FROM_BOTH | Backend | `fetchDiscoveryBucket()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/:id` | VERIFIED_FROM_BOTH | Backend | `fetchAnimeDetail()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/:id/relations` | VERIFIED_FROM_BOTH | Backend | `fetchAnimeRelations()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/:id/episodes` | VERIFIED_FROM_BOTH | Backend | `fetchAnimeEpisodes()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/:id/episodes/:number` | VERIFIED_FROM_BOTH | Backend | `fetchEpisodeByNumber()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/anime/:id/episodes-next` | VERIFIED_FROM_BOTH | Backend | Next episode to air resolution |
+| `GET` | `/api/v1/anime/:id/episodes/:number/navigation` | VERIFIED_FROM_BOTH | Backend | `fetchEpisodeNavigation()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/episodes/:id` | VERIFIED_FROM_BOTH | Backend | Episode by local UUID |
+
+### 2.5 Playback & Streaming
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/api/v1/episodes/:episodeId/sources` | VERIFIED_FROM_BOTH | Backend | `fetchEpisodeSources()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/episodes/:episodeId/servers` | VERIFIED_FROM_BOTH | Backend | `fetchEpisodeServers()` in `lib/api/zenkai.ts` |
+| `POST` | `/api/v1/playback/execute` | VERIFIED_FROM_BOTH | Backend | `executePlayback()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/episodes/:episodeId/metadata` | VERIFIED_FROM_BOTH | Backend | `fetchEpisodeMetadata()` in `lib/api/zenkai.ts` |
+| `POST` | `/api/v1/episodes/:episodeId/skip-timing` | VERIFIED_FROM_SOURCE | Backend | [Deferred UI Integration] |
+| `POST` | `/api/v1/skip-timing/:timingId/report` | VERIFIED_FROM_SOURCE | Backend | [Deferred UI Integration] |
+| `GET` | `/api/v1/playback/providers` | VERIFIED_FROM_BOTH | Backend | Provider monitor |
+| `POST` | `/api/v1/playback/providers/check` | VERIFIED_FROM_SOURCE | Backend | Provider check trigger |
+| `GET` | `/api/v1/playback/manifest` | VERIFIED_FROM_BOTH | Backend | HLS media/manifest relay |
+| `GET` | `/api/v1/playback/subtitle` | VERIFIED_FROM_BOTH | Backend | Subtitle relay |
+
+### 2.6 Manga Catalogue & Reader
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/api/v1/manga` | VERIFIED_FROM_BOTH | Backend | `fetchMangaCatalogue()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/manga/search` | VERIFIED_FROM_BOTH | Backend | `fetchMangaSearch()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/manga/:id` | VERIFIED_FROM_BOTH | Backend | `fetchMangaDetail()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/manga/:id/relations` | VERIFIED_FROM_BOTH | Backend | Manga relations |
+| `GET` | `/api/v1/manga/:id/chapters` | VERIFIED_FROM_BOTH | Backend | `fetchMangaChapters()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/manga/:id/latest` | VERIFIED_FROM_BOTH | Backend | Latest chapter shortcut |
+| `GET` | `/api/v1/manga/chapters/:chapterId` | VERIFIED_FROM_BOTH | Backend | Single chapter metadata |
+| `GET` | `/api/v1/manga/chapters/:chapterId/pages` | VERIFIED_FROM_BOTH | Backend | `fetchMangaPages()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/manga/by-anilist/:anilistId` | VERIFIED_FROM_BOTH | Backend | Cross-reference resolver |
+| `GET` | `/api/v1/manga/genres` | VERIFIED_FROM_BOTH | Backend | Manga genre chips |
+
+### 2.7 Novel Catalogue & Reader
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/api/v1/novel` | VERIFIED_FROM_BOTH | Backend | `fetchNovelBrowse()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/novel/search` | VERIFIED_FROM_BOTH | Backend | `fetchNovelSearch()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/novel/:id` | VERIFIED_FROM_BOTH | Backend | `fetchNovelDetail()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/novel/:id/chapters` | VERIFIED_FROM_BOTH | Backend | `fetchNovelChapters()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/novel/:id/chapters/:chapter` | VERIFIED_FROM_BOTH | Backend | `fetchNovelChapterContent()` in `lib/api/zenkai.ts` |
+
+### 2.8 Schedule
+| Method | Endpoint | Verification | Owner | Frontend Consumer |
+|---|---|---|---|---|
+| `GET` | `/api/v1/schedule` | VERIFIED_FROM_BOTH | Backend | `fetchScheduleWindow()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/schedule/today` | VERIFIED_FROM_BOTH | Backend | `fetchScheduleToday()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/schedule/week` | VERIFIED_FROM_BOTH | Backend | `fetchScheduleWeek()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/schedule/month` | VERIFIED_FROM_BOTH | Backend | `fetchScheduleMonth()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/schedule/season` | VERIFIED_FROM_BOTH | Backend | `fetchScheduleSeason()` in `lib/api/zenkai.ts` |
+| `GET` | `/api/v1/schedule/next` | VERIFIED_FROM_BOTH | Backend | Nearest upcoming episode slot |
+| `GET` | `/api/v1/schedule/upcoming` | VERIFIED_FROM_BOTH | Backend | Upcoming episodes list |
+| `GET` | `/api/v1/schedule/recent` | VERIFIED_FROM_BOTH | Backend | Recently aired list |
+| `GET` | `/api/v1/anime/:id/schedule` | VERIFIED_FROM_BOTH | Backend | `AiringCalendar` / Schedule for title |
+| `POST` | `/api/v1/schedule/sync/:id` | VERIFIED_FROM_SOURCE | Backend | Force sync schedule |

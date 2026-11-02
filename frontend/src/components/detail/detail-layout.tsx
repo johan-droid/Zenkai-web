@@ -7,7 +7,6 @@ import Link from "next/link";
 
 import { MediaCard } from "@/components/cards/media-card";
 import { EmptyState } from "@/components/common/empty-state";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,13 +29,10 @@ import { displayTitle, formatScore, readHref, seasonLabel, watchHref, type Detai
  *
  * Pure presentation: it receives an already-fetched `DetailData` and renders
  * hero, metadata, actions and the characters/relations/recommendations
- * shelves. It imports no API client — the anime view feeds it canonical
- * backend data, the manga view feeds it the legacy payload until P17 — which
- * is what lets the P13 boundary test scan this file for provider imports.
+ * shelves. It imports no API client.
  *
- * The unit section (episodes/chapters) is injected as children between the
- * hero and the lower shelves because its data source differs per kind: the
- * canonical episode catalogue for anime, a chapter count for manga.
+ * Composition: the banner is the stage, the poster and identity sit on it, and
+ * facts are set as one text line rather than a row of badges.
  */
 
 const LIBRARY_OPTIONS: { value: LibraryStatus; label: string; icon: React.ElementType }[] = [
@@ -100,24 +96,24 @@ function LibraryButtonContent({
       <DropdownMenuTrigger asChild>
         <Button
           size="lg"
-          variant="outline"
-          className="min-h-[44px] rounded-xl gap-2 border-border-subtle bg-surface-secondary hover:bg-surface-hover text-text-primary"
+          variant="ghost"
+          className="min-h-11 gap-2 rounded-md border border-white/20 px-3.5 text-sm font-semibold text-ink-1 hover:border-white/35 hover:bg-white/[0.05]"
         >
           {currentOption ? (
             <>
-              <currentOption.icon className="size-4" />
+              <currentOption.icon className="size-4" aria-hidden="true" />
               {currentOption.label}
             </>
           ) : (
             <>
-              <Plus className="size-4" />
+              <Plus className="size-4" aria-hidden="true" />
               Add to library
             </>
           )}
-          <ChevronDown className="size-3 opacity-50" />
+          <ChevronDown className="size-3 opacity-50" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="glass-panel w-44">
+      <DropdownMenuContent align="start" className="w-44">
         {LIBRARY_OPTIONS.map((opt) => {
           const Icon = opt.icon;
           return (
@@ -126,21 +122,19 @@ function LibraryButtonContent({
               onClick={() => setStatus(opt.value)}
               className="gap-2"
             >
-              <Icon className="size-4" />
+              <Icon className="size-4" aria-hidden="true" />
               {opt.label}
               {currentStatus === opt.value ? (
-                <Check className="ml-auto size-3 text-brand-400" />
+                <Check className="ml-auto size-3 text-signal" aria-hidden="true" />
               ) : null}
             </DropdownMenuItem>
           );
         })}
-        {/* P16: removal semantics. Setting a status is not the same as being
-            able to leave the list, and P11 lists removal as a requirement. */}
         {currentStatus ? (
           <>
-            <DropdownMenuSeparator className="bg-glass-border" />
-            <DropdownMenuItem onClick={remove} className="gap-2 text-muted-foreground">
-              <Trash2 className="size-4" />
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={remove} className="gap-2 text-ink-3">
+              <Trash2 className="size-4" aria-hidden="true" />
               Remove from library
             </DropdownMenuItem>
           </>
@@ -158,7 +152,7 @@ export function DetailNotFound({ kind }: { kind: MediaKind }) {
       title="Title not found"
       description="This entry may have been removed from the metadata provider."
       action={
-        <Button variant="outline" className="glass rounded-xl" asChild>
+        <Button variant="outline" className="rounded-md" asChild>
           <Link href={kind === "anime" ? "/anime" : "/manga"}>Back to browse</Link>
         </Button>
       }
@@ -170,9 +164,9 @@ export function DetailNotFound({ kind }: { kind: MediaKind }) {
 export function DetailSkeleton() {
   return (
     <div className="flex flex-col gap-8">
-      <Skeleton className="h-72 w-full rounded-3xl" />
+      <Skeleton className="h-[clamp(220px,36dvh,400px)] w-full rounded-xl" />
       <div className="flex gap-4">
-        <Skeleton className="aspect-[2/3] w-32 rounded-2xl" />
+        <Skeleton className="aspect-[2/3] w-24 rounded-lg sm:w-40" />
         <div className="flex flex-1 flex-col gap-3">
           <Skeleton className="h-8 w-2/3" />
           <Skeleton className="h-4 w-full" />
@@ -205,75 +199,90 @@ export function DetailLayout({
   const relations = data.relations ?? [];
   const recommendations = data.recommendations ?? [];
 
+  const facts = [
+    seasonLabel(media.season, media.seasonYear),
+    media.format && media.format !== "UNKNOWN" ? media.format : null,
+    media.status ? media.status.replaceAll("_", " ") : null,
+    kind === "anime" && media.episodes
+      ? `${media.episodes} ${media.episodes === 1 ? "episode" : "episodes"}`
+      : null,
+  ].filter(Boolean);
+
   return (
-    <div className="flex flex-col gap-8">
-      <section className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-border-subtle bg-surface">
-        <div className="relative h-48 w-full sm:h-72">
+    <div className="flex flex-col gap-9">
+      <section className="relative">
+        <div className="relative h-[clamp(210px,34dvh,380px)] w-full overflow-hidden rounded-lg bg-surface-2">
           {bannerUrl && !bannerUrl.startsWith("file:") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={bannerUrl}
               alt=""
+              fetchPriority="high"
               referrerPolicy="no-referrer"
-              className="size-full object-cover"
+              className="size-full object-cover object-[center_28%]"
             />
           ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface-0 via-surface-0/45 to-transparent" />
         </div>
 
-        <div className="relative -mt-16 sm:-mt-24 flex flex-col gap-5 p-5 sm:flex-row sm:p-6">
-          <div className="w-28 sm:w-44 shrink-0 mx-auto sm:mx-0">
-            <div className="aspect-[2/3] overflow-hidden rounded-xl border border-border-subtle bg-surface-secondary shadow-2xl">
+        <div className="relative -mt-20 flex flex-col gap-5 px-1 sm:-mt-28 sm:flex-row sm:items-end sm:gap-7">
+          <div className="w-24 shrink-0 sm:w-40">
+            <div className="aspect-[2/3] overflow-hidden rounded-md bg-surface-2 shadow-2xl shadow-black/70 ring-1 ring-white/10">
               {coverUrl && !coverUrl.startsWith("file:") ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={coverUrl} alt={title} referrerPolicy="no-referrer" className="size-full object-cover" />
+                <img
+                  src={coverUrl}
+                  alt={title}
+                  referrerPolicy="no-referrer"
+                  className="size-full object-cover"
+                />
               ) : null}
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-col gap-3 pt-2">
-            <h1 className="text-balance text-2xl font-black tracking-tight sm:text-4xl">
+          <div className="flex min-w-0 flex-1 flex-col gap-2.5 pb-1">
+            <h1 className="text-balance text-[clamp(1.6rem,4.6vw,2.75rem)] font-black leading-[1.03] tracking-[-0.04em] text-ink-1">
               {title}
             </h1>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {seasonLabel(media.season, media.seasonYear) ? (
-                <Badge variant="secondary" className="rounded-lg">
-                  {seasonLabel(media.season, media.seasonYear)}
-                </Badge>
-              ) : null}
-              {media.format ? (
-                <Badge variant="secondary" className="rounded-lg">
-                  {media.format}
-                </Badge>
-              ) : null}
-              {media.status ? (
-                <Badge variant="secondary" className="rounded-lg">
-                  {media.status.replaceAll("_", " ")}
-                </Badge>
-              ) : null}
-              {kind === "anime" && media.episodes ? (
-                <Badge variant="secondary" className="rounded-lg">
-                  {media.episodes} {media.episodes === 1 ? "episode" : "episodes"}
-                </Badge>
-              ) : null}
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.74rem] font-medium text-ink-2">
+              {facts.map((fact, i) => (
+                <span key={`${fact}-${i}`} className="flex items-center gap-2.5">
+                  {i > 0 ? (
+                    <span className="text-ink-3/50" aria-hidden="true">
+                      /
+                    </span>
+                  ) : null}
+                  <span>{fact}</span>
+                </span>
+              ))}
               {score ? (
-                <Badge variant="secondary" className="gap-1 rounded-lg">
-                  <Star className="size-3 fill-amber-400 text-amber-400" />
-                  {score}
-                </Badge>
+                <span className="flex items-center gap-1">
+                  <span className="px-1 text-ink-3/50" aria-hidden="true">
+                    /
+                  </span>
+                  <Star className="size-3 fill-signal text-signal" aria-hidden="true" />
+                  <span className="tabular-nums">{score}</span>
+                </span>
               ) : null}
               {data.airing ? (
-                <Badge variant="secondary" className="gap-1 rounded-lg">
-                  <Clock className="size-3" />
+                <span className="flex items-center gap-1.5 text-signal">
+                  <span className="px-1 text-ink-3/50" aria-hidden="true">
+                    /
+                  </span>
+                  <Clock className="size-3" aria-hidden="true" />
                   EP {data.airing.episode} ·{" "}
                   {new Date(data.airing.airingAt * 1000).toLocaleString()}
-                </Badge>
+                </span>
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button size="lg" className="min-h-[44px] rounded-xl bg-accent font-bold text-accent-foreground hover:bg-accent/90 shadow-lg shadow-accent/25" asChild>
+            <div className="flex flex-wrap items-center gap-2.5 pt-2">
+              <Button
+                size="lg"
+                className="min-h-[44px] gap-2 rounded-md bg-signal px-5 font-bold text-white hover:bg-signal-hover"
+                asChild
+              >
                 <Link
                   href={
                     kind === "anime"
@@ -281,14 +290,23 @@ export function DetailLayout({
                       : readHref(media.id, continueUnit ?? 1)
                   }
                 >
-                  {kind === "anime" ? <Play className="fill-current size-4" /> : <BookOpen className="size-4" />}
+                  {kind === "anime" ? (
+                    <Play className="size-4 fill-current" aria-hidden="true" />
+                  ) : (
+                    <BookOpen className="size-4" aria-hidden="true" />
+                  )}
                   {continueUnit
                     ? (kind === "anime" ? `Continue EP ${continueUnit}` : `Continue CH ${continueUnit}`)
                     : (kind === "anime" ? "Watch Episode 1" : "Start Reading")}
                 </Link>
               </Button>
               {continueUnit && continueUnit > 1 ? (
-                <Button size="lg" variant="outline" className="min-h-[44px] rounded-xl border-border-subtle bg-surface-secondary hover:bg-surface-hover text-text-primary" asChild>
+                <Button
+                  size="lg"
+                  variant="ghost"
+                  className="min-h-[44px] rounded-md border border-white/20 px-3.5 text-ink-1 hover:border-white/35 hover:bg-white/[0.05]"
+                  asChild
+                >
                   <Link href={kind === "anime" ? watchHref(media.id, 1) : readHref(media.id, 1)}>
                     {kind === "anime" ? "Episode 1" : "Chapter 1"}
                   </Link>
@@ -301,33 +319,48 @@ export function DetailLayout({
                 coverUrl={coverUrl}
               />
             </div>
+          </div>
+        </div>
 
-            {media.description ? (
-              <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                {media.description}
-              </p>
-            ) : null}
+        <div className="mt-6 grid gap-5 border-t border-white/[0.07] pt-5 sm:grid-cols-[minmax(0,1fr)_15rem] sm:gap-8">
+          {media.description ? (
+            <p className="max-w-2xl text-[0.85rem] leading-relaxed text-ink-2">
+              {media.description}
+            </p>
+          ) : (
+            <span />
+          )}
 
-            {genres.length ? (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {genres.map((genre) => (
-                  <Link
-                    key={genre}
-                    href={
-                      kind === "manga"
-                        ? `/manga?genre=${encodeURIComponent(genre)}`
-                        : kind === "novel"
-                        ? `/novel?genre=${encodeURIComponent(genre)}`
-                        : `/anime?genre=${encodeURIComponent(genre)}`
-                    }
-                    className="rounded-full border border-glass-border bg-white/5 px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {genre}
-                  </Link>
+          {genres.length ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="font-mono text-[0.58rem] uppercase tracking-[0.2em] text-ink-3">
+                Genres
+              </span>
+              <div className="flex flex-wrap gap-x-2 gap-y-1 text-[0.72rem]">
+                {genres.map((genre, i) => (
+                  <span key={genre} className="flex items-center gap-2">
+                    {i > 0 ? (
+                      <span className="text-ink-3/50" aria-hidden="true">
+                        /
+                      </span>
+                    ) : null}
+                    <Link
+                      href={
+                        kind === "manga"
+                          ? `/manga?genre=${encodeURIComponent(genre)}`
+                          : kind === "novel"
+                            ? `/novel?genre=${encodeURIComponent(genre)}`
+                            : `/anime?genre=${encodeURIComponent(genre)}`
+                      }
+                      className="text-ink-3 transition-colors hover:text-ink-1"
+                    >
+                      {genre}
+                    </Link>
+                  </span>
                 ))}
               </div>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -335,11 +368,13 @@ export function DetailLayout({
 
       {characters.length ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold tracking-tight">Characters</h2>
+          <h2 className="border-b border-white/[0.07] pb-2.5 text-[1.05rem] font-bold tracking-[-0.01em] sm:text-xl">
+            Characters
+          </h2>
           <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
             {characters.map((character) => (
-              <div key={character.id} className="glass w-28 shrink-0 rounded-2xl p-2 text-center">
-                <div className="mb-2 aspect-square overflow-hidden rounded-xl bg-muted">
+              <div key={character.id} className="w-24 shrink-0 sm:w-28">
+                <div className="mb-2 aspect-square overflow-hidden rounded-md bg-surface-2 ring-1 ring-white/[0.06]">
                   {character.image && !character.image.startsWith("file:") ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -350,8 +385,8 @@ export function DetailLayout({
                     />
                   ) : null}
                 </div>
-                <p className="truncate text-xs font-medium">{character.name}</p>
-                <p className="text-[0.65rem] text-muted-foreground">{character.role}</p>
+                <p className="truncate text-xs font-semibold text-ink-1">{character.name}</p>
+                <p className="text-[0.62rem] text-ink-3">{character.role}</p>
               </div>
             ))}
           </div>
@@ -360,12 +395,14 @@ export function DetailLayout({
 
       {relations.length ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold tracking-tight">Related</h2>
+          <h2 className="border-b border-white/[0.07] pb-2.5 text-[1.05rem] font-bold tracking-[-0.01em] sm:text-xl">
+            Related
+          </h2>
           <div className="no-scrollbar flex gap-4 overflow-x-auto pb-2">
             {relations.map((relation) => (
-              <div key={`${relation.media?.kind ?? "manga"}-${relation.media?.id ?? ""}`} className="w-36 shrink-0">
+              <div key={`${relation.media?.kind ?? "manga"}-${relation.media?.id ?? ""}`} className="w-32 shrink-0">
                 {relation.media ? <MediaCard media={relation.media} /> : null}
-                <p className="mt-1 truncate text-center text-[0.7rem] text-muted-foreground">
+                <p className="mt-1 truncate text-[0.65rem] uppercase tracking-[0.1em] text-ink-3">
                   {relation.relationType?.replaceAll("_", " ") ?? ""}
                 </p>
               </div>
@@ -376,7 +413,9 @@ export function DetailLayout({
 
       {recommendations.length ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold tracking-tight">Recommended</h2>
+          <h2 className="border-b border-white/[0.07] pb-2.5 text-[1.05rem] font-bold tracking-[-0.01em] sm:text-xl">
+            Recommended
+          </h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
             {recommendations.map((media) => (
               <MediaCard key={`${media.kind}-${media.id}`} media={media} />

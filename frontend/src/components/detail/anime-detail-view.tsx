@@ -207,7 +207,7 @@ function EpisodeSection({
                 size="sm"
                 onClick={() => setSelectedChunk(idx)}
                 className={cn(
-                  "shrink-0 rounded-xl text-xs font-semibold min-h-[38px] px-3.5 transition-colors",
+                  "shrink-0 rounded-xl text-xs font-semibold min-h-11 px-3.5 transition-colors",
                   active
                     ? "bg-accent text-accent-foreground hover:bg-accent/90"
                     : "border-border-subtle bg-surface-secondary text-text-secondary hover:text-text-primary hover:bg-surface-hover",

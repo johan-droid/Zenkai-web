@@ -37,24 +37,23 @@ export interface RecommendationOptions {
   excludeIds?: Set<string>;
 }
 
+/**
+ * @deprecated UNVERIFIED HOOK — DO NOT USE IN PRODUCTION PATHS.
+ * The backend does not expose `/api/v1/anime/recommended`.
+ * Production recommendations are served via canonical relation mappings on `/api/v1/anime/:id/relations`
+ * or curated discovery shelves (/api/v1/anime/trending).
+ */
 export function useRecommendations(options: RecommendationOptions = {}) {
   const { limit = 10, source = "watchlist", excludeIds = new Set() } = options;
 
-  // Try API first, fall back to trending data
+  // Disabled by default: backend has no /api/v1/anime/recommended endpoint
   const { data: apiData, isLoading, isError } = useQuery<AnimeSummary[]>({
     queryKey: ["anime-recommendations-api", source],
     queryFn: async () => {
-      try {
-        const res = await fetch(`/api/v1/anime/recommended?source=${source}`);
-        if (!res.ok) throw new Error("API error");
-        return (await res.json()) as AnimeSummary[];
-      } catch {
-        // Fall back to trending if API fails
-        return [];
-      }
+      return [];
     },
     staleTime: 5 * 60_000,
-    enabled: false, // Disabled by default, manually enable when needed
+    enabled: false, // Disabled: endpoint does not exist
   });
 
   // Use trending anime as source for recommendations
