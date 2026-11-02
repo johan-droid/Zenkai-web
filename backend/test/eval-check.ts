@@ -1,3 +1,5 @@
+import process from "node:process";
+
 async function main() {
   const res = await fetch("https://zenkai-web-gold.vercel.app/api/v1/manga/aa6c76f7-5f5f-46b6-a800-911145f81b9b/chapters?language=en");
   console.log("Status:", res.status);
