@@ -20,6 +20,7 @@ import {
   Maximize,
   Maximize2,
   Minimize,
+  RotateCcw,
   Square,
   Smartphone,
   ArrowRight,
@@ -28,6 +29,7 @@ import {
 import {
   fetchMangaChapters,
   fetchMangaChapterPages,
+  proxyMediaUrl,
   type MangaChapter,
 } from "@/lib/api/zenkai";
 import { useThrottledProgressSaver, useUnitProgress } from "@/hooks/use-progress";
@@ -255,16 +257,41 @@ export function MangaReader({
     );
   }
 
-  if (!chapter) {
+  if (!chapter || !total) {
+    const externalUrl = chapter?.externalUrl ?? null;
     return (
       <ReaderShell title={title} chapterNumber={chapterNumber} mangaRoute={mangaRoute}>
         <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
           <p className="text-sm text-zinc-400">
             This chapter has no readable pages hosted directly.
           </p>
-          <Button variant="outline" className="glass rounded-xl" asChild>
-            <Link href={mangaRoute}>Back to title</Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="glass rounded-xl gap-2"
+              onClick={() => {
+                void feed.refetch();
+                void pages.refetch();
+              }}
+              disabled={pages.isFetching || feed.isFetching}
+            >
+              <RotateCcw className={cn("size-4", (pages.isFetching || feed.isFetching) && "animate-spin")} />
+              Retry chapter
+            </Button>
+            {externalUrl ? (
+              <Button
+                className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30"
+                asChild
+              >
+                <a href={externalUrl} target="_blank" rel="noopener noreferrer">
+                  Read on {chapter?.scanlationGroup ?? "Official Provider"} ↗
+                </a>
+              </Button>
+            ) : null}
+            <Button variant="outline" className="glass rounded-xl" asChild>
+              <Link href={mangaRoute}>Back to title</Link>
+            </Button>
+          </div>
         </div>
       </ReaderShell>
     );
@@ -469,6 +496,13 @@ function ReaderImage({
   style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [hasRetriedWithProxy, setHasRetriedWithProxy] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(src);
+    setHasRetriedWithProxy(false);
+  }, [src]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -491,11 +525,18 @@ function ReaderImage({
       style={style}
     >
       <img
-        src={src}
+        src={currentSrc}
         alt={`Page ${index + 1}`}
         className="max-w-full h-auto rounded-lg shadow-xl"
         loading="lazy"
         decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => {
+          if (!hasRetriedWithProxy && currentSrc.startsWith("http") && !currentSrc.includes("/api/v1/proxy")) {
+            setHasRetriedWithProxy(true);
+            setCurrentSrc(proxyMediaUrl(currentSrc, "https://weebcentral.com/"));
+          }
+        }}
       />
     </div>
   );
@@ -693,11 +734,18 @@ function resolveChapter(
 ): MangaChapter | null {
   if (!items?.length) return null;
 
-  // Exact chapter match: prefer readable entries (pages > 0 and no externalUrl) over external placeholders
+  // Exact chapter match: prefer internally readable entries (no externalUrl) over external redirects
   const exactMatches = items.filter((item) => Number(item.chapterNumber) === chapterNumber);
   if (exactMatches.length > 0) {
-    const readable = exactMatches.find((item) => (item.pages ?? 0) > 0 && !item.externalUrl);
+    const readable = exactMatches.find((item) => !item.externalUrl) ?? exactMatches.find((item) => (item.pages ?? 0) > 0);
     return readable ?? exactMatches[0];
+  }
+
+  // Decimal sub-chapter match (e.g. requested 1 and chapters are 1.1, 1.2...)
+  const floorMatches = items.filter((item) => Math.floor(Number(item.chapterNumber)) === chapterNumber);
+  if (floorMatches.length > 0) {
+    const readable = floorMatches.find((item) => !item.externalUrl) ?? floorMatches.find((item) => (item.pages ?? 0) > 0);
+    return readable ?? floorMatches[0];
   }
 
   const numeric = items
@@ -709,11 +757,10 @@ function resolveChapter(
   if (belowMatches.length > 0) {
     const targetValue = belowMatches[0].value;
     const sameValueGroup = belowMatches.filter((entry) => entry.value === targetValue);
-    const readable = sameValueGroup.find(
-      (entry) => (entry.item.pages ?? 0) > 0 && !entry.item.externalUrl,
-    );
+    const readable = sameValueGroup.find((entry) => !entry.item.externalUrl) ?? sameValueGroup.find((entry) => (entry.item.pages ?? 0) > 0);
     return readable?.item ?? sameValueGroup[0].item;
   }
 
-  return numeric[0]?.item ?? items[0] ?? null;
+  const readableAny = numeric.find((entry) => !entry.item.externalUrl);
+  return readableAny?.item ?? numeric[0]?.item ?? items[0] ?? null;
 }

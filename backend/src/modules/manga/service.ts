@@ -301,7 +301,8 @@ export class MangaService {
 
     try {
       const existing = await this.repo.listChapters(localId, language);
-      if (existing.length > 0) return existing;
+      const hasReadable = existing.some((ch) => !ch.externalUrl);
+      if (existing.length > 0 && hasReadable) return existing;
     } catch {
       // DB offline
     }
@@ -320,9 +321,31 @@ export class MangaService {
         incoming = [];
       }
 
-      if (incoming.length === 0) {
+      // If MangaDex returned 0 chapters or only external release placeholders with 0 pages,
+      // fallback to Zenkai multi-provider (WeebCentral, etc.)
+      const hasReadableChapters = incoming.some((ch) => !ch.externalUrl);
+      if (incoming.length === 0 || !hasReadableChapters) {
         try {
-          incoming = await this.zenkaiProvider.getChapters(targetProviderId, { language });
+          const detail = await this.getByProviderId(targetProviderId).catch(() => null);
+          const allTitles = [
+            detail?.canonicalTitle,
+            detail?.titles?.primary,
+            ...(detail?.titles?.alternates ?? []),
+            ...(Array.isArray(detail?.altTitles) ? detail.altTitles : []),
+            ...(Array.isArray(detail?.synonyms) ? detail.synonyms : []),
+          ].filter(Boolean) as string[];
+
+          const cleanCandidates = this.#cleanTitleCandidates(allTitles);
+          for (const cand of cleanCandidates) {
+            const searchRes = await this.zenkaiProvider.search(cand, 3).catch(() => ({ items: [] }));
+            if (searchRes.items.length > 0) {
+              const zenkaiChs = await this.zenkaiProvider.getChapters(searchRes.items[0].providerId, { language }).catch(() => []);
+              if (zenkaiChs.length > 0) {
+                incoming = zenkaiChs;
+                break;
+              }
+            }
+          }
         } catch {
           // Upstream fallback exhausted
         }
@@ -398,7 +421,7 @@ export class MangaService {
 
     const localChapterId = String(chapter.id);
     const cached = await this.repo.getChapterPages(localChapterId).catch(() => null);
-    if (cached) {
+    if (cached && cached.pages && cached.pages.length > 0) {
       return shape(cached.baseUrl, cached.hash, cached.pages, chapter.pages);
     }
 
@@ -409,7 +432,7 @@ export class MangaService {
       );
     }
 
-    let upstream;
+    let upstream: ChapterPages | undefined;
     const isZenkaiId = String(upstreamId).length === 26 || String(upstreamId).startsWith("01");
     if (isZenkaiId) {
       try {
@@ -421,11 +444,65 @@ export class MangaService {
       try {
         upstream = await this.provider.getChapterPages(String(upstreamId));
       } catch {
+        // MangaDex threw or chapter has no hosted pages (e.g. licensed external release)
+      }
+    }
+
+    if (!upstream || !upstream.pages || upstream.pages.length === 0) {
+      // MangaDex had no hosted pages (e.g. licensed external release on K MANGA / Manga UP!).
+      // Seamlessly fall back to Zenkai multi-provider (WeebCentral, etc.) by matching title and chapter number.
+      let chapterNumber = chapter?.chapterNumber;
+      const mangaTitles: string[] = [];
+
+      if (chapter?.mangaId) {
+        const localManga = await this.repo.getById(chapter.mangaId).catch(() => null);
+        if (localManga) {
+          if (localManga.canonicalTitle) mangaTitles.push(localManga.canonicalTitle);
+          if (localManga.titles?.primary) mangaTitles.push(localManga.titles.primary);
+          if (localManga.titles?.english) mangaTitles.push(localManga.titles.english);
+          if (localManga.titles?.romanized) mangaTitles.push(localManga.titles.romanized);
+          if (Array.isArray(localManga.titles?.alternates)) {
+            mangaTitles.push(...localManga.titles.alternates);
+          }
+        }
+      }
+
+      // If chapterNumber or manga titles are still unknown, query MangaDex chapter metadata
+      if ((!chapterNumber || mangaTitles.length === 0) && isMangaDexId(String(upstreamId))) {
         try {
-          upstream = await this.zenkaiProvider.getChapterPages(String(upstreamId));
+          const mdChapter = await fetchJson<{
+            data?: {
+              attributes?: { chapter?: string };
+              relationships?: Array<{ id?: string; type?: string }>;
+            };
+          }>(`https://api.mangadex.org/chapter/${encodeURIComponent(String(upstreamId))}`, { timeoutMs: 8000 });
+
+          if (!chapterNumber && mdChapter?.data?.attributes?.chapter) {
+            chapterNumber = mdChapter.data.attributes.chapter;
+          }
+
+          const mdMangaId = mdChapter?.data?.relationships?.find((r) => r.type === "manga")?.id;
+          if (mdMangaId && mangaTitles.length === 0) {
+            const mdManga = await this.getByProviderId(mdMangaId).catch(() => null);
+            if (mdManga) {
+              if (mdManga.canonicalTitle) mangaTitles.push(mdManga.canonicalTitle);
+              if (mdManga.titles?.primary) mangaTitles.push(mdManga.titles.primary);
+              if (mdManga.titles?.english) mangaTitles.push(mdManga.titles.english);
+              if (mdManga.titles?.romanized) mangaTitles.push(mdManga.titles.romanized);
+              if (Array.isArray(mdManga.titles?.alternates)) {
+                mangaTitles.push(...mdManga.titles.alternates);
+              }
+            }
+          }
         } catch {
-          // Both providers failed or chapter is an external release with no hosted pages
-          return { pageCount: 0, pages: [] };
+          // Upstream metadata lookup failed
+        }
+      }
+
+      if (chapterNumber && mangaTitles.length > 0) {
+        const fallback = await this.#resolveZenkaiChapterPages(mangaTitles, chapterNumber).catch(() => null);
+        if (fallback && fallback.pages && fallback.pages.length > 0) {
+          upstream = fallback;
         }
       }
     }
@@ -437,6 +514,106 @@ export class MangaService {
     await this.repo.replaceChapterPages(localChapterId, upstream).catch(() => undefined);
 
     return shape(upstream.baseUrl, upstream.hash, upstream.pages, chapter.pages);
+  }
+
+  /** Clean and deduplicate title search candidates for resilient provider queries. */
+  #cleanTitleCandidates(titles: string[]): string[] {
+    const result: string[] = [];
+    for (const t of titles) {
+      if (!t || typeof t !== "string") continue;
+      const trimmed = t.trim();
+      if (trimmed.length < 2) continue;
+      result.push(trimmed);
+
+      // Strip punctuation (e.g. "Dress-Up" -> "Dress Up", "Tensei: Slime" -> "Tensei Slime")
+      const noPunct = trimmed.replace(/[-_:]/g, " ").replace(/\s+/g, " ").trim();
+      if (noPunct !== trimmed && noPunct.length > 2) {
+        result.push(noPunct);
+      }
+
+      // Strip common leading articles ("The", "A", "An", "My")
+      const withoutArticle = noPunct.replace(/^(the|a|an|my)\s+/i, "").trim();
+      if (withoutArticle !== noPunct && withoutArticle.length > 2) {
+        result.push(withoutArticle);
+      }
+
+      // First 3-4 words for long titles with Japanese particles (e.g. "Sono Bisque Doll wa Koi o Suru" -> "Sono Bisque Doll")
+      const words = noPunct.split(" ");
+      if (words.length > 3) {
+        result.push(words.slice(0, 3).join(" "));
+      }
+    }
+    return Array.from(new Set(result));
+  }
+
+  /** Match chapter by exact number, float equivalence, or integer part for decimal editions. */
+  #matchChapter(chapters: ProviderChapter[], targetNum: string): ProviderChapter | null {
+    const targetFloat = parseFloat(targetNum);
+    const targetFloor = Math.floor(targetFloat);
+
+    // 1. Exact string match
+    let match = chapters.find((c) => c.chapterNumber === targetNum);
+    if (match) return match;
+
+    // 2. Float exact match
+    match = chapters.find((c) => parseFloat(c.chapterNumber) === targetFloat);
+    if (match) return match;
+
+    // 3. Normalized leading zeros (e.g. "01" vs "1")
+    match = chapters.find(
+      (c) => c.chapterNumber.replace(/^0+/, "") === targetNum.replace(/^0+/, ""),
+    );
+    if (match) return match;
+
+    // 4. Floor match for decimal split chapters (e.g. "1.1" -> "1")
+    if (Number.isFinite(targetFloat)) {
+      match = chapters.find((c) => parseFloat(c.chapterNumber) === targetFloor);
+      if (match) return match;
+    }
+
+    return null;
+  }
+
+  /**
+   * Fallback: Resolve chapter pages from Zenkai multi-provider (WeebCentral, etc.)
+   * by searching canonical/alternate titles and matching chapter number.
+   */
+  async #resolveZenkaiChapterPages(
+    titles: string[],
+    chapterNumber: string | number,
+  ): Promise<ChapterPages | null> {
+    const cleanCandidates = this.#cleanTitleCandidates(titles);
+    if (cleanCandidates.length === 0) return null;
+
+    const targetNum = String(chapterNumber).trim();
+
+    for (const title of cleanCandidates) {
+      try {
+        const searchRes = await this.zenkaiProvider.search(title, 3);
+        if (!searchRes?.items?.length) continue;
+
+        for (const item of searchRes.items) {
+          try {
+            const chapters = await this.zenkaiProvider.getChapters(item.providerId);
+            if (!chapters?.length) continue;
+
+            const match = this.#matchChapter(chapters, targetNum);
+            if (match) {
+              const pages = await this.zenkaiProvider.getChapterPages(match.externalId);
+              if (pages?.pages?.length > 0) {
+                return pages;
+              }
+            }
+          } catch {
+            // Check next search result
+          }
+        }
+      } catch {
+        // Check next candidate title
+      }
+    }
+
+    return null;
   }
 
   /** Distinct genres across the catalogue. */
