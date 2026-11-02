@@ -207,10 +207,10 @@ function EpisodeSection({
                 size="sm"
                 onClick={() => setSelectedChunk(idx)}
                 className={cn(
-                  "shrink-0 rounded-xl text-xs font-semibold",
+                  "shrink-0 rounded-xl text-xs font-semibold min-h-[38px] px-3.5 transition-colors",
                   active
-                    ? "bg-[#c8102e] text-white hover:bg-[#a00d25]"
-                    : "glass text-muted-foreground hover:text-white",
+                    ? "bg-accent text-accent-foreground hover:bg-accent/90"
+                    : "border-border-subtle bg-surface-secondary text-text-secondary hover:text-text-primary hover:bg-surface-hover",
                 )}
               >
                 {start}–{end}
@@ -232,9 +232,9 @@ function EpisodeSection({
                 key={episode.id}
                 variant="outline"
                 className={cn(
-                  "relative justify-start rounded-xl transition-all",
-                  isCurrent && "border-[#c8102e] bg-[#c8102e]/20 text-white ring-1 ring-[#c8102e]/60",
-                  watched && !isCurrent && "border-[#c8102e]/30 bg-[#c8102e]/10 text-white/90",
+                  "relative justify-start rounded-xl min-h-[44px] border-border-subtle bg-surface-secondary/80 hover:bg-surface-hover hover:border-border-subtle transition-all",
+                  isCurrent && "border-accent bg-accent/20 text-text-primary ring-1 ring-accent/60",
+                  watched && !isCurrent && "border-accent/40 bg-accent/10 text-text-primary/90",
                   unreleased && "opacity-60",
                 )}
                 asChild
@@ -244,7 +244,7 @@ function EpisodeSection({
                   title={unreleased ? "Not yet aired" : undefined}
                 >
                   <span className="flex items-center gap-1.5 truncate">
-                    {watched && <Check className="size-3 text-[#e52545] shrink-0" />}
+                    {watched && <Check className="size-3 text-accent shrink-0" />}
                     {inProgress && !watched && <Play className="size-3 text-amber-400 shrink-0" />}
                     <span className="truncate">EP {episode.episodeNumber}</span>
                   </span>
@@ -254,7 +254,7 @@ function EpisodeSection({
           })
         ) : (
           Array.from({ length: 6 }, (_, index) => (
-            <Skeleton key={index} className="h-9 w-full rounded-xl" />
+            <Skeleton key={index} className="h-11 w-full rounded-xl" />
           ))
         )}
       </div>

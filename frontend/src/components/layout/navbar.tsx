@@ -105,7 +105,7 @@ export function Navbar() {
               variant="ghost"
               size="icon"
               aria-label="Search anime and manga"
-              className="sm:hidden size-9 rounded-xl text-zinc-300 hover:text-white hover:bg-white/[0.08] active:scale-95"
+              className="sm:hidden size-11 rounded-xl text-zinc-300 hover:text-white hover:bg-white/[0.08] active:scale-95 flex items-center justify-center"
             >
               <Search className="size-4" />
             </Button>
@@ -129,7 +129,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
           variant="ghost"
           size="icon"
           aria-label="Open menu"
-          className="lg:hidden rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08]"
+          className="lg:hidden size-11 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center"
         >
           <Menu className="size-4" />
         </Button>
@@ -177,7 +177,7 @@ function MobileMenu({ pathname }: { pathname: string }) {
                       href={item.href}
                       onClick={() => setOpen(false)}
                       className={cn(
-                        "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                        "relative flex items-center gap-3 rounded-xl min-h-[44px] px-3.5 py-3 text-sm font-medium transition-all duration-200",
                         active
                           ? "text-white bg-[#C51F3A]/20 border border-[#C51F3A]/30"
                           : "text-zinc-400 hover:text-white hover:bg-white/[0.06]",

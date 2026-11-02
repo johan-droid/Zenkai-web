@@ -101,7 +101,7 @@ function LibraryButtonContent({
         <Button
           size="lg"
           variant="outline"
-          className="glass rounded-xl gap-2"
+          className="min-h-[44px] rounded-xl gap-2 border-border-subtle bg-surface-secondary hover:bg-surface-hover text-text-primary"
         >
           {currentOption ? (
             <>
@@ -207,8 +207,8 @@ export function DetailLayout({
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="glass-panel relative overflow-hidden rounded-3xl">
-        <div className="relative h-56 w-full sm:h-72">
+      <section className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-border-subtle bg-surface">
+        <div className="relative h-48 w-full sm:h-72">
           {bannerUrl && !bannerUrl.startsWith("file:") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -218,12 +218,12 @@ export function DetailLayout({
               className="size-full object-cover"
             />
           ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-transparent" />
         </div>
 
-        <div className="relative -mt-20 flex flex-col gap-5 p-5 sm:-mt-24 sm:flex-row sm:p-6">
-          <div className="w-32 shrink-0 sm:w-44">
-            <div className="glass-panel aspect-[2/3] overflow-hidden rounded-2xl">
+        <div className="relative -mt-16 sm:-mt-24 flex flex-col gap-5 p-5 sm:flex-row sm:p-6">
+          <div className="w-28 sm:w-44 shrink-0 mx-auto sm:mx-0">
+            <div className="aspect-[2/3] overflow-hidden rounded-xl border border-border-subtle bg-surface-secondary shadow-2xl">
               {coverUrl && !coverUrl.startsWith("file:") ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={coverUrl} alt={title} referrerPolicy="no-referrer" className="size-full object-cover" />
@@ -273,7 +273,7 @@ export function DetailLayout({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button size="lg" className="rounded-xl bg-[#c8102e] font-bold text-white hover:bg-[#a00d25] shadow-lg shadow-[#c8102e]/25" asChild>
+              <Button size="lg" className="min-h-[44px] rounded-xl bg-accent font-bold text-accent-foreground hover:bg-accent/90 shadow-lg shadow-accent/25" asChild>
                 <Link
                   href={
                     kind === "anime"
@@ -288,7 +288,7 @@ export function DetailLayout({
                 </Link>
               </Button>
               {continueUnit && continueUnit > 1 ? (
-                <Button size="lg" variant="outline" className="glass rounded-xl" asChild>
+                <Button size="lg" variant="outline" className="min-h-[44px] rounded-xl border-border-subtle bg-surface-secondary hover:bg-surface-hover text-text-primary" asChild>
                   <Link href={kind === "anime" ? watchHref(media.id, 1) : readHref(media.id, 1)}>
                     {kind === "anime" ? "Episode 1" : "Chapter 1"}
                   </Link>

@@ -15,25 +15,37 @@
 :root {
   color-scheme: dark;
 
-  /* surfaces — warm near-black, one tint for depth */
-  --surface-0: oklch(0.145 0.008 20);
-  --surface-1: oklch(0.185 0.010 20);
-  --surface-2: oklch(0.235 0.012 20);
+  /* ── Core Zenkai Visual Identity Tokens (Phase 2) ─────────────────── */
+  --background: #08090C;
+  --surface: #111319;
+  --surface-secondary: #191C24;
+  --surface-hover: #222632;
+  --text-primary: #F5F5F7;
+  --text-secondary: #A5A9B5;
+  --text-muted: #777D8B;
+  --border-subtle: #292D37;
+  --accent: #C51F3A;
+  --accent-foreground: #FFFFFF;
 
-  /* ink — three tones for text hierarchy */
-  --ink-1: oklch(0.965 0.004 20);
-  --ink-2: oklch(0.785 0.010 20);
-  --ink-3: oklch(0.660 0.012 20);
+  /* Surfaces & Ink Aliases */
+  --surface-0: var(--background);
+  --surface-1: var(--surface);
+  --surface-2: var(--surface-secondary);
+  --surface-3: var(--surface-hover);
 
-  /* one signal — the crimson accent, used sparingly for primary actions */
-  --signal: oklch(0.540 0.200 22);
-  --signal-hover: oklch(0.480 0.200 22);
-  --signal-soft: oklch(0.680 0.160 22);
-  --signal-ink: oklch(0.990 0.002 20);
+  --ink-1: var(--text-primary);
+  --ink-2: var(--text-secondary);
+  --ink-3: var(--text-muted);
 
-  /* rules */
-  --line: oklch(0.970 0.004 20 / 0.10);
-  --line-strong: oklch(0.970 0.004 20 / 0.18);
+  /* Zenkai Crimson Signal */
+  --signal: var(--accent);
+  --signal-hover: #A0152B;
+  --signal-soft: #E22D4D;
+  --signal-ink: var(--accent-foreground);
+
+  /* Subtle Borders & Dividers */
+  --line: var(--border-subtle);
+  --line-strong: #3A3F4D;
 
   /* radii, one per nesting level */
   --radius-panel: 1rem;
@@ -53,13 +65,13 @@
   --space-4xl: 9rem;
 
   /* section rhythm, mixed */
-  --section-gap-s: 3rem;
-  --section-gap: 5rem;
-  --section-gap-l: 7rem;
+  --section-gap-s: 2.5rem;
+  --section-gap: 4rem;
+  --section-gap-l: 6rem;
 
   /* type — clamp() for fluid responsive typography */
-  --text-display: clamp(2.25rem, 3.5vw, 3.75rem);
-  --text-section: clamp(1.75rem, 2.4vw, 2.25rem);
+  --text-display: clamp(2rem, 3.5vw, 3.5rem);
+  --text-section: clamp(1.5rem, 2.4vw, 2.25rem);
   --text-title: 1.25rem;
   --text-lead: 1.125rem;
   --text-md: 1rem;
@@ -72,41 +84,46 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* shadcn bridge */
-  --background: var(--surface-0);
-  --foreground: var(--ink-1);
-  --card: var(--surface-1);
-  --card-foreground: var(--ink-1);
-  --popover: var(--surface-1);
-  --popover-foreground: var(--ink-1);
-  --primary: var(--signal);
-  --primary-foreground: var(--signal-ink);
-  --secondary: var(--surface-2);
-  --secondary-foreground: var(--ink-1);
-  --muted: var(--surface-2);
-  --muted-foreground: var(--ink-2);
-  --accent: var(--signal);
-  --accent-foreground: var(--signal-ink);
-  --destructive: var(--danger);
-  --border: var(--line);
+  --foreground: var(--text-primary);
+  --card: var(--surface);
+  --card-foreground: var(--text-primary);
+  --popover: var(--surface);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: var(--surface-secondary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--surface-secondary);
+  --muted-foreground: var(--text-muted);
+  --destructive: #E53E3E;
+  --border: var(--border-subtle);
   --input: var(--line-strong);
-  --ring: var(--signal);
+  --ring: var(--accent);
   --radius: var(--radius-card);
-  --sidebar: var(--surface-0);
-  --sidebar-foreground: var(--ink-1);
-  --sidebar-primary: var(--signal);
-  --sidebar-primary-foreground: var(--signal-ink);
-  --sidebar-accent: var(--surface-2);
-  --sidebar-accent-foreground: var(--ink-1);
-  --sidebar-border: var(--line);
-  --sidebar-ring: var(--signal);
-  --chart-1: var(--signal);
-  --chart-2: var(--ink-2);
-  --chart-3: var(--ink-2);
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accent-foreground);
+  --sidebar-accent: var(--surface-secondary);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--accent);
+  --chart-1: var(--accent);
+  --chart-2: var(--text-secondary);
+  --chart-3: var(--text-muted);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-hover: var(--surface-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
