@@ -13,11 +13,12 @@
 
 import { cache } from "../../cache/index.js";
 import { config } from "../../config/index.js";
+import { fetchJson } from "../../http/client.js";
 import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import { MangaDexProvider } from "../../providers/manga/mangadex.js";
 import { ZenkaiMangaProvider } from "../../providers/manga/zenkai.js";
-import type { MangaProvider, MangaSummary, Page, ProviderChapter } from "../../providers/manga/types.js";
+import type { ChapterPages, MangaProvider, MangaSummary, Page, ProviderChapter } from "../../providers/manga/types.js";
 import { MangaRepository, type MangaListOptions } from "./repository.js";
 
 export interface ChapterListOptions {

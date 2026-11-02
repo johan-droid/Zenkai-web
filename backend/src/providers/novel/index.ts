@@ -567,4 +567,17 @@ export class NovelProvider {
       startYear: media.startDate?.year ?? null,
     };
   }
+
+  async healthCheck(): Promise<boolean> {
+    try {
+      // AniList is the metadata backbone; if it responds, novel discovery works.
+      await this.#queryAnilist<{ Media: { id: number } }>(
+        "query { Media(type: NOVEL, id: 1) { id } }",
+        {},
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

@@ -58,6 +58,7 @@ import { registerLibraryRoutes } from "./modules/library/routes.js";
 import { ProgressRepository } from "./modules/progress/repository.js";
 import { ProgressService } from "./modules/progress/service.js";
 import { registerProgressRoutes } from "./modules/progress/routes.js";
+import { registerProviderRoutes } from "./modules/providers/routes.js";
 
 export interface AppDependencies {
   db: Db;
@@ -331,6 +332,7 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerAnimeRoutes(app, animeService, discoveryService, episodeService);
   registerMangaRoutes(app, mangaService);
   registerNovelRoutes(app, novelService);
+  registerProviderRoutes(app);
   registerScheduleRoutes(app, scheduleService);
   const serverService = new ServerAvailabilityService(resolver, providers);
   registerPlaybackRoutes(app, resolver, metadata, animeRepo, serverService);

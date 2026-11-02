@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useHotkeys } from "react-hotkeys-hook";
 import Link from "next/link";
@@ -9,8 +15,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns2,
+  Expand,
   Loader2,
+  Maximize,
   Maximize2,
+  Minimize,
   Square,
   Smartphone,
   ArrowRight,
@@ -38,18 +47,9 @@ export interface MangaReaderProps {
   coverUrl?: string | null;
 }
 
-/**
- * The manga reader.
- *
- * Pages come from the MangaDex@Home image server. Those base URLs are
- * short-lived (about 15 minutes), so pages are resolved when the reader mounts
- * rather than cached ahead of time.
- *
- * Three modes:
- *  - `vertical` long-strip scroll, the default most readers expect
- *  - `paged`    one page at a time
- *  - `double`   two pages side by side, for wide spreads
- */
+/** Zoom level presets. */
+export type ZoomLevel = 50 | 75 | 100 | 125 | 150 | 200;
+
 export function MangaReader({
   mangaId,
   anilistId,
@@ -60,6 +60,9 @@ export function MangaReader({
   const [mode, setMode] = useState<ReaderMode>("vertical");
   const [page, setPage] = useState(0);
   const [direction, setDirection] = useState<"forward" | "backward">("forward");
+  const [zoom, setZoom] = useState<ZoomLevel>(100);
+  const [fitMode, setFitMode] = useState<"none" | "width" | "height">("none");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const feed = useQuery({
     queryKey: ["manga-chapters", mangaId],
@@ -145,20 +148,48 @@ export function MangaReader({
     }
   }, [total, savedPage, mode]);
 
-  const goTo = useCallback(
-    (next: number) => {
-      if (!total) return;
-      const clamped = Math.max(0, Math.min(total - 1, next));
-      setDirection(clamped >= page ? "forward" : "backward");
-      setPage(clamped);
-      reportPage(clamped);
-    },
-    [total, page, reportPage],
-  );
+  // Track fullscreen state changes
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
   const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen?.();
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void document.documentElement.requestFullscreen?.();
+    }
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    const levels: ZoomLevel[] = [50, 75, 100, 125, 150, 200];
+    const idx = levels.indexOf(zoom);
+    if (idx < levels.length - 1) setZoom(levels[idx + 1]);
+    setFitMode("none");
+  }, [zoom]);
+
+  const zoomOut = useCallback(() => {
+    const levels: ZoomLevel[] = [50, 75, 100, 125, 150, 200];
+    const idx = levels.indexOf(zoom);
+    if (idx > 0) setZoom(levels[idx - 1]);
+    setFitMode("none");
+  }, [zoom]);
+
+  const resetZoom = useCallback(() => {
+    setZoom(100);
+    setFitMode("none");
+  }, []);
+
+  const fitWidth = useCallback(() => {
+    setFitMode("width");
+    setZoom(100);
+  }, []);
+
+  const fitHeight = useCallback(() => {
+    setFitMode("height");
+    setZoom(100);
   }, []);
 
   // Paged modes: arrows navigate (reversing for RTL). Fullscreen works in every mode.
@@ -169,6 +200,22 @@ export function MangaReader({
     enabled: mode !== "vertical",
   });
   useHotkeys("f", toggleFullscreen);
+  useHotkeys("+", zoomIn);
+  useHotkeys("-", zoomOut);
+  useHotkeys("0", resetZoom);
+  useHotkeys("w", fitWidth);
+  useHotkeys("h", fitHeight);
+
+  const goTo = useCallback(
+    (next: number) => {
+      if (!total) return;
+      const clamped = Math.max(0, Math.min(total - 1, next));
+      setDirection(clamped >= page ? "forward" : "backward");
+      setPage(clamped);
+      reportPage(clamped);
+    },
+    [total, page, reportPage],
+  );
 
   if (feed.isLoading || pages.isLoading) {
     return (
@@ -183,19 +230,20 @@ export function MangaReader({
 
   const error = feed.error ?? pages.error;
   if (error) {
+    const externalUrl = chapter?.externalUrl ?? null;
     return (
       <ReaderShell title={title} chapterNumber={chapterNumber} mangaRoute={mangaRoute}>
         <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
           <p className="text-sm text-red-400">
             Could not load this chapter: {(error as Error).message}
           </p>
-          {chapter?.externalUrl ? (
+          {externalUrl ? (
             <Button
               className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30"
               asChild
             >
-              <a href={chapter.externalUrl} target="_blank" rel="noopener noreferrer">
-                Read on {chapter.scanlationGroup || "Official Provider"} ↗
+              <a href={externalUrl} target="_blank" rel="noopener noreferrer">
+                Read on {chapter?.scanlationGroup ?? "Official Provider"} ↗
               </a>
             </Button>
           ) : null}
@@ -212,7 +260,7 @@ export function MangaReader({
       <ReaderShell title={title} chapterNumber={chapterNumber} mangaRoute={mangaRoute}>
         <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
           <p className="text-sm text-zinc-400">
-            Chapter {chapterNumber} is not available for this title.
+            This chapter has no readable pages hosted directly.
           </p>
           <Button variant="outline" className="glass rounded-xl" asChild>
             <Link href={mangaRoute}>Back to title</Link>
@@ -222,30 +270,15 @@ export function MangaReader({
     );
   }
 
-  if (!total) {
-    return (
-      <ReaderShell title={title} chapterNumber={chapterNumber} mangaRoute={mangaRoute}>
-        <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
-          <p className="text-sm text-zinc-400">
-            This chapter has no readable pages hosted directly.
-          </p>
-          {chapter.externalUrl ? (
-            <Button
-              className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30"
-              asChild
-            >
-              <a href={chapter.externalUrl} target="_blank" rel="noopener noreferrer">
-                Read on {chapter.scanlationGroup || "Official Provider"} ↗
-              </a>
-            </Button>
-          ) : null}
-          <Button variant="outline" className="glass rounded-xl" asChild>
-            <Link href={mangaRoute}>Back to title</Link>
-          </Button>
-        </div>
-      </ReaderShell>
-    );
-  }
+  const readerStyle = useMemo(() => {
+    if (fitMode === "width") {
+      return { width: "100%", height: "auto" };
+    }
+    if (fitMode === "height") {
+      return { width: "auto", height: "100vh" };
+    }
+    return { width: `${zoom}%`, height: "auto" };
+  }, [fitMode, zoom]);
 
   return (
     <ReaderShell
@@ -253,13 +286,31 @@ export function MangaReader({
       chapterNumber={chapterNumber}
       mangaRoute={mangaRoute}
       toolbar={
-        <ReaderToolbar mode={mode} onModeChange={setMode} onFullscreen={toggleFullscreen} />
+        <ReaderToolbar
+          mode={mode}
+          onModeChange={setMode}
+          onFullscreen={toggleFullscreen}
+          isFullscreen={isFullscreen}
+          zoom={zoom}
+          fitMode={fitMode}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+          onResetZoom={resetZoom}
+          onFitWidth={fitWidth}
+          onFitHeight={fitHeight}
+        />
       }
     >
       {mode === "vertical" ? (
         <div className="mx-auto flex max-w-4xl flex-col items-center gap-1">
           {pageUrls.map((url, index) => (
-            <ReaderImage key={url} src={url} index={index} onVisible={() => reportPage(index)} />
+            <ReaderImage
+              key={url}
+              src={url}
+              index={index}
+              onVisible={() => reportPage(index)}
+              style={readerStyle}
+            />
           ))}
 
           {/* End of Chapter Card (Matches Zenkai Experience) */}
@@ -304,6 +355,7 @@ export function MangaReader({
           nextChapter={nextChapter}
           prevChapter={prevChapter}
           mangaRoute={mangaRoute}
+          readerStyle={readerStyle}
         />
       )}
     </ReaderShell>
@@ -321,133 +373,130 @@ function ReaderToolbar({
   mode,
   onModeChange,
   onFullscreen,
+  isFullscreen,
+  zoom,
+  fitMode,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
+  onFitWidth,
+  onFitHeight,
 }: {
   mode: ReaderMode;
   onModeChange: (mode: ReaderMode) => void;
   onFullscreen: () => void;
+  isFullscreen: boolean;
+  zoom: ZoomLevel;
+  fitMode: "none" | "width" | "height";
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onResetZoom: () => void;
+  onFitWidth: () => void;
+  onFitHeight: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 ring-1 ring-white/10">
-        {MODE_OPTIONS.map((entry) => (
-          <button
-            key={entry.value}
-            type="button"
-            onClick={() => onModeChange(entry.value)}
-            aria-pressed={mode === entry.value}
-            title={entry.label}
-            className={cn(
-              "grid size-8 place-items-center rounded-lg transition-colors",
-              mode === entry.value
-                ? "bg-red-600/30 text-white ring-1 ring-red-500/40"
-                : "text-muted-foreground hover:text-foreground",
-            )}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-zinc-400">Mode:</span>
+        {MODE_OPTIONS.map((option) => (
+          <Button
+            key={option.value}
+            variant={mode === option.value ? "default" : "outline"}
+            className={cn("glass rounded-xl size-9", mode === option.value && "bg-red-600/20")}
+            onClick={() => onModeChange(option.value)}
+            aria-label={option.label}
+            size="icon"
           >
-            <entry.icon className="size-4" />
-            <span className="sr-only">{entry.label}</span>
-          </button>
+            <option.icon className="size-4" />
+          </Button>
         ))}
       </div>
-      <button
-        type="button"
+
+      <div className="h-6 w-px bg-white/20 mx-2" />
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-zinc-400">Zoom:</span>
+        <Button variant="outline" size="icon" className="glass rounded-lg" onClick={onZoomOut} title="Zoom out (-)">
+          <ChevronLeft className="size-3.5" />
+        </Button>
+        <span className="text-xs font-mono text-zinc-300 w-8 text-center">{zoom}%</span>
+        <Button variant="outline" size="icon" className="glass rounded-lg" onClick={onZoomIn} title="Zoom in (+)">
+          <ChevronRight className="size-3.5" />
+        </Button>
+        <Button variant="outline" size="icon" className="glass rounded-lg" onClick={onResetZoom} title="Reset zoom (0)">
+          <Square className="size-3.5" />
+        </Button>
+        {fitMode === "none" ? (
+          <>
+            <Button variant="outline" size="icon" className="glass rounded-lg" onClick={onFitWidth} title="Fit to width (W)">
+              <Expand className="size-3.5" />
+            </Button>
+            <Button variant="outline" size="icon" className="glass rounded-lg" onClick={onFitHeight} title="Fit to height (H)">
+              <Expand className="size-3.5" rotate={90} />
+            </Button>
+          </>
+        ) : (
+          <Button variant="outline" size="icon" className="glass rounded-lg" onClick={onResetZoom} title="Reset fit">
+            <Minimize className="size-3.5" />
+          </Button>
+        )}
+      </div>
+
+      <div className="h-6 w-px bg-white/20 mx-2" />
+
+      <Button
+        variant="outline"
+        size="icon"
+        className="glass rounded-lg"
         onClick={onFullscreen}
         title="Fullscreen (F)"
-        className="grid size-8 place-items-center rounded-lg bg-white/5 text-muted-foreground ring-1 ring-white/10 transition-colors hover:text-foreground"
       >
-        <Maximize2 className="size-4" />
-        <span className="sr-only">Toggle fullscreen</span>
-      </button>
+        {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+      </Button>
     </div>
   );
 }
 
-/** Which pages are visible for the current page index and mode. */
-function spreadFor(
-  urls: string[],
-  page: number,
-  mode: ReaderMode,
-): { url: string; index: number }[] {
-  const url = urls[page];
-  if (!url) return [];
-  if (mode !== "double") return [{ url, index: page }];
-
-  // Pair pages so a spread never starts on an odd index.
-  const start = page % 2 === 0 ? page : Math.max(0, page - 1);
-  const slice = urls.slice(start, start + 2);
-  if (slice.length === 0) return [{ url, index: page }];
-  return slice.map((item, offset) => ({ url: item, index: start + offset }));
-}
-
-/**
- * A single page image.
- *
- * `loading="lazy"` keeps long chapters from pulling every full-resolution page
- * at once. Only the first page that scrolls into view reports progress, so the
- * saved position does not jitter while scrolling.
- */
 function ReaderImage({
   src,
   index,
   onVisible,
+  style,
 }: {
   src: string;
   index: number;
   onVisible: () => void;
+  style?: React.CSSProperties;
 }) {
-  const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
-  const ref = useRef<HTMLDivElement | null>(null);
-  const reported = useRef(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const node = ref.current;
-    if (!node || reported.current) return;
-
     const observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !reported.current) {
-            reported.current = true;
-            onVisible();
-          }
-        }
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) onVisible();
+        });
       },
-      { rootMargin: "-20% 0px -60% 0px", threshold: 0 },
+      { threshold: 0.1 },
     );
-    observer.observe(node);
+    const el = ref.current;
+    if (el) observer.observe(el);
     return () => observer.disconnect();
   }, [onVisible]);
 
-  const isInvalid = !src || src.startsWith("file:");
-
   return (
-    <div className="relative w-full" ref={ref}>
-      {state === "loading" && !isInvalid ? (
-        <div className="flex aspect-[2/3] w-full items-center justify-center bg-white/5">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : null}
-      {state === "error" || isInvalid ? (
-        <div className="flex aspect-[2/3] w-full items-center justify-center bg-white/5 text-xs text-muted-foreground">
-          Page {index + 1} failed to load
-        </div>
-      ) : null}
-      {!isInvalid ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt={`Page ${index + 1}`}
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          onLoad={() => {
-            setState("loaded");
-          }}
-          onError={() => {
-            setState("error");
-          }}
-          className={cn("w-full select-none", state === "loaded" ? "block" : "hidden")}
-        />
-      ) : null}
+    <div
+      ref={ref}
+      className="flex items-center justify-center mb-4"
+      style={style}
+    >
+      <img
+        src={src}
+        alt={`Page ${index + 1}`}
+        className="max-w-full h-auto rounded-lg shadow-xl"
+        loading="lazy"
+        decoding="async"
+      />
     </div>
   );
 }
@@ -463,107 +512,127 @@ function PagedView({
   nextChapter,
   prevChapter,
   mangaRoute,
+  readerStyle,
 }: {
   pageUrls: string[];
   page: number;
   mode: ReaderMode;
   direction: "forward" | "backward";
-  onGoTo: (page: number) => void;
+  onGoTo: (next: number) => void;
   onReport: (index: number) => void;
-  readRouteBase?: string;
-  nextChapter?: number | null;
-  prevChapter?: number | null;
-  mangaRoute?: string;
+  readRouteBase: string;
+  nextChapter: number | null;
+  prevChapter: number | null;
+  mangaRoute: string;
+  readerStyle: React.CSSProperties;
 }) {
   const total = pageUrls.length;
-  const spread = spreadFor(pageUrls, page, mode);
+
+  const goPrev = useCallback(() => onGoTo(page - 1), [page, onGoTo]);
+  const goNext = useCallback(() => onGoTo(page + 1), [page, onGoTo]);
+
+  const isDouble = mode === "double";
+  const isRTL = mode === "rtl";
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col items-center px-4">
-      <div
-        className={cn(
-          "flex w-full items-center justify-center gap-1",
-          (direction === "backward" || mode === "rtl") && "flex-row-reverse",
-        )}
-      >
-        {spread.map(({ url, index }) => (
-          <ReaderImage key={url} src={url} index={index} onVisible={() => onReport(index)} />
-        ))}
-      </div>
+    <div
+      className="mx-auto flex max-w-6xl items-center justify-center gap-4 p-4"
+      style={{ minHeight: "calc(100vh - 160px)" }}
+    >
+      {isDouble ? (
+        <>
+          {pageUrls.map((url, index) => {
+            const isVisible = isRTL ? index >= total - page - 2 : index >= page * 2 && index < page * 2 + 2;
+            if (!isVisible) return null;
+            return (
+              <ReaderImage
+                key={url}
+                src={url}
+                index={index}
+                onVisible={() => onReport(index)}
+                style={readerStyle}
+              />
+            );
+          })}
+        </>
+      ) : (
+        <ReaderImage
+          key={pageUrls[page]}
+          src={pageUrls[page]}
+          index={page}
+          onVisible={() => onReport(page)}
+          style={readerStyle}
+        />
+      )}
 
-      <div className="mt-6 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => onGoTo(mode === "rtl" ? page + 1 : page - 1)}
-          disabled={mode === "rtl" ? page >= total - 1 : page === 0}
-          className="grid size-10 place-items-center rounded-xl bg-white/5 transition-colors hover:bg-white/10 disabled:opacity-30 ring-1 ring-white/10"
-          aria-label="Previous page"
+      <div className="absolute bottom-8 flex w-full justify-between px-4 sm:px-6 lg:px-8 pointer-events-none">
+        <Button
+          variant="outline"
+          size="icon"
+          className="glass rounded-xl pointer-events-auto"
+          disabled={page === 0 || (isDouble && page === 0)}
+          onClick={goPrev}
         >
           <ChevronLeft className="size-5" />
-        </button>
-        <span className="min-w-32 text-center text-xs tabular-nums text-zinc-300">
-          Page {page + 1} of {total} ({mode.toUpperCase()})
-        </span>
-        <button
-          type="button"
-          onClick={() => onGoTo(mode === "rtl" ? page - 1 : page + 1)}
-          disabled={mode === "rtl" ? page === 0 : page >= total - 1}
-          className="grid size-10 place-items-center rounded-xl bg-white/5 transition-colors hover:bg-white/10 disabled:opacity-30 ring-1 ring-white/10"
-          aria-label="Next page"
+          <span className="ml-1 hidden sm:inline">Previous</span>
+        </Button>
+
+        <div className="flex flex-col items-center gap-1 pointer-events-auto">
+          <span className="text-xs font-medium text-zinc-400">
+            Page {page + 1} of {total}
+          </span>
+        </div>
+
+        <Button
+          variant="outline"
+          size="icon"
+          className="glass rounded-xl pointer-events-auto"
+          disabled={
+            page >= total - 1 ||
+            (isDouble && page >= total - 2)
+          }
+          onClick={goNext}
         >
+          <span className="mr-1 hidden sm:inline">Next</span>
           <ChevronRight className="size-5" />
-        </button>
+        </Button>
       </div>
 
-      <input
-        type="range"
-        min={1}
-        max={total}
-        value={page + 1}
-        onChange={(event) => onGoTo(Number(event.target.value) - 1)}
-        className="mt-3 w-full max-w-md accent-red-500"
-        aria-label="Page"
-      />
-
-      {page >= total - 1 && (
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          {prevChapter !== null && prevChapter !== undefined && (
-            <Button variant="outline" className="glass rounded-xl" asChild>
-              <Link href={`${readRouteBase}/${prevChapter}`}>
-                ← Ch {prevChapter}
-              </Link>
-            </Button>
-          )}
-          {mangaRoute ? (
-            <Button variant="outline" className="glass rounded-xl" asChild>
-              <Link href={mangaRoute}>Overview</Link>
-            </Button>
-          ) : null}
-          {nextChapter !== null && nextChapter !== undefined && (
-            <Button className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30" asChild>
-              <Link href={`${readRouteBase}/${nextChapter}`}>
-                Next Chapter {nextChapter} <ArrowRight className="ml-1 size-4" />
-              </Link>
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-3 pointer-events-none">
+        {prevChapter !== null ? (
+          <Button variant="outline" className="glass rounded-xl pointer-events-auto" asChild>
+            <Link href={`${readRouteBase}/${prevChapter}`}>
+              ← Ch {prevChapter}
+            </Link>
+          </Button>
+        ) : null}
+        <Button variant="outline" className="glass rounded-xl pointer-events-auto" asChild>
+          <Link href={mangaRoute}>Overview</Link>
+        </Button>
+        {nextChapter !== null ? (
+          <Button className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-red-700/30 pointer-events-auto" asChild>
+            <Link href={`${readRouteBase}/${nextChapter}`}>
+              Next Ch {nextChapter} <ArrowRight className="ml-1 size-3" />
+            </Link>
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 function ReaderShell({
+  children,
   title,
   chapterNumber,
   mangaRoute,
   toolbar,
-  children,
 }: {
-  title: string;
-  chapterNumber?: number;
-  mangaRoute?: string;
-  toolbar?: React.ReactNode;
   children: React.ReactNode;
+  title: string;
+  chapterNumber: number;
+  mangaRoute: string;
+  toolbar?: React.ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-[#07070a] text-zinc-100">

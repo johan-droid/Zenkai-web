@@ -141,10 +141,32 @@ const schema = z.object({
   /** How long discovery payloads stay warm in Redis before a refetch. */
   CACHE_TTL_DISCOVERY_S: z.coerce.number().int().min(1).default(1800),
   CACHE_TTL_METADATA_S: z.coerce.number().int().min(1).default(86_400),
+
+  /**
+   * Hosts the manga/gateway is permitted to fetch page images from.
+   * Prevents SSRF and unauthorized content proxying.
+   */
+  MANGA_CONTENT_ALLOWLIST: z
+    .string()
+    .default(
+      "uploads.mangadex.org,mangadex.org,zenkaii.pages.dev,weebcentral.com,comick.art,asuracomic.net",
+    ),
+
+  /**
+   * Hosts the novel gateway is permitted to fetch chapter text from.
+   * Prevents SSRF and unauthorized content proxying.
+   */
+  NOVEL_CONTENT_ALLOWLIST: z
+    .string()
+    .default(
+      "zenkaii.pages.dev,novelfire.com,novelfull.com,webnovel.com,lnori.com",
+    ),
 });
 
 export type Config = z.infer<typeof schema> & {
   playbackProxyAllowlist: string[];
+  mangaContentAllowlist: string[];
+  novelContentAllowlist: string[];
 };
 
 function load(): Config {
@@ -173,6 +195,14 @@ function load(): Config {
     ...value,
     REDIS_URL: redisUrl,
     playbackProxyAllowlist: (value.PLAYBACK_PROXY_ALLOWLIST ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+    mangaContentAllowlist: (value.MANGA_CONTENT_ALLOWLIST ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+    novelContentAllowlist: (value.NOVEL_CONTENT_ALLOWLIST ?? "")
       .split(",")
       .map((host) => host.trim().toLowerCase())
       .filter(Boolean),

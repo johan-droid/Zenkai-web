@@ -2050,3 +2050,56 @@ export function novelSummaryToMedia(novel: NovelSummary): MediaSummary {
   };
 }
 
+
+/**
+ * Provider availability types for manga and novel sources.
+ */
+export type ProviderAvailabilityStatus =
+  | "available"
+  | "temporarily_unavailable"
+  | "restricted"
+  | "unsupported_embedding"
+  | "external_reading_only";
+
+export interface ProviderAvailability {
+  slug: string;
+  name: string;
+  kind: "manga" | "novel";
+  status: ProviderAvailabilityStatus;
+  healthScore: number;
+  lastError: string | null;
+  lastCheckedAt: number;
+  capabilities: string[];
+}
+
+export const providerAvailabilitySchema = z.array(
+  z.object({
+    slug: z.string(),
+    name: z.string(),
+    kind: z.enum(["manga", "novel"]),
+    status: z.string(),
+    healthScore: z.number(),
+    lastError: z.string().nullable(),
+    lastCheckedAt: z.number(),
+    capabilities: z.array(z.string()),
+  }),
+);
+
+export type ProviderAvailabilityList = z.infer<
+  typeof providerAvailabilitySchema
+>;
+
+/** Fetch all provider availability (manga + novel). */
+export function fetchProviderAvailability(): Promise<ProviderAvailabilityList> {
+  return getValidated("/api/v1/providers", providerAvailabilitySchema);
+}
+
+/** Fetch manga provider availability only. */
+export function fetchMangaProviderAvailability(): Promise<ProviderAvailabilityList> {
+  return getValidated("/api/v1/providers/manga", providerAvailabilitySchema);
+}
+
+/** Fetch novel provider availability only. */
+export function fetchNovelProviderAvailability(): Promise<ProviderAvailabilityList> {
+  return getValidated("/api/v1/providers/novel", providerAvailabilitySchema);
+}
