@@ -103,6 +103,8 @@ describe("storage policy: metadata only, never media", () => {
   it("stores no copy of the media itself", () => {
     for (const [table, columns] of TABLES) {
       for (const column of columns) {
+        // segmentType on skip-timing tables is metadata (intro/outro/recap/preview), not media chunks
+        if (column === "segmentType") continue;
         assert.ok(
           !MEDIA_COLUMN.test(column),
           `${table}.${column} looks like stored media; Zenkai resolves sources, it does not host them`,

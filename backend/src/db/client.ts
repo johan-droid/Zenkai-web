@@ -170,4 +170,19 @@ export async function createResources(): Promise<DbHandle> {
   };
 }
 
+let _defaultDb: Db | null = null;
+export function getDefaultDb(): Db {
+  if (!_defaultDb) {
+    _defaultDb = createDb();
+  }
+  return _defaultDb;
+}
+
+/** Default shared database instance for convenience */
+export const db: Db = new Proxy({} as Db, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getDefaultDb(), prop, receiver);
+  },
+});
+
 export { schema };

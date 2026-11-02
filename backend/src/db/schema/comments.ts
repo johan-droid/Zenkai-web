@@ -6,10 +6,10 @@ import {
   integer,
   boolean,
   timestamp,
-  pgForeignKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { users } from "./users";
-import { anime } from "./anime";
+import { users } from "./users.js";
+import { anime } from "./anime.js";
 
 /** User reviews for anime/manga */
 export const reviews = pgTable("reviews", {
@@ -35,8 +35,8 @@ export const comments = pgTable("comments", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   animeId: uuid("anime_id").references(() => anime.id, { onDelete: "cascade" }),
-  reviewId: uuid("review_id").references(() => reviews.id, { onDelete: "set" }),
-  parentId: uuid("parent_id").references(() => comments.id, { onDelete: "cascade" }),
+  reviewId: uuid("review_id").references(() => reviews.id, { onDelete: "set null" }),
+  parentId: uuid("parent_id").references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   isSpoiler: boolean("is_spoiler").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -51,6 +51,6 @@ export const commentLikes = pgTable("comment_likes", {
     .references(() => users.id, { onDelete: "cascade" }),
   commentId: uuid("comment_id")
     .notNull()
-    .references(() => comments.id, { onDelete: "cascade" }),
+    .references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

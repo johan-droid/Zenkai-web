@@ -321,12 +321,11 @@ export class PlaybackMetadataService {
    * best unverified consensus is used. When nothing exists, nothing is
    * returned -- a missing community marker must not invent a skip.
    */
-  async #communityTimings(
-    db: typeof this.db,
+  async getCommunityTimings(
     animeId: string,
     episodeId: string,
   ): Promise<{ recap?: { start: number; end: number }; preview?: { start: number; end: number }; all: CommunityTimingEntry[] }> {
-    const rows = await db
+    const rows = await this.db
       .select({
         segmentType: skipTimingCommunity.segmentType,
         startSeconds: skipTimingCommunity.startSeconds,
@@ -351,8 +350,17 @@ export class PlaybackMetadataService {
     const recapEntries: CommunityTimingEntry[] = [];
     const previewEntries: CommunityTimingEntry[] = [];
     for (const row of rows) {
+      if (
+        row.segmentType !== "intro" &&
+        row.segmentType !== "outro" &&
+        row.segmentType !== "recap" &&
+        row.segmentType !== "preview"
+      ) {
+        continue;
+      }
+      const segmentType = row.segmentType as "intro" | "outro" | "recap" | "preview";
       const entry: CommunityTimingEntry = {
-        segmentType: row.segmentType,
+        segmentType,
         startSeconds: row.startSeconds,
         endSeconds: row.endSeconds,
         versionNote: row.versionNote ?? null,
@@ -362,9 +370,8 @@ export class PlaybackMetadataService {
         contributors: 0,
         reports: 0,
       };
-      if (row.segmentType === "recap") recapEntries.push(entry);
-      else if (row.segmentType === "preview") previewEntries.push(entry);
-      else continue;
+      if (segmentType === "recap") recapEntries.push(entry);
+      else if (segmentType === "preview") previewEntries.push(entry);
     }
 
     const bestRecap = this.#bestOf(recapEntries);
@@ -373,17 +380,21 @@ export class PlaybackMetadataService {
     return {
       recap: bestRecap ? { start: bestRecap.startSeconds, end: bestRecap.endSeconds } : undefined,
       preview: bestPreview ? { start: bestPreview.startSeconds, end: bestPreview.endSeconds } : undefined,
-      all: rows.map((row) => ({
-        segmentType: row.segmentType as "intro" | "outro" | "recap" | "preview",
-        startSeconds: row.startSeconds,
-        endSeconds: row.endSeconds,
-        versionNote: row.versionNote ?? null,
-        validationCount: row.validationCount,
-        isVerified: row.isVerified,
-        source: row.source,
-        contributors: 0,
-        reports: 0,
-      })),
+      all: rows
+        .filter((row): row is typeof row & { segmentType: "intro" | "outro" | "recap" | "preview" } =>
+          ["intro", "outro", "recap", "preview"].includes(row.segmentType),
+        )
+        .map((row) => ({
+          segmentType: row.segmentType as "intro" | "outro" | "recap" | "preview",
+          startSeconds: row.startSeconds,
+          endSeconds: row.endSeconds,
+          versionNote: row.versionNote ?? null,
+          validationCount: row.validationCount,
+          isVerified: row.isVerified,
+          source: row.source,
+          contributors: 0,
+          reports: 0,
+        })),
     };
   }
 
