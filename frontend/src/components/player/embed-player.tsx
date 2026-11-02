@@ -174,7 +174,6 @@ function EmbedPlayerInner({
           className="absolute inset-0 h-full w-full border-0"
           allowFullScreen
           allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-fullscreen"
           onLoad={() => setLoaded(true)}
         />
       ) : null}
