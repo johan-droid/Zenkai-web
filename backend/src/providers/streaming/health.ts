@@ -29,6 +29,18 @@ const DECAY = 0.7;
 /** Consecutive transport failures before a provider leaves rotation. */
 export const FAILURE_THRESHOLD = 5;
 
+/**
+ * How long quarantine lasts before the provider is retried (half-open).
+ *
+ * Quarantine used to be permanent until an operator reset it, which meant one
+ * bad afternoon permanently removed a working provider from every future
+ * ranking — and fewer providers is exactly how a player ends up with no
+ * alternative to fall back to. The failure streak is kept, so a provider that
+ * is still dead is re-quarantined on its next failure, while a recovered one
+ * gets traffic again without human intervention.
+ */
+export const QUARANTINE_COOLDOWN_MS = 60_000;
+
 /** Below this score a provider is deprioritised hard rather than dropped. */
 export const UNHEALTHY_CUTOFF = 0.35;
 
@@ -123,9 +135,16 @@ export class HealthRegistry {
     return this.record(providerSlug, "error", 0, message);
   }
 
-  /** True once a provider has failed too many times to be worth trying. */
+  /**
+   * True while a provider has failed too many times to be worth trying.
+   *
+   * Half-open: once the cooldown has elapsed the provider is eligible again for
+   * one probe. Health is never trusted forever, in either direction.
+   */
   isQuarantined(providerSlug: string): boolean {
-    return this.get(providerSlug).failureStreak >= FAILURE_THRESHOLD;
+    const health = this.get(providerSlug);
+    if (health.failureStreak < FAILURE_THRESHOLD) return false;
+    return Date.now() - health.lastCheckedAt < QUARANTINE_COOLDOWN_MS;
   }
 
   /** Sorted best-first, for the observability endpoint. */
@@ -134,11 +153,10 @@ export class HealthRegistry {
   }
 
   /**
-   * Clear quarantined entries so a recovered provider is retried.
+   * Clear quarantined entries immediately.
    *
-   * Quarantine is permanent by design: a provider that failed five times in a
-   * row stays out until something explicitly retries it, because continuing to
-   * probe a dead upstream is what turns a provider outage into an outage here.
+   * The cooldown already re-admits providers on its own; this is the manual
+   * operator override for "retry now" after an upstream fix is confirmed.
    */
   resetQuarantined(): number {
     let cleared = 0;

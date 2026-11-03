@@ -51,6 +51,33 @@ export function mediaSrc(execution: PlaybackExecution & { kind: "media" }): stri
 }
 
 /**
+ * Bounded hls.js retry/timeout policy.
+ *
+ * This is the first line of recovery, and it is deliberately delegated to
+ * hls.js rather than reimplemented: its retry scheduler already applies
+ * exponential backoff with jitter and it knows which error class is safe to
+ * retry. Our budget only starts *after* these are exhausted, because a fatal
+ * error from hls.js means it has already spent them.
+ */
+const HLS_RECOVERY_CONFIG = {
+  // Manifest fetch: a cold provider can be slow, but not infinitely.
+  manifestLoadingTimeOut: 15_000,
+  manifestLoadingMaxRetry: 2,
+  manifestLoadingRetryDelay: 1_000,
+  // Variant playlists.
+  levelLoadingTimeOut: 15_000,
+  levelLoadingMaxRetry: 3,
+  levelLoadingRetryDelay: 1_000,
+  // Segments: the transient-CDN-failure case. Bounded, never unbounded.
+  fragLoadingTimeOut: 20_000,
+  fragLoadingMaxRetry: 4,
+  fragLoadingRetryDelay: 1_000,
+} as const;
+
+/** Which hls.js recovery a classified error maps onto. */
+type RecoveryKind = "network" | "media";
+
+/**
  * Media type from the canonical execution: Vidstack switches the provider by
  * it (`application/vnd.apple.mpegurl` → HLS, everything else → progressive).
  */
@@ -78,7 +105,14 @@ export interface VideoPlayerProps {
   muted: boolean;
   onProgress: (positionSeconds: number, durationSeconds: number) => void;
   onEnded: () => void;
-  onError: () => void;
+  /** Receives the raw player error so the recovery engine can classify it. */
+  onError: (event: unknown) => void;
+  /**
+   * Hands the parent a bounded in-place recovery hook for the active provider.
+   * Called with `null` on teardown, so a recovery can never target a dead
+   * player instance.
+   */
+  registerRecovery?: (recover: ((kind: RecoveryKind) => boolean) | null) => void;
   overlay?: React.ReactNode;
 }
 
@@ -105,6 +139,7 @@ export function VideoPlayer({
   onProgress,
   onEnded,
   onError,
+  registerRecovery,
   overlay,
 }: VideoPlayerProps) {
   // If autoSkipIntro is not explicitly provided, fall back to autoSkip for backward-compat
@@ -121,6 +156,7 @@ export function VideoPlayer({
 
   const handlers = useRef({ onProgress, onEnded, onError });
   const playerApi = useRef<{ seekTo: (timeSeconds: number) => void } | null>(null);
+  const providerRef = useRef<MediaProviderAdapter | null>(null);
 
   const safeInitialTime =
     typeof initialTime === "number" && Number.isFinite(initialTime) && initialTime > 1
@@ -132,8 +168,11 @@ export function VideoPlayer({
   }, [onProgress, onEnded, onError]);
 
   // Wire hls.js into Vidstack's HLS provider with startPosition configured.
+  // Vidstack owns the HLS instance lifecycle; we only supply its config and a
+  // bounded recovery hook, so there is exactly one HLS instance per source.
   const onProviderChange = useCallback(
     (provider: MediaProviderAdapter | null) => {
+      providerRef.current = provider;
       if (isHLSProvider(provider)) {
         provider.library = Hls;
         provider.config = {
@@ -141,11 +180,40 @@ export function VideoPlayer({
           lowLatencyMode: false,
           backBufferLength: 90,
           startPosition: safeInitialTime > 1 ? safeInitialTime : -1,
+          ...HLS_RECOVERY_CONFIG,
         };
       }
     },
     [safeInitialTime],
   );
+
+  // Expose in-place recovery to the recovery engine. Bounded by the caller, not
+  // here: this only reports whether a recovery was actually possible.
+  useEffect(() => {
+    if (!registerRecovery) return;
+
+    registerRecovery((kind) => {
+      const provider = providerRef.current;
+      if (!provider || !isHLSProvider(provider)) return false;
+      const instance = provider.instance;
+      if (!instance) return false;
+
+      if (kind === "media") {
+        instance.recoverMediaError();
+        return true;
+      }
+
+      // Reload manifests and fragments from the current position. hls.js keeps
+      // its own backoff and retry budget for everything it re-requests.
+      instance.startLoad();
+      return true;
+    });
+
+    return () => {
+      registerRecovery(null);
+      providerRef.current = null;
+    };
+  }, [registerRecovery]);
 
   const showToast = useCallback((message: string) => {
     if (notificationTimer.current) {
@@ -174,7 +242,7 @@ export function VideoPlayer({
         playsInline
         crossOrigin
         onProviderChange={onProviderChange}
-        onError={() => handlers.current.onError()}
+        onError={(detail) => handlers.current.onError(detail)}
         className="aspect-video w-full overflow-hidden rounded-2xl bg-black"
       >
         <MediaProvider />
@@ -247,7 +315,7 @@ function MediaEffects({
   playbackRate: number;
   volume: number;
   muted: boolean;
-  handlers: MutableRefObject<{ onProgress: (a: number, b: number) => void; onEnded: () => void; onError: () => void }>;
+  handlers: MutableRefObject<{ onProgress: (a: number, b: number) => void; onEnded: () => void; onError: (event: unknown) => void }>;
   playerApiRef: MutableRefObject<{ seekTo: (timeSeconds: number) => void } | null>;
   onManualButtonChange: (
     btn: { label: string; targetTime: number; segmentType: "intro" | "outro" } | null,

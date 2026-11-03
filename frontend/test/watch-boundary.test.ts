@@ -117,16 +117,21 @@ describe("watch provider boundary", () => {
     );
   });
 
-  it("executes the selected canonical source, never a plan index or URL", () => {
+  it("executes the committed canonical source, never a plan index or URL", () => {
     const view = read("src/components/player/watch-view.tsx");
-    // The execute call must carry the selected source's canonical identity.
+    // The execute call must carry the committed source's canonical identity —
+    // never a re-derived selection that a background refetch can change.
     assert.ok(
-      view.includes("sourceId: selectedSourceId"),
-      "execution must use the selected source's canonical id, not plans[0] or an index",
+      view.includes("sourceId: targetSourceId"),
+      "execution must use the committed canonical source id, not plans[0] or an index",
     );
     assert.ok(
       !view.includes("sourceId: plans[0]"),
       "execution must not hardcode the top plan",
+    );
+    assert.ok(
+      view.includes("validateExecution(result"),
+      "an execution must be proven to match the requested source and audio shelf",
     );
   });
 
@@ -169,8 +174,12 @@ describe("watch provider boundary", () => {
   it("falls back to the next canonical plan on playback failure", () => {
     const view = read("src/components/player/watch-view.tsx");
     assert.ok(
-      view.includes("fallbackPlanSelection(plans, selectedSourceId)"),
-      "a failed plan must advance to the next canonical plan",
+      view.includes("selectFallbackPlan(plans"),
+      "a failed plan must advance to the next validated canonical plan",
+    );
+    assert.ok(
+      !view.includes("plans[index + 1]"),
+      "fallback must never be a positional walk that can loop back onto dead sources",
     );
   });
 
