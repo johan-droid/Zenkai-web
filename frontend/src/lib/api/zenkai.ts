@@ -1248,9 +1248,15 @@ async function postValidated<T extends z.ZodTypeAny>(
   path: string,
   schema: T,
   body: unknown,
+  options?: { signal?: AbortSignal },
 ): Promise<z.infer<T>> {
   const url = buildApiUrl(path);
-  const raw = await fetchJson<unknown>(url, { method: "POST", body, retries: 0 });
+  const raw = await fetchJson<unknown>(url, {
+    method: "POST",
+    body,
+    retries: 0,
+    signal: options?.signal,
+  });
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     throw new ZenkaiContractError(
@@ -1308,15 +1314,19 @@ export function fetchEpisodeServers(
  * backend re-resolves the plan and returns the only playback URL the client
  * ever sees.
  */
-export function executePlayback(selection: {
-  episodeId: string;
-  sourceId: string;
-  language: PlaybackLanguage;
-}): Promise<PlaybackExecution> {
+export function executePlayback(
+  selection: {
+    episodeId: string;
+    sourceId: string;
+    language: PlaybackLanguage;
+  },
+  options?: { signal?: AbortSignal },
+): Promise<PlaybackExecution> {
   return postValidated(
     "/api/v1/playback/execute",
     z.object({ execution: playbackExecutionSchema }),
     selection,
+    options,
   ).then((payload) => payload.execution);
 }
 

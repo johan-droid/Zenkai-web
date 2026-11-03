@@ -12,6 +12,7 @@ import { describe, it } from "node:test";
 
 import {
   classifyPlaybackError,
+  computeRetryBackoffMs,
   DEFAULT_RECOVERY_POLICY,
   nextPhase,
   normalisePlaybackError,
@@ -19,6 +20,7 @@ import {
   restoreTarget,
   selectFallbackPlan,
   validateExecution,
+  type ActivePlaybackSession,
   type PlaybackPhase,
 } from "../src/lib/player/recovery";
 import type {
@@ -490,11 +492,154 @@ describe("phase coverage", () => {
       "buffering",
       "recovering",
       "switching",
+      "switching_source",
       "failed",
       "ended",
     ];
     for (const phase of phases) {
       assert.equal(typeof nextPhase(phase, phase), "string");
     }
+  });
+
+  it("handles switching_source legal transitions", () => {
+    assert.equal(nextPhase("playing", "switching_source"), "switching_source");
+    assert.equal(nextPhase("switching_source", "ready"), "ready");
+    assert.equal(nextPhase("switching_source", "failed"), "failed");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase 2 & 3 — advanced error classification & budget replenishment  */
+/* ------------------------------------------------------------------ */
+
+describe("HTTP status and advanced error classification", () => {
+  it("treats HTTP 403 Forbidden as fatal_provider (expired URL)", () => {
+    const err = normalisePlaybackError({
+      detail: { status: 403, message: "Forbidden" },
+    });
+    assert.equal(err.httpStatus, 403);
+    assert.equal(classifyPlaybackError(err), "fatal_provider");
+  });
+
+  it("treats HTTP 404 Not Found as fatal_provider (missing stream)", () => {
+    const err = normalisePlaybackError({
+      detail: {
+        error: {
+          response: { code: 404 },
+          message: "fragLoadError",
+        },
+      },
+    });
+    assert.equal(err.httpStatus, 404);
+    assert.equal(classifyPlaybackError(err), "fatal_provider");
+  });
+
+  it("treats HTTP 502/503/504 as transient_network", () => {
+    for (const status of [500, 502, 503, 504]) {
+      const err = normalisePlaybackError({ detail: { httpStatus: status, message: "Server Error" } });
+      assert.equal(classifyPlaybackError(err), "transient_network");
+    }
+  });
+
+  it("replenishes in-place recovery budget after sustained playback", () => {
+    const session = new PlaybackRecoverySession();
+    session.beginSource("plan-1");
+    assert.equal(session.canRecoverInPlace(), true);
+
+    // Spends in-place recovery
+    session.noteInPlaceRecovery();
+    assert.equal(session.canRecoverInPlace(), false);
+
+    // Sustained playback for >5 seconds restores budget
+    session.noteSuccessfulPlayback();
+    assert.equal(session.canRecoverInPlace(), true, "budget must replenish after successful playback");
+  });
+
+  it("computes exponential retry backoff with bounded jitter", () => {
+    const b0 = computeRetryBackoffMs(0, 500, 4000, 100);
+    assert.ok(b0 >= 500 && b0 <= 600);
+
+    const b1 = computeRetryBackoffMs(1, 500, 4000, 100);
+    assert.ok(b1 >= 1000 && b1 <= 1100);
+
+    const bMax = computeRetryBackoffMs(10, 500, 4000, 100);
+    assert.ok(bMax >= 4000 && bMax <= 4100);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase 3 & 4 — preferred server & fallback priority                  */
+/* ------------------------------------------------------------------ */
+
+describe("preferred server and fallback routing", () => {
+  it("prioritizes preferredServer in fallback selection if available and unfailed", () => {
+    const candidates = [
+      plan({ sourceId: "p1", providerSlug: "prov-1", endpointSlug: "server-alpha" }),
+      plan({ sourceId: "p2", providerSlug: "prov-2", endpointSlug: "server-beta" }),
+      plan({ sourceId: "p3", providerSlug: "prov-3", endpointSlug: "server-preferred" }),
+    ];
+
+    const next = selectFallbackPlan(candidates, {
+      failedSourceId: "p1",
+      failedSourceIds: new Set(["p1"]),
+      failedProviderSlugs: new Set(["prov-1"]),
+      language: "sub",
+      preferredServer: "server-preferred",
+    });
+
+    assert.equal(next?.sourceId, "p3");
+  });
+
+  it("skips preferredServer if it already failed during the session", () => {
+    const candidates = [
+      plan({ sourceId: "p1", providerSlug: "prov-1", endpointSlug: "server-alpha" }),
+      plan({ sourceId: "p2", providerSlug: "prov-2", endpointSlug: "server-beta" }),
+      plan({ sourceId: "p3", providerSlug: "prov-3", endpointSlug: "server-preferred" }),
+    ];
+
+    const next = selectFallbackPlan(candidates, {
+      failedSourceId: "p3",
+      failedSourceIds: new Set(["p1", "p3"]),
+      failedProviderSlugs: new Set(["prov-3"]),
+      language: "sub",
+      preferredServer: "server-preferred",
+    });
+
+    assert.equal(next?.sourceId, "p2");
+  });
+
+  it("records structured diagnostic history on failure", () => {
+    const session = new PlaybackRecoverySession();
+    session.noteFailure("plan-x", "prov-x", "transient_network");
+    assert.equal(session.history.length, 1);
+    assert.equal(session.history[0]?.sourceId, "plan-x");
+    assert.equal(session.history[0]?.providerSlug, "prov-x");
+    assert.equal(session.history[0]?.category, "transient_network");
+    assert.ok(session.history[0]?.timestamp && session.history[0].timestamp > 0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase 1 & 4 — authoritative session association                     */
+/* ------------------------------------------------------------------ */
+
+describe("authoritative active playback session", () => {
+  it("creates valid active playback session with all required identity fields", () => {
+    const active: ActivePlaybackSession = {
+      animeId: "21",
+      episodeId: "ep-21-1",
+      episodeNumber: 1,
+      language: "sub",
+      providerSlug: "zenkai-api",
+      sourceId: "source-1080p",
+      attemptGeneration: 1,
+      execution: mediaExecution(),
+    };
+
+    assert.equal(active.animeId, "21");
+    assert.equal(active.episodeId, "ep-21-1");
+    assert.equal(active.episodeNumber, 1);
+    assert.equal(active.language, "sub");
+    assert.equal(active.attemptGeneration, 1);
   });
 });

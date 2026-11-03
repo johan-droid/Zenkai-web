@@ -194,19 +194,40 @@ export function VideoPlayer({
 
     registerRecovery((kind) => {
       const provider = providerRef.current;
-      if (!provider || !isHLSProvider(provider)) return false;
-      const instance = provider.instance;
-      if (!instance) return false;
+      if (!provider) return false;
 
-      if (kind === "media") {
-        instance.recoverMediaError();
+      if (isHLSProvider(provider)) {
+        const instance = provider.instance;
+        if (!instance) return false;
+
+        if (kind === "media") {
+          instance.recoverMediaError();
+          return true;
+        }
+
+        // Reload manifests and fragments from the current position. hls.js keeps
+        // its own backoff and retry budget for everything it re-requests.
+        instance.startLoad();
         return true;
       }
 
-      // Reload manifests and fragments from the current position. hls.js keeps
-      // its own backoff and retry budget for everything it re-requests.
-      instance.startLoad();
-      return true;
+      // Progressive video provider recovery
+      const video = (provider as unknown as { video?: HTMLVideoElement }).video;
+      if (video && typeof video.load === "function") {
+        try {
+          const currentTime = video.currentTime;
+          video.load();
+          if (currentTime > 0) {
+            video.currentTime = currentTime;
+          }
+          video.play().catch(() => {});
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      return false;
     });
 
     return () => {
@@ -430,6 +451,7 @@ function MediaEffects({
   // Restore the resume position once, as soon as the media is seekable.
   useEffect(() => {
     if (!player || restored.current || initialTime <= 1) return;
+    if (execution.capabilities?.seekable === false) return;
 
     return player.subscribe(({ canPlay, currentTime, duration }) => {
       if (!canPlay || restored.current) return;
@@ -445,7 +467,7 @@ function MediaEffects({
         player.currentTime = initialTime;
       }
     });
-  }, [player, initialTime]);
+  }, [player, initialTime, execution.capabilities?.seekable]);
 
   // Apply rate/volume changes from the settings UI live.
   useEffect(() => {

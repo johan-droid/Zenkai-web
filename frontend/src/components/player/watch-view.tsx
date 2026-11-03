@@ -32,8 +32,10 @@ import {
   normalisePlaybackError,
   PlaybackRecoverySession,
   RESUME_GUARD_TOLERANCE_S,
+  restoreTarget,
   selectFallbackPlan,
   validateExecution,
+  type ActivePlaybackSession,
   type PlaybackPhase,
 } from "@/lib/player/recovery";
 import { EmbedPlayer } from "@/components/player/embed-player";
@@ -162,31 +164,21 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   /* ---------------------------------------------------------------- */
 
   /**
-   * What the player is actually playing, and the source it came from, in ONE
-   * value. They can never disagree: a stale execution cannot be rendered under
-   * a newer selection, because there is no pair to get out of sync.
+   * What the player is actually playing, and the complete canonical execution context.
+   * Associated strictly with animeId, episodeId, episodeNumber, language, providerSlug,
+   * sourceId, attemptGeneration, and execution.
    */
-  const [playback, setPlayback] = useState<{
-    sourceId: string;
-    execution: PlaybackExecution;
-  } | null>(null);
+  const [playback, setPlayback] = useState<ActivePlaybackSession | null>(null);
 
   /**
-   * The source the user (or the recovery engine) asked for. `null` means "not
-   * pinned yet" and the backend's top-ranked plan is discovered instead.
-   *
-   * The distinction matters: the old code derived the active source from the
-   * live plan list on every render, so a sources refetch that re-ranked the
-   * list silently replaced the stream mid-playback. A committed selection is
-   * pinned; only a user action, an episode/language change, or a validated
-   * fallback may move it.
+   * The source the user (or the recovery engine) asked for.
+   * When null, once playback starts, the active source remains pinned to playback.sourceId.
+   * Background refetches and re-rankings will NEVER silently replace a working stream.
    */
   const [desiredSourceId, setDesiredSourceId] = useState<string | null>(null);
   const [playbackFailure, setPlaybackFailure] = useState<string | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportTimeSeconds, setReportTimeSeconds] = useState(0);
-  // Bumped exactly once (after the first successful sources refetch), so one
-  // automatic stale-selection retry happens per attempt — never an invisible loop.
   const [retryNonce, setRetryNonce] = useState(0);
 
   const [phase, setPhaseState] = useState<PlaybackPhase>("idle");
@@ -198,13 +190,16 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     setPhaseState(resolved);
   }, []);
 
+  // In-flight execution abort controller ref
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Per episode + audio shelf: what already failed, and how much budget is left.
   const recoveryRef = useRef(new PlaybackRecoverySession());
   // One recovery operation at a time. `switching` blocks further automatic
   // changes until the new execution settles; `recovering` blocks duplicates of
-  // the same failure while hls.js retries in place.
+  // the same failure while in-place recovery executes.
   const transactionRef = useRef<"recovering" | "switching" | null>(null);
-  // In-place recovery hook, supplied by the mounted player for the HLS instance
+  // In-place recovery hook, supplied by the mounted player for the provider
   // it actually owns. Null whenever no recoverable provider is attached.
   const hlsRecoveryRef = useRef<((kind: "network" | "media") => boolean) | null>(null);
   const registerRecovery = useCallback(
@@ -225,19 +220,16 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   }, []);
 
   // The backend's top-ranked (preferred/available) plan — used only until a
-  // source is committed. After that it is inert, which is the whole point.
+  // source is committed. After that, targetSourceId stays pinned to playback.sourceId!
   const discoverySourceId = useMemo(
     () => initialPlanSelection(plans, preferredServer, servers),
     [plans, preferredServer, servers],
   );
-  const targetSourceId = desiredSourceId ?? discoverySourceId;
+  const targetSourceId = desiredSourceId ?? (playback ? playback.sourceId : discoverySourceId);
   const activeSourceId = playback?.sourceId ?? null;
 
   // A new episode, anime title, or language change resets everything: nothing
   // from the previous identity may leak into the next playback.
-  // selectionEpoch includes the canonical anime id and episode number so that
-  // a change in route id or episode number is immediately detected, even before
-  // the async source query resolves.
   const selectionEpoch = `${id}:${episodeNumber}:${episodeCard?.id ?? ""}:${language}`;
   const [lastSelectionEpoch, setLastSelectionEpoch] = useState(selectionEpoch);
   if (lastSelectionEpoch !== selectionEpoch) {
@@ -251,11 +243,17 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   }
 
   useEffect(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     currentPlaybackTimeRef.current = 0;
     recoveryRef.current.reset();
     phaseRef.current = "idle";
     resumeGuardRef.current = null;
     transactionRef.current = null;
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
   }, [selectionEpoch]);
 
   // Generation counter to ensure asynchronous playback execution cannot overwrite
@@ -269,57 +267,130 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
   useEffect(() => {
     if (!episodeId || !targetSourceId) return;
 
-    // Already playing the requested source. Re-running here on every re-render
-    // or background refetch is what used to reload the stream for no reason.
-    if (playback?.sourceId === targetSourceId) return;
+    // Already playing the requested source. Re-running here on background refetch
+    // must not reload the stream.
+    if (activeSourceId === targetSourceId) return;
 
     const currentAttempt = ++playbackAttemptRef.current;
-    let cancelled = false;
-    applyPhase("executing");
+    const abortController = new AbortController();
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = abortController;
 
-    executePlayback({ episodeId, sourceId: targetSourceId, language })
+    applyPhase(activeSourceId ? "switching" : "executing");
+
+    executePlayback(
+      { episodeId, sourceId: targetSourceId, language },
+      { signal: abortController.signal },
+    )
       .then((result) => {
-        if (cancelled || currentAttempt !== playbackAttemptRef.current) return;
+        if (abortController.signal.aborted || currentAttempt !== playbackAttemptRef.current) return;
 
         // Never render an execution we cannot prove belongs to this request:
         // wrong source, wrong audio shelf, or an embed dressed as media.
         const valid = validateExecution(result, {
           sourceId: targetSourceId,
           language,
+          animeId: id,
+          episodeId,
+          episodeNumber,
         });
+
         if (!valid.ok) {
+          recoveryRef.current.noteFailure(
+            targetSourceId,
+            result.providerSlug,
+            `validation_rejected_${valid.reason}`,
+          );
+
+          if (autoServerFallback && recoveryRef.current.canAttemptAnotherProvider()) {
+            const next = selectFallbackPlan(plans, {
+              failedSourceId: targetSourceId,
+              failedSourceIds: recoveryRef.current.failedSourceIds,
+              failedProviderSlugs: recoveryRef.current.failedProviderSlugs,
+              language,
+              preferredServer,
+              servers,
+            });
+            if (next) {
+              setDesiredSourceId(next.sourceId);
+              return;
+            }
+          }
+
           transactionRef.current = null;
           setPlaybackFailure("This server returned a source this player cannot use.");
           applyPhase("failed");
           return;
         }
 
+        // Calculate restore position where supported
+        const position = currentPlaybackTimeRef.current;
+        const targetResume = restoreTarget(
+          { positionSeconds: position, durationSeconds: 0 },
+          { seekable: result.kind === "media" ? result.capabilities?.seekable : false },
+        );
+        if (targetResume !== null && targetResume > 1) {
+          setSwitchResumeTime(targetResume);
+        }
+
         recoveryRef.current.beginSource(targetSourceId);
         transactionRef.current = null;
-        setPlayback({ sourceId: targetSourceId, execution: result });
+        setDesiredSourceId(targetSourceId);
+        setPlayback({
+          animeId: id,
+          episodeId,
+          episodeNumber,
+          language,
+          providerSlug: result.providerSlug,
+          sourceId: targetSourceId,
+          attemptGeneration: currentAttempt,
+          execution: result,
+        });
         setPlaybackFailure(null);
         applyPhase("ready");
       })
       .catch((error: unknown) => {
-        if (cancelled || currentAttempt !== playbackAttemptRef.current) return;
-        transactionRef.current = null;
+        if (abortController.signal.aborted || currentAttempt !== playbackAttemptRef.current) return;
+
         const failure = classifyPlaybackError(error);
         if (failure === "selection_stale" && retryNonce < MAX_STALE_RETRIES) {
           // The ranked list moved under us: refresh once, then re-discover.
-          // The nonce carries the one-automatic-retry bound.
           void refetchSources().then(() => {
-            if (cancelled || currentAttempt !== playbackAttemptRef.current) return;
+            if (abortController.signal.aborted || currentAttempt !== playbackAttemptRef.current) return;
             setDesiredSourceId(null);
             setRetryNonce(1);
           });
           return;
         }
+
+        recoveryRef.current.noteFailure(
+          targetSourceId,
+          null,
+          `execution_error_${failure}`,
+        );
+
+        if (autoServerFallback && recoveryRef.current.canAttemptAnotherProvider()) {
+          const next = selectFallbackPlan(plans, {
+            failedSourceId: targetSourceId,
+            failedSourceIds: recoveryRef.current.failedSourceIds,
+            failedProviderSlugs: recoveryRef.current.failedProviderSlugs,
+            language,
+            preferredServer,
+            servers,
+          });
+          if (next) {
+            setDesiredSourceId(next.sourceId);
+            return;
+          }
+        }
+
+        transactionRef.current = null;
         setPlaybackFailure(playbackFailureMessage(failure));
         applyPhase("failed");
       });
 
     return () => {
-      cancelled = true;
+      abortController.abort();
     };
   }, [
     episodeId,
@@ -327,8 +398,14 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     language,
     retryNonce,
     refetchSources,
-    playback?.sourceId,
+    activeSourceId,
     applyPhase,
+    autoServerFallback,
+    id,
+    episodeNumber,
+    plans,
+    preferredServer,
+    servers,
   ]);
 
   // Manual server switch with watch position preservation.
@@ -336,7 +413,8 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
     (sourceId: string, serverName?: string) => {
       const currentTime = currentPlaybackTimeRef.current;
       guardResume(currentTime);
-      transactionRef.current = null;
+      // Mark switching so teardown errors from the old stream are ignored
+      transactionRef.current = "switching";
       setPlaybackFailure(null);
       applyPhase("switching");
       setDesiredSourceId(sourceId);
@@ -369,14 +447,18 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
       // A switch is already being committed. Errors still coming from the old
       // stream must not advance the plan a second time.
       if (transactionRef.current === "switching") return;
-      // A duplicate of the failure already being recovered in place. A fatal
-      // error is new evidence and is allowed to escalate.
-      if (transactionRef.current === "recovering" && category !== "fatal_provider") {
-        return;
-      }
 
       const session = recoveryRef.current;
       const position = currentPlaybackTimeRef.current;
+
+      // Duplicate in-place recovery guard: if in-place recovery is in flight and still has budget,
+      // ignore duplicate errors until it resolves. But if the budget was spent, it MUST escalate!
+      if (transactionRef.current === "recovering") {
+        if (session.canRecoverInPlace() && category !== "fatal_provider") {
+          return;
+        }
+        transactionRef.current = null;
+      }
 
       // 1. Keep the working provider whenever it can still work.
       if (
@@ -391,8 +473,6 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
         if (hlsRecoveryRef.current?.(kind)) {
           transactionRef.current = "recovering";
           applyPhase("recovering");
-          // The next progress report from this stream clears `recovering`; a
-          // second fatal error escalates below with the budget spent.
           return;
         }
       }
@@ -421,6 +501,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
         failedSourceIds: session.failedSourceIds,
         failedProviderSlugs: session.failedProviderSlugs,
         language,
+        preferredServer,
         servers,
       });
 
@@ -447,6 +528,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
       language,
       plans,
       playback?.execution.providerSlug,
+      preferredServer,
       servers,
     ],
   );
@@ -479,6 +561,8 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
 
   // Throttled progress writer.
   const saveProgress = useThrottledProgressSaver();
+  const consecutivePlaySecondsRef = useRef(0);
+  const lastProgressTimeRef = useRef(0);
 
   const resumeProgress = useCallback(
     (positionSeconds: number, durationSeconds: number) => {
@@ -498,6 +582,20 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
       if (transactionRef.current === "recovering") transactionRef.current = null;
       if (phaseRef.current === "recovering") applyPhase("ready");
       else if (phaseRef.current === "ready") applyPhase("playing");
+
+      // Track continuous playback to replenish in-place recovery budget after sustained playback
+      if (
+        Math.abs(positionSeconds - lastProgressTimeRef.current) <= 2 &&
+        positionSeconds > lastProgressTimeRef.current
+      ) {
+        consecutivePlaySecondsRef.current += positionSeconds - lastProgressTimeRef.current;
+        if (consecutivePlaySecondsRef.current >= 5) {
+          recoveryRef.current.noteSuccessfulPlayback();
+        }
+      } else {
+        consecutivePlaySecondsRef.current = 0;
+      }
+      lastProgressTimeRef.current = positionSeconds;
 
       void saveProgress({
         kind: "anime",
@@ -756,7 +854,7 @@ export function WatchView({ id, episode }: { id: string; episode: string }) {
       <div className={cn("grid gap-6", theaterMode ? "" : "lg:grid-cols-[1fr_360px]")}>
         <div className={cn("relative flex flex-col gap-4", theaterMode ? "lg:col-span-2" : "")}>
           <PlayerArea
-            key={`${id}-${episodeNumber}-${activeSourceId ?? "pending"}`}
+            key={`${id}-${episodeNumber}`}
             sourcesQuery={sourcesQuery}
             execution={playback?.execution ?? null}
             playbackFailure={playbackFailure}

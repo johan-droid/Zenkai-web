@@ -44,8 +44,20 @@ export type PlaybackPhase =
   | "buffering"
   | "recovering"
   | "switching"
+  | "switching_source"
   | "failed"
   | "ended";
+
+export interface ActivePlaybackSession {
+  animeId: string;
+  episodeId: string;
+  episodeNumber: number;
+  language: PlaybackLanguage;
+  providerSlug: string;
+  sourceId: string;
+  attemptGeneration: number;
+  execution: PlaybackExecution;
+}
 
 /**
  * Legal transitions. Anything absent is refused rather than coerced: a late
@@ -55,13 +67,14 @@ const TRANSITIONS: Record<PlaybackPhase, readonly PlaybackPhase[]> = {
   idle: ["discovering", "executing"],
   discovering: ["executing", "failed", "idle"],
   executing: ["ready", "failed", "idle"],
-  ready: ["playing", "buffering", "recovering", "switching", "ended", "failed", "idle"],
-  playing: ["ready", "buffering", "recovering", "switching", "ended", "failed", "idle"],
-  buffering: ["playing", "ready", "recovering", "switching", "ended", "failed", "idle"],
-  recovering: ["playing", "ready", "buffering", "switching", "ended", "failed", "idle"],
+  ready: ["playing", "buffering", "recovering", "switching", "switching_source", "ended", "failed", "idle"],
+  playing: ["ready", "buffering", "recovering", "switching", "switching_source", "ended", "failed", "idle"],
+  buffering: ["playing", "ready", "recovering", "switching", "switching_source", "ended", "failed", "idle"],
+  recovering: ["playing", "ready", "buffering", "switching", "switching_source", "ended", "failed", "idle"],
   switching: ["executing", "ready", "playing", "failed", "idle"],
+  switching_source: ["executing", "ready", "playing", "failed", "idle"],
   failed: ["discovering", "executing", "ready", "idle"],
-  ended: ["discovering", "executing", "ready", "switching", "idle"],
+  ended: ["discovering", "executing", "ready", "switching", "switching_source", "idle"],
 };
 
 /** Apply a transition, keeping the current phase when the move is illegal. */
@@ -96,6 +109,10 @@ export interface NormalisedPlaybackError {
   code?: number;
   /** Error detail token from hls.js (e.g. `manifestLoadError`), when present. */
   detail?: string;
+  /** HTTP response status code if available (e.g. 403, 404, 502). */
+  httpStatus?: number;
+  /** Whether the underlying player pipeline explicitly flagged this error as fatal. */
+  fatal?: boolean;
   /** Short, log-safe message. Never a signed URL. */
   message: string;
 }
@@ -150,26 +167,41 @@ export function normalisePlaybackError(event: unknown): NormalisedPlaybackError 
   const record = (typeof event === "object" ? event : {}) as Record<string, unknown>;
   const detail = (record.detail ?? record) as Record<string, unknown>;
 
-  const nested = detail.error as Record<string, unknown> | null | undefined;
+  const nested = (detail.error ?? detail.data) as Record<string, unknown> | null | undefined;
   const nestedMessage = text(nested?.message);
-  const nestedDetails = text(nested?.details);
+  const nestedDetails = text(nested?.details ?? (detail.data as Record<string, unknown>)?.details);
   const message = text(detail.message) || nestedMessage || text(record.message);
   const hlsDetail = nestedDetails || (nestedMessage.match(/^[a-zA-Z]+Error[a-zA-Z]*/)?.[0] ?? "");
 
-  if (nested) {
+  // Extract HTTP status if present in error payload
+  const response = (nested?.response ?? detail.response) as Record<string, unknown> | undefined;
+  const rawStatus = detail.httpStatus ?? detail.status ?? response?.code ?? response?.status;
+  const httpStatus = typeof rawStatus === "number" && Number.isFinite(rawStatus) ? rawStatus : undefined;
+
+  const fatal = Boolean(detail.fatal ?? nested?.fatal ?? (detail.data as Record<string, unknown>)?.fatal);
+
+  if (nested || hlsDetail || /hls/i.test(message)) {
     return {
       origin: "hls",
       detail: hlsDetail || nestedMessage || undefined,
+      httpStatus,
+      fatal,
       message: message || "hls playback error",
     };
   }
 
   const code = typeof detail.code === "number" ? detail.code : undefined;
   if (code !== undefined) {
-    return { origin: "media", code, message: message || "media element error" };
+    return {
+      origin: "media",
+      code,
+      httpStatus,
+      fatal: fatal || code === 3 || code === 4,
+      message: message || "media element error",
+    };
   }
 
-  return { origin: "unknown", message: message || "unknown playback error" };
+  return { origin: "unknown", httpStatus, fatal, message: message || "unknown playback error" };
 }
 
 /**
@@ -180,11 +212,13 @@ export function normalisePlaybackError(event: unknown): NormalisedPlaybackError 
  * this function stays a pure mapping from evidence to category.
  */
 export function classifyPlaybackError(error: NormalisedPlaybackError): PlaybackErrorCategory {
-  if (error.origin === "hls") {
-    const token = `${error.detail ?? ""} ${error.message}`.toLowerCase();
-    if (FATAL_HLS_DETAILS.some((needle) => token.includes(needle))) return "fatal_provider";
-    if (TRANSIENT_HLS_DETAILS.some((needle) => token.includes(needle))) return "transient_network";
-    return "unknown";
+  // HTTP 403 or 404 indicates an expired or missing stream URL -> fatal provider fault
+  if (error.httpStatus === 403 || error.httpStatus === 404) {
+    return "fatal_provider";
+  }
+  // Upstream 5xx or gateway timeout indicates transient CDN/network issue
+  if (error.httpStatus && (error.httpStatus >= 500 || error.httpStatus === 408 || error.httpStatus === 429)) {
+    return "transient_network";
   }
 
   if (error.origin === "media") {
@@ -199,8 +233,31 @@ export function classifyPlaybackError(error: NormalisedPlaybackError): PlaybackE
         // Decode failure / unsupported source: this provider cannot serve it.
         return "fatal_provider";
       default:
-        return "unknown";
+        break;
     }
+  }
+
+  // Check for pause/seek/interrupted/abort actions from user or browser
+  const msg = error.message.toLowerCase();
+  if (
+    !error.fatal &&
+    error.origin !== "hls" &&
+    (msg.includes("abort") ||
+      msg.includes("interrupted") ||
+      msg.includes("pause") ||
+      msg.includes("user action"))
+  ) {
+    return "non_provider";
+  }
+
+  if (error.origin === "hls") {
+    const token = `${error.detail ?? ""} ${error.message}`.toLowerCase();
+    if (FATAL_HLS_DETAILS.some((needle) => token.includes(needle))) return "fatal_provider";
+    if (TRANSIENT_HLS_DETAILS.some((needle) => token.includes(needle))) {
+      if (error.httpStatus === 403 || error.httpStatus === 404) return "fatal_provider";
+      return "transient_network";
+    }
+    return error.fatal ? "fatal_provider" : "unknown";
   }
 
   return "unknown";
@@ -231,7 +288,13 @@ export type ExecutionValidation =
  */
 export function validateExecution(
   execution: PlaybackExecution,
-  expected: { sourceId: string; language: PlaybackLanguage },
+  expected: {
+    sourceId: string;
+    language: PlaybackLanguage;
+    animeId?: string;
+    episodeId?: string;
+    episodeNumber?: number;
+  },
 ): ExecutionValidation {
   if (execution.sourceId !== expected.sourceId) {
     return { ok: false, reason: "source_mismatch" };
@@ -279,6 +342,8 @@ export interface FallbackOptions {
   /** Providers already failed during this recovery session. */
   failedProviderSlugs: ReadonlySet<string>;
   language: PlaybackLanguage;
+  /** Preferred server slug or name, if set by user. */
+  preferredServer?: string | null;
   /** Per-server availability, when the backend reported it. */
   servers?: ServerAvailabilityItem[] | undefined;
 }
@@ -317,6 +382,25 @@ export function selectFallbackPlan(
   plans: PlaybackPlan[],
   options: FallbackOptions,
 ): PlaybackPlan | null {
+  // If a preferredServer is configured and available/unfailed, prefer it
+  if (options.preferredServer) {
+    const preferredServer = options.preferredServer.toLowerCase();
+    const preferred = plans.find((plan) => {
+      if (plan.sourceId === options.failedSourceId) return false;
+      if (options.failedSourceIds.has(plan.sourceId)) return false;
+      if (options.failedProviderSlugs.has(plan.providerSlug)) return false;
+      if (!isServableLanguage(plan, options.language)) return false;
+      if (plan.playable === false || plan.validated === false) return false;
+      if (!isServerSelectable(plan, options.servers)) return false;
+      return (
+        plan.endpointSlug.toLowerCase() === preferredServer ||
+        plan.providerSlug.toLowerCase() === preferredServer ||
+        plan.providerName.toLowerCase() === preferredServer
+      );
+    });
+    if (preferred) return preferred;
+  }
+
   for (const plan of plans) {
     if (plan.sourceId === options.failedSourceId) continue;
     if (options.failedSourceIds.has(plan.sourceId)) continue;
@@ -349,6 +433,14 @@ export const DEFAULT_RECOVERY_POLICY: RecoveryPolicy = {
   maxInStreamRecoveries: 1,
 };
 
+export interface RecoveryAttemptRecord {
+  sourceId: string | null;
+  providerSlug: string | null;
+  category: string;
+  reason: string;
+  timestamp: number;
+}
+
 /**
  * One recovery session per episode + audio shelf.
  *
@@ -361,6 +453,7 @@ export class PlaybackRecoverySession {
   readonly failedProviderSlugs = new Set<string>();
   /** Log-safe reasons, newest last. */
   readonly reasons: string[] = [];
+  readonly history: RecoveryAttemptRecord[] = [];
 
   #providerAttempts = 0;
   #inStreamRecoveries = 0;
@@ -373,6 +466,14 @@ export class PlaybackRecoverySession {
     this.#currentSourceId = sourceId;
     this.#inStreamRecoveries = 0;
     this.#providerAttempts += 1;
+  }
+
+  /**
+   * Replenish in-place recovery budget after sustained successful playback.
+   * A momentary hiccup at minute 2 must not prevent in-place recovery at minute 20.
+   */
+  noteSuccessfulPlayback(): void {
+    this.#inStreamRecoveries = 0;
   }
 
   /** True while the current source still has an in-place recovery left. */
@@ -403,6 +504,13 @@ export class PlaybackRecoverySession {
     if (sourceId) this.failedSourceIds.add(sourceId);
     if (providerSlug) this.failedProviderSlugs.add(providerSlug);
     this.reasons.push(reason);
+    this.history.push({
+      sourceId,
+      providerSlug,
+      category: reason,
+      reason,
+      timestamp: Date.now(),
+    });
   }
 
   currentSourceId(): string | null {
@@ -413,10 +521,25 @@ export class PlaybackRecoverySession {
     this.failedSourceIds.clear();
     this.failedProviderSlugs.clear();
     this.reasons.length = 0;
+    this.history.length = 0;
     this.#providerAttempts = 0;
     this.#inStreamRecoveries = 0;
     this.#currentSourceId = null;
   }
+}
+
+/**
+ * Exponential backoff with jitter for retrying transient failures.
+ */
+export function computeRetryBackoffMs(
+  attempt: number,
+  baseMs = 500,
+  maxMs = 4000,
+  jitterMs = 200,
+): number {
+  const exp = Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt));
+  const jitter = Math.floor(Math.random() * jitterMs);
+  return exp + jitter;
 }
 
 /* ------------------------------------------------------------------ */

@@ -9,7 +9,7 @@ describe("ZenkaiApiStreamingProvider Suite", () => {
     const provider = new ZenkaiApiStreamingProvider();
     assert.equal(provider.slug, "zenkai-api");
     assert.equal(provider.basePriority, 12);
-    assert.equal(provider.kind, "licensed");
+    assert.equal(provider.kind, "api");
     assert.deepEqual(provider.capabilities.languages, ["sub", "dub", "multi"]);
     assert.deepEqual(provider.capabilities.accessTypes, ["hls", "embed"]);
     assert.equal(provider.capabilities.supportsSubtitles, true);
