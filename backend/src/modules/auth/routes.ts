@@ -444,10 +444,23 @@ export function registerAuthRoutes(app: FastifyInstance, authService: AuthServic
     return reply.code(200).send({ accounts });
   });
 
+  app.get("/api/v1/auth/accounts", async (request, reply) => {
+    const user = requireAuth(request);
+    const accounts = await authService.getLinkedAccounts(user.id);
+    return reply.code(200).send({ accounts });
+  });
+
   /**
    * Unlink an external OAuth account (e.g. AniList or Google).
    */
   app.delete("/api/v1/auth/oauth/:provider", async (request, reply) => {
+    const user = requireAuth(request);
+    const { provider } = request.params as { provider: string };
+    await authService.unlinkOAuthAccount(user.id, provider);
+    return reply.code(200).send({ unlinked: true, provider });
+  });
+
+  app.delete("/api/v1/auth/accounts/:provider", async (request, reply) => {
     const user = requireAuth(request);
     const { provider } = request.params as { provider: string };
     await authService.unlinkOAuthAccount(user.id, provider);

@@ -11,6 +11,10 @@ import {
   fetchRemoteLibrary,
   fetchRemoteProgress,
   fetchRemoteContinue,
+  fetchLinkedAccounts,
+  unlinkOAuthAccount,
+  getGoogleOAuthUrl,
+  getAnilistOAuthUrl,
   type SyncPayload,
 } from "../src/lib/api/auth.js";
 
@@ -184,6 +188,30 @@ describe("Frontend Auth & Sync API Client Contracts", () => {
         );
       }
 
+      if (url.includes("/api/v1/auth/accounts") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            accounts: [
+              {
+                id: "acc_1",
+                provider: "anilist",
+                providerUserId: "12345",
+                providerUsername: "ZenkaiFan",
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.includes("/api/v1/auth/accounts/anilist") && method === "DELETE") {
+        return new Response(JSON.stringify({ unlinked: true, provider: "anilist" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
     };
   });
@@ -273,5 +301,20 @@ describe("Frontend Auth & Sync API Client Contracts", () => {
     const cont = await fetchRemoteContinue("anime");
     assert.equal(cont.entries.length, 1);
     assert.equal(cont.entries[0].unit, 1);
+  });
+
+  it("handles OAuth account linking and URLs", async () => {
+    assert.ok(getGoogleOAuthUrl().includes("/api/v1/auth/oauth/google"));
+    assert.ok(getAnilistOAuthUrl().includes("/api/v1/auth/oauth/anilist"));
+
+    const { accounts } = await fetchLinkedAccounts();
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].provider, "anilist");
+    assert.equal(accounts[0].providerUsername, "ZenkaiFan");
+
+    const unlinked = await unlinkOAuthAccount("anilist");
+    assert.equal(unlinked.unlinked, true);
+    assert.equal(unlinked.provider, "anilist");
+    assert.equal(requests[requests.length - 1].method, "DELETE");
   });
 });

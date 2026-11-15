@@ -72,10 +72,24 @@ export interface LibraryRecord {
   updatedAt: number;
 }
 
+export interface OfflineChapterRecord {
+  /** Composite key: `${kind}:${mediaId}:${unit}` */
+  id: string;
+  kind: "manga" | "novel";
+  mediaId: string;
+  unit: number;
+  title: string;
+  pages?: string[];
+  content?: string;
+  cachedAt: number;
+  sizeBytes?: number;
+}
+
 export const db = new Dexie("zenkai") as Dexie & {
   progress: EntityTable<ProgressRecord, "id">;
   bookmarks: EntityTable<BookmarkRecord, "id">;
   library: EntityTable<LibraryRecord, "id">;
+  offlineChapters: EntityTable<OfflineChapterRecord, "id">;
 };
 
 db.version(1).stores({
@@ -83,6 +97,14 @@ db.version(1).stores({
   bookmarks: "id, kind, mediaId, createdAt",
   library: "id, kind, mediaId, status, updatedAt",
   history: "id, kind, mediaId, endedAt, createdAt, [kind+mediaId]",
+});
+
+db.version(2).stores({
+  progress: "id, kind, mediaId, updatedAt, [kind+mediaId]",
+  bookmarks: "id, kind, mediaId, createdAt",
+  library: "id, kind, mediaId, status, updatedAt",
+  history: "id, kind, mediaId, endedAt, createdAt, [kind+mediaId]",
+  offlineChapters: "id, kind, mediaId, unit, cachedAt, [kind+mediaId]",
 });
 
 export function progressId(kind: ProgressKind, mediaId: string, unit: number): string {

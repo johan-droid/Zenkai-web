@@ -350,3 +350,39 @@ export async function fetchPublicProfile(username: string): Promise<{ user: User
     method: "GET",
   });
 }
+
+export interface LinkedAccountItem {
+  id: string;
+  provider: string;
+  providerUserId: string;
+  providerUsername: string | null;
+  providerEmail?: string | null;
+  createdAt: string;
+}
+
+export function getGoogleOAuthUrl(): string {
+  const base = getZenkaiApiUrl();
+  return `${base}/api/v1/auth/oauth/google`;
+}
+
+export function getAnilistOAuthUrl(): string {
+  const base = getZenkaiApiUrl();
+  return `${base}/api/v1/auth/oauth/anilist`;
+}
+
+export async function fetchLinkedAccounts(): Promise<{ accounts: LinkedAccountItem[] }> {
+  return authedFetch<{ accounts: LinkedAccountItem[] }>("/api/v1/auth/accounts", {
+    method: "GET",
+  });
+}
+
+export async function unlinkOAuthAccount(
+  provider: string,
+): Promise<{ unlinked: boolean; provider: string }> {
+  return authedFetch<{ unlinked: boolean; provider: string }>(
+    `/api/v1/auth/accounts/${encodeURIComponent(provider)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
