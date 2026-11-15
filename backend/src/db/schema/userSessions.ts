@@ -4,7 +4,8 @@ import {
   varchar,
   text,
   timestamp,
-  index
+  index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { users } from "./users.js";
 
@@ -24,7 +25,9 @@ export const userSessions = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    unique("user_sessions_token_hash_unique").on(table.tokenHash),
     index("user_sessions_user_id_idx").on(table.userId),
+    index("user_sessions_token_hash_idx").on(table.tokenHash),
     index("user_sessions_expires_at_idx").on(table.expiresAt),
   ],
 );

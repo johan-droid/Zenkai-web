@@ -98,6 +98,35 @@ export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/** Generate a cryptographically secure random token (hex-encoded). */
+export function generateSecureToken(bytes = 32): string {
+  return randomBytes(bytes).toString("hex");
+}
+
+/** Generate a PKCE Code Verifier (RFC 7636). */
+export function generatePkceCodeVerifier(): string {
+  return randomBytes(32)
+    .toString("base64url")
+    .replace(/[^a-zA-Z0-9-._~]/g, "");
+}
+
+/** Compute PKCE Code Challenge using SHA-256 (RFC 7636). */
+export function computePkceCodeChallenge(codeVerifier: string): string {
+  return createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
+}
+
+/** Generate cryptographically random OAuth state token. */
+export function generateOAuthState(): string {
+  return randomBytes(24).toString("hex");
+}
+
+/** Generate cryptographically random OpenID Connect nonce. */
+export function generateOAuthNonce(): string {
+  return randomBytes(24).toString("hex");
+}
+
 /** Parse a raw Cookie header into key-value pairs safely. */
 export function parseCookies(cookieHeader?: string): Record<string, string> {
   if (!cookieHeader) return {};

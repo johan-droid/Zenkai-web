@@ -20,6 +20,8 @@ export type ErrorReason =
   | "provider_timeout"
   | "upstream_error"
   | "rate_limited"
+  | "service_unavailable"
+  | "oauth_error"
   | "internal";
 
 /** Standardized API error response structure */
@@ -113,6 +115,10 @@ export class AppError extends Error {
   /** The client referenced a source that no longer resolves for this episode. */
   static selectionStale(message: string, details?: unknown): AppError {
     return new AppError("selection_stale", message, 409, details);
+  }
+
+  static serviceUnavailable(message = "service unavailable", details?: unknown): AppError {
+    return new AppError("service_unavailable", message, 503, details);
   }
 
   static internal(message: string, details?: unknown): AppError {

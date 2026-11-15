@@ -9,6 +9,8 @@ export * from "./schedule.js";
 export * from "./users.js";
 export * from "./comments.js";
 export * from "./userSessions.js";
+export * from "./oauthAccounts.js";
+export * from "./accountSecurity.js";
 export * from "./library.js";
 export * from "./progress.js";
 export * from "./playback_reports.js";

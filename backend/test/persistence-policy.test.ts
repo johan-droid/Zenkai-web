@@ -79,7 +79,14 @@ describe("storage policy: metadata only, never media", () => {
   it("stores no credential in any column", () => {
     for (const [table, columns] of TABLES) {
       // User identity tables store scrypt/sha256 digests (passwordHash, tokenHash), not provider secrets
-      if (table === "users" || table === "userSessions") continue;
+      if (
+        table === "users" ||
+        table === "userSessions" ||
+        table === "passwordResets" ||
+        table === "emailVerifications"
+      ) {
+        continue;
+      }
       for (const column of columns) {
         assert.ok(
           !CREDENTIAL_COLUMN.test(column),
@@ -98,6 +105,18 @@ describe("storage policy: metadata only, never media", () => {
     const sessionCols = columnsOf("userSessions");
     assert.ok(sessionCols.includes("tokenHash"), "userSessions must store hashed token digest");
     assert.ok(!sessionCols.includes("rawToken"), "userSessions must NEVER store raw session tokens");
+
+    const resetCols = columnsOf("passwordResets");
+    assert.ok(resetCols.includes("tokenHash"), "passwordResets must store hashed token digest");
+    assert.ok(!resetCols.includes("rawToken") && !resetCols.includes("token"), "passwordResets must not store raw token");
+
+    const verifyCols = columnsOf("emailVerifications");
+    assert.ok(verifyCols.includes("tokenHash"), "emailVerifications must store hashed token digest");
+    assert.ok(!verifyCols.includes("rawToken") && !verifyCols.includes("token"), "emailVerifications must not store raw token");
+
+    const oauthCols = columnsOf("oauthAccounts");
+    assert.ok(!oauthCols.includes("accessToken"), "oauthAccounts must not store access tokens");
+    assert.ok(!oauthCols.includes("refreshToken"), "oauthAccounts must not store refresh tokens");
   });
 
   it("stores no copy of the media itself", () => {

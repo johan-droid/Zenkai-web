@@ -137,6 +137,23 @@ const schema = z.object({
   /** Allowed CORS origins (comma-separated). In development, all origins are permitted. */
   CORS_ORIGIN: z.string().default(""),
 
+  /** Frontend Application URL for OAuth redirects (e.g. http://localhost:3000 or production domain). */
+  APP_URL: z.string().default("http://localhost:3000"),
+
+  /** Google OAuth 2.0 / OpenID Connect credentials */
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
+
+  /** AniList OAuth credentials for external account linking */
+  ANILIST_CLIENT_ID: z.string().optional(),
+  ANILIST_CLIENT_SECRET: z.string().optional(),
+  ANILIST_REDIRECT_URI: z.string().optional(),
+
+  /** Session & OAuth cookie names */
+  SESSION_COOKIE_NAME: z.string().default("zenkai_session"),
+  OAUTH_STATE_COOKIE_NAME: z.string().default("zenkai_oauth_state"),
+
   /** Passphrase for user settings encryption at rest. */
   SETTINGS_ENCRYPTION_PASSPHRASE: z
     .string()

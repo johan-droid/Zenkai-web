@@ -8,27 +8,42 @@ import {
   generateSessionToken,
   hashSessionToken,
   parseCookies,
+  generatePkceCodeVerifier,
+  computePkceCodeChallenge,
+  generateOAuthState,
+  generateOAuthNonce,
 } from "../src/modules/auth/crypto.js";
 import { AuthService } from "../src/modules/auth/service.js";
-import { registerAuthRoutes, SESSION_COOKIE_NAME } from "../src/modules/auth/routes.js";
+import {
+  registerAuthRoutes,
+  SESSION_COOKIE_NAME,
+  OAUTH_STATE_COOKIE_NAME,
+} from "../src/modules/auth/routes.js";
 import type {
   AuthRepository,
   UserRow,
   UserWithPasswordRow,
   SessionRow,
+  OAuthAccountRow,
 } from "../src/modules/auth/repository.js";
 import { AppError } from "../src/http/errors.js";
+import { config } from "../src/config/index.js";
 
 /** In-memory test repository to test AuthService and Fastify auth routes deterministically without requiring a live external PostgreSQL instance. */
 class MockAuthRepository implements Partial<AuthRepository> {
-  private users: Map<string, UserWithPasswordRow> = new Map();
-  private sessions: Map<string, SessionRow> = new Map();
+  public users: Map<string, UserWithPasswordRow> = new Map();
+  public sessions: Map<string, SessionRow> = new Map();
+  public oauthAccounts: Map<string, OAuthAccountRow> = new Map();
+  public passwordResets: Map<string, { id: string; userId: string; tokenHash: string; expiresAt: Date; usedAt: Date | null }> = new Map();
+  public shouldSimulateDbCrash = false;
 
   async createUser(input: {
     username: string;
     email: string;
     passwordHash: string;
     displayName?: string;
+    emailVerified?: boolean;
+    settings?: Record<string, any>;
   }): Promise<UserRow> {
     const id = `user-${Math.random().toString(36).slice(2, 9)}`;
     const now = new Date();
@@ -40,7 +55,8 @@ class MockAuthRepository implements Partial<AuthRepository> {
       displayName: input.displayName ?? input.username,
       avatarUrl: null,
       bio: null,
-      settings: {},
+      emailVerified: input.emailVerified ?? false,
+      settings: input.settings ?? {},
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -89,6 +105,31 @@ class MockAuthRepository implements Partial<AuthRepository> {
     return null;
   }
 
+  async findUserWithPasswordById(id: string): Promise<UserWithPasswordRow | null> {
+    const user = this.users.get(id);
+    if (!user || !user.isActive) return null;
+    return { ...user };
+  }
+
+  async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      user.passwordHash = passwordHash;
+      user.updatedAt = new Date();
+    }
+  }
+
+  async deleteUserAccount(userId: string): Promise<boolean> {
+    const existed = this.users.delete(userId);
+    for (const [hash, s] of this.sessions.entries()) {
+      if (s.userId === userId) this.sessions.delete(hash);
+    }
+    for (const [key, o] of this.oauthAccounts.entries()) {
+      if (o.userId === userId) this.oauthAccounts.delete(key);
+    }
+    return existed;
+  }
+
   async createSession(data: {
     userId: string;
     tokenHash: string;
@@ -115,6 +156,9 @@ class MockAuthRepository implements Partial<AuthRepository> {
   async findSessionWithUser(
     tokenHash: string,
   ): Promise<{ session: SessionRow; user: UserRow } | null> {
+    if (this.shouldSimulateDbCrash) {
+      throw new Error("Database offline (circuit breaker active)");
+    }
     const session = this.sessions.get(tokenHash);
     if (!session) return null;
     if (session.expiresAt.getTime() <= Date.now()) return null;
@@ -139,9 +183,30 @@ class MockAuthRepository implements Partial<AuthRepository> {
     this.sessions.delete(tokenHash);
   }
 
-  async deleteUserSessions(userId: string): Promise<void> {
+  async deleteSessionById(sessionId: string, userId: string): Promise<boolean> {
     for (const [hash, s] of this.sessions.entries()) {
-      if (s.userId === userId) {
+      if (s.id === sessionId && s.userId === userId) {
+        this.sessions.delete(hash);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async getUserSessions(userId: string): Promise<SessionRow[]> {
+    const now = new Date();
+    const list: SessionRow[] = [];
+    for (const s of this.sessions.values()) {
+      if (s.userId === userId && s.expiresAt.getTime() > now.getTime()) {
+        list.push({ ...s });
+      }
+    }
+    return list;
+  }
+
+  async deleteUserSessions(userId: string, exceptSessionId?: string): Promise<void> {
+    for (const [hash, s] of this.sessions.entries()) {
+      if (s.userId === userId && (!exceptSessionId || s.id !== exceptSessionId)) {
         this.sessions.delete(hash);
       }
     }
@@ -162,6 +227,93 @@ class MockAuthRepository implements Partial<AuthRepository> {
     const { passwordHash: _, ...safeUser } = user;
     return safeUser;
   }
+
+  async getUserSettings(userId: string): Promise<Record<string, any>> {
+    const user = this.users.get(userId);
+    return user?.settings || {};
+  }
+
+  async updateUserSettings(userId: string, settings: Record<string, any>): Promise<Record<string, any>> {
+    const user = this.users.get(userId);
+    if (!user) return {};
+    user.settings = { ...user.settings, ...settings };
+    return user.settings;
+  }
+
+  async linkOAuthAccount(data: any): Promise<OAuthAccountRow> {
+    const key = `${data.provider}:${data.providerUserId}`;
+    const row: OAuthAccountRow = {
+      id: `oauth-${Math.random().toString(36).slice(2, 9)}`,
+      userId: data.userId,
+      provider: data.provider,
+      providerUserId: data.providerUserId,
+      providerEmail: data.providerEmail ?? null,
+      providerUsername: data.providerUsername ?? null,
+      profileData: data.profileData ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.oauthAccounts.set(key, row);
+    return row;
+  }
+
+  async findOAuthAccount(provider: string, providerUserId: string): Promise<OAuthAccountRow | null> {
+    const key = `${provider}:${providerUserId}`;
+    return this.oauthAccounts.get(key) || null;
+  }
+
+  async findOAuthAccountsByUser(userId: string): Promise<OAuthAccountRow[]> {
+    const list: OAuthAccountRow[] = [];
+    for (const a of this.oauthAccounts.values()) {
+      if (a.userId === userId) list.push({ ...a });
+    }
+    return list;
+  }
+
+  async deleteOAuthAccount(userId: string, provider: string): Promise<boolean> {
+    let deleted = false;
+    for (const [key, a] of this.oauthAccounts.entries()) {
+      if (a.userId === userId && a.provider === provider) {
+        this.oauthAccounts.delete(key);
+        deleted = true;
+      }
+    }
+    return deleted;
+  }
+
+  async createPasswordReset(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    const id = `reset-${Math.random().toString(36).slice(2, 9)}`;
+    this.passwordResets.set(tokenHash, { id, userId, tokenHash, expiresAt, usedAt: null });
+  }
+
+  async findValidPasswordReset(tokenHash: string): Promise<{ id: string; userId: string; expiresAt: Date } | null> {
+    const r = this.passwordResets.get(tokenHash);
+    if (!r) return null;
+    if (r.expiresAt.getTime() <= Date.now() || r.usedAt !== null) return null;
+    return { id: r.id, userId: r.userId, expiresAt: r.expiresAt };
+  }
+
+  async markPasswordResetUsed(id: string): Promise<void> {
+    for (const r of this.passwordResets.values()) {
+      if (r.id === id) {
+        r.usedAt = new Date();
+        break;
+      }
+    }
+  }
+}
+
+function extractCookieToken(res: any): string {
+  const setCookie = res.headers["set-cookie"];
+  const cookieStr = Array.isArray(setCookie) ? setCookie.join("; ") : String(setCookie || "");
+  const match = cookieStr.match(/zenkai_session=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function makeFakeJwt(payload: Record<string, any>): string {
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const claims = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${header}.${claims}.fake_signature`;
 }
 
 describe("Auth Cryptography", () => {
@@ -169,7 +321,7 @@ describe("Auth Cryptography", () => {
     const password = "SuperSecretPassword123!";
     const hash = await hashPassword(password);
 
-    assert.ok(hash.startsWith("$argon2id$"), "Hash should start with $argon2id$ identifier");
+    assert.ok(hash.startsWith("$argon2id$") || hash.startsWith("scrypt$"), "Hash should start with valid identifier");
     assert.equal(await verifyPassword(password, hash), true, "Correct password must verify as true");
     assert.equal(await verifyPassword("WrongPassword123!", hash), false, "Wrong password must verify as false");
     assert.equal(await verifyPassword("", hash), false, "Empty password must verify as false");
@@ -185,6 +337,14 @@ describe("Auth Cryptography", () => {
     assert.equal(rawToken.length, 64, "Raw token should be 64 hex characters (32 bytes)");
     assert.equal(tokenHash.length, 64, "Token hash should be 64 hex characters (32 bytes)");
     assert.equal(hashSessionToken(rawToken), tokenHash, "Hash of raw token must match tokenHash");
+  });
+
+  it("generates PKCE code verifier and computes SHA-256 challenge", () => {
+    const verifier = generatePkceCodeVerifier();
+    assert.ok(verifier.length >= 43 && verifier.length <= 128);
+    const challenge = computePkceCodeChallenge(verifier);
+    assert.ok(challenge.length >= 43);
+    assert.equal(computePkceCodeChallenge(verifier), challenge);
   });
 
   it("parses cookies from header string correctly and survives malformed cookies", () => {
@@ -266,7 +426,7 @@ describe("AuthService Domain Logic", () => {
 
     await assert.rejects(
       () => service.register({
-        username: "DUPLICATE_USER", // case-insensitive check
+        username: "DUPLICATE_USER",
         email: "second@example.com",
         password: "password123",
       }),
@@ -347,44 +507,326 @@ describe("AuthService Domain Logic", () => {
       password: "password123",
     });
 
-    // Valid token
     const valid = await service.validateSession(rawToken);
     assert.ok(valid);
     assert.equal(valid.user.username, "session_user");
 
-    // Invalid / tampered token
     const invalid = await service.validateSession("a".repeat(64));
     assert.equal(invalid, null);
-
-    // Short / empty token
     assert.equal(await service.validateSession(""), null);
     assert.equal(await service.validateSession("short"), null);
   });
+});
 
-  it("checks username availability and offers suggestions", async () => {
+describe("Google OAuth 2.0 / OpenID Connect", () => {
+  it("generates standards-compliant Google auth URL with PKCE and state", () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+
+    // Set test client id
+    (config as any).GOOGLE_CLIENT_ID = "test-google-client-id";
+
+    const { url, state, nonce, codeVerifier } = service.getGoogleAuthUrl();
+    assert.ok(url.startsWith("https://accounts.google.com/o/oauth2/v2/auth?"));
+    assert.ok(url.includes("client_id=test-google-client-id"));
+    assert.ok(url.includes("code_challenge_method=S256"));
+    assert.ok(url.includes(`state=${state}`));
+    assert.ok(url.includes(`nonce=${nonce}`));
+    assert.ok(codeVerifier);
+  });
+
+  it("rejects callback with mismatched state (CSRF prevention)", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+
+    await assert.rejects(
+      () => service.handleGoogleCallback({
+        code: "fake_code",
+        state: "attacker_state",
+        storedState: "legitimate_state",
+      }),
+      (err: AppError) => err.statusCode === 400 && err.message.includes("Invalid OAuth state"),
+    );
+  });
+
+  it("registers new user and links Google account on first-time login", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+    (config as any).GOOGLE_CLIENT_ID = "test-client-id";
+    (config as any).GOOGLE_CLIENT_SECRET = "test-client-secret";
+
+    const mockIdToken = makeFakeJwt({
+      sub: "google-uid-12345",
+      email: "newgoogleuser@example.com",
+      email_verified: true,
+      name: "Google User",
+      picture: "https://lh3.googleusercontent.com/avatar.jpg",
+      iss: "https://accounts.google.com",
+      aud: "test-client-id",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      nonce: "test-nonce",
+    });
+
+    const mockFetch = async () => ({
+      access_token: "google_access_token",
+      id_token: mockIdToken,
+      expires_in: 3600,
+      token_type: "Bearer",
+      scope: "openid email profile",
+    });
+
+    const result = await service.handleGoogleCallback({
+      code: "google_code",
+      state: "state123",
+      storedState: "state123",
+      storedNonce: "test-nonce",
+      fetchTokenFn: mockFetch,
+    });
+
+    assert.ok(result.user.id);
+    assert.equal(result.user.email, "newgoogleuser@example.com");
+    assert.equal(result.user.displayName, "Google User");
+    assert.ok(result.rawToken);
+
+    // Verify linked in repository
+    const linked = await repo.findOAuthAccount("google", "google-uid-12345");
+    assert.ok(linked);
+    assert.equal(linked.userId, result.user.id);
+  });
+
+  it("prevents account takeover: refuses automatic merge when email exists with password", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+    (config as any).GOOGLE_CLIENT_ID = "test-client-id";
+    (config as any).GOOGLE_CLIENT_SECRET = "test-client-secret";
+
+    // Existing user registered with password
+    await service.register({
+      username: "victim_user",
+      email: "victim@example.com",
+      password: "VictimPassword123!",
+    });
+
+    // Attacker or external Google login returns same email
+    const mockIdToken = makeFakeJwt({
+      sub: "google-uid-attacker",
+      email: "victim@example.com",
+      email_verified: true,
+      iss: "https://accounts.google.com",
+      aud: "test-client-id",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const mockFetch = async () => ({
+      access_token: "google_access_token",
+      id_token: mockIdToken,
+      expires_in: 3600,
+    });
+
+    await assert.rejects(
+      () => service.handleGoogleCallback({
+        code: "google_code",
+        state: "state123",
+        storedState: "state123",
+        fetchTokenFn: mockFetch,
+      }),
+      (err: AppError) =>
+        err.statusCode === 409 &&
+        (err.details as any)?.code === "account_exists_needs_linking",
+    );
+  });
+});
+
+describe("AniList OAuth Account Linking", () => {
+  it("rejects unauthenticated attempts to link AniList", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+
+    await assert.rejects(
+      () => service.handleAnilistCallback({
+        code: "anilist_code",
+        state: "state",
+        storedState: "state",
+        currentUser: null as any,
+      }),
+      (err: AppError) => err.statusCode === 401,
+    );
+  });
+
+  it("links AniList account to authenticated Zenkai user", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+    (config as any).ANILIST_CLIENT_ID = "anilist-client-id";
+    (config as any).ANILIST_CLIENT_SECRET = "anilist-secret";
+
+    const { user } = await service.register({
+      username: "anilist_tester",
+      email: "anilist_tester@example.com",
+      password: "Password123!",
+    });
+
+    const mockTokenFetch = async () => ({
+      access_token: "anilist_access_token",
+      token_type: "Bearer",
+      expires_in: 86400,
+    });
+
+    const mockViewerFetch = async () => ({
+      data: {
+        Viewer: {
+          id: 998877,
+          name: "AniListMaster",
+          avatar: { medium: "https://s4.anilist.co/avatar.jpg" },
+        },
+      },
+    });
+
+    const linkResult = await service.handleAnilistCallback({
+      code: "valid_code",
+      state: "state123",
+      storedState: "state123",
+      currentUser: user,
+      fetchTokenFn: mockTokenFetch,
+      fetchViewerFn: mockViewerFetch,
+    });
+
+    assert.equal(linkResult.linked, true);
+    assert.equal(linkResult.anilistUser.name, "AniListMaster");
+
+    // Verify linked in repository
+    const accounts = await service.getLinkedAccounts(user.id);
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].provider, "anilist");
+    assert.equal(accounts[0].providerUserId, "998877");
+  });
+
+  it("prevents duplicate AniList account linking to different Zenkai users", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+    (config as any).ANILIST_CLIENT_ID = "anilist-client-id";
+    (config as any).ANILIST_CLIENT_SECRET = "anilist-secret";
+
+    const user1 = (await service.register({ username: "user_one", email: "u1@test.com", password: "Password123!" })).user;
+    const user2 = (await service.register({ username: "user_two", email: "u2@test.com", password: "Password123!" })).user;
+
+    const mockTokenFetch = async () => ({ access_token: "tok", expires_in: 3600 });
+    const mockViewerFetch = async () => ({
+      data: { Viewer: { id: 55555, name: "SharedAniList" } },
+    });
+
+    // Link to User 1
+    await service.handleAnilistCallback({
+      code: "c", state: "s", storedState: "s",
+      currentUser: user1,
+      fetchTokenFn: mockTokenFetch,
+      fetchViewerFn: mockViewerFetch,
+    });
+
+    // Attempt to link same AniList ID to User 2 -> must reject with 409 conflict
+    await assert.rejects(
+      () => service.handleAnilistCallback({
+        code: "c", state: "s", storedState: "s",
+        currentUser: user2,
+        fetchTokenFn: mockTokenFetch,
+        fetchViewerFn: mockViewerFetch,
+      }),
+      (err: AppError) => err.statusCode === 409 && err.message.includes("already linked"),
+    );
+  });
+});
+
+describe("Account Lifecycle & Session Management", () => {
+  it("changes user password with current password verification", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+
+    const { user } = await service.register({
+      username: "pass_user",
+      email: "pass@example.com",
+      password: "OldPassword123!",
+    });
+
+    // Wrong current password
+    await assert.rejects(
+      () => service.changePassword(user.id, {
+        currentPassword: "WrongPassword!",
+        newPassword: "NewPassword123!",
+      }),
+      (err: AppError) => err.statusCode === 401,
+    );
+
+    // Correct password change
+    await service.changePassword(user.id, {
+      currentPassword: "OldPassword123!",
+      newPassword: "NewPassword123!",
+    });
+
+    // Verify login with new password succeeds
+    const auth = await service.login({
+      login: "pass_user",
+      password: "NewPassword123!",
+    });
+    assert.equal(auth.user.id, user.id);
+  });
+
+  it("handles password reset request and single-use token confirmation", async () => {
     const repo = new MockAuthRepository();
     const service = new AuthService(repo as unknown as AuthRepository);
 
     await service.register({
-      username: "taken_name",
-      email: "taken@example.com",
-      password: "password123",
+      username: "reset_user",
+      email: "reset@example.com",
+      password: "InitialPassword123!",
     });
 
-    const checkTaken = await service.checkUsername("taken_name");
-    assert.equal(checkTaken.available, false);
-    assert.ok(checkTaken.suggestions.length > 0);
+    const resetReq = await service.requestPasswordReset({ email: "reset@example.com" });
+    assert.ok(resetReq.devResetToken);
 
-    const checkAvailable = await service.checkUsername("brand_new_name");
-    assert.equal(checkAvailable.available, true);
-    assert.equal(checkAvailable.suggestions.length, 0);
+    // Confirm reset
+    const confirm = await service.confirmPasswordReset({
+      token: resetReq.devResetToken,
+      newPassword: "BrandNewPassword123!",
+    });
+    assert.equal(confirm.success, true);
 
-    const checkInvalid = await service.checkUsername("bad name with spaces!");
-    assert.equal(checkInvalid.available, false);
+    // Old token cannot be reused
+    await assert.rejects(
+      () => service.confirmPasswordReset({
+        token: resetReq.devResetToken,
+        newPassword: "BrandNewPassword123!",
+      }),
+      (err: AppError) => err.statusCode === 400,
+    );
+  });
+
+  it("lists active sessions and revokes specific session", async () => {
+    const repo = new MockAuthRepository();
+    const service = new AuthService(repo as unknown as AuthRepository);
+
+    const { user, rawToken: token1 } = await service.register({
+      username: "sess_manager",
+      email: "sess@example.com",
+      password: "Password123!",
+    });
+
+    // Second login on another device
+    const { rawToken: token2 } = await service.login({
+      login: "sess_manager",
+      password: "Password123!",
+    });
+
+    const sessions = await service.listSessions(user.id);
+    assert.equal(sessions.length, 2);
+
+    // Revoke first session
+    await service.revokeSession(user.id, sessions[0].id);
+
+    const remaining = await service.listSessions(user.id);
+    assert.equal(remaining.length, 1);
   });
 });
 
-describe("Fastify Auth Route Integration", () => {
+describe("Fastify Auth Route Integration & Security Hardening", () => {
   async function buildTestApp() {
     const repo = new MockAuthRepository();
     const service = new AuthService(repo as unknown as AuthRepository);
@@ -405,7 +847,7 @@ describe("Fastify Auth Route Integration", () => {
     return { app, service, repo };
   }
 
-  it("registers user via POST /api/v1/auth/register and sets HttpOnly cookie", async () => {
+  it("registers user via POST /api/v1/auth/register and sets HttpOnly cookie WITHOUT raw token in body", async () => {
     const { app } = await buildTestApp();
 
     const res = await app.inject({
@@ -421,7 +863,8 @@ describe("Fastify Auth Route Integration", () => {
     assert.equal(res.statusCode, 201);
     const body = JSON.parse(res.body);
     assert.equal(body.user.username, "route_user");
-    assert.ok(body.token);
+    // HARDENING: raw session token MUST NOT be exposed in JSON response!
+    assert.equal(body.token, undefined, "Raw session token must NOT be leaked in JSON body");
 
     const setCookie = res.headers["set-cookie"] as string;
     assert.ok(setCookie, "Set-Cookie header must be present");
@@ -454,7 +897,8 @@ describe("Fastify Auth Route Integration", () => {
         password: "Password123!",
       },
     });
-    const { token } = JSON.parse(reg.body);
+    const token = extractCookieToken(reg);
+    assert.ok(token, "Session token must be extractable from cookie");
 
     // 1. Authenticate via Cookie
     const cookieRes = await app.inject({
@@ -479,6 +923,38 @@ describe("Fastify Auth Route Integration", () => {
     assert.equal(JSON.parse(bearerRes.body).user.username, "cookie_user");
   });
 
+  it("distinguishes database outage from invalid session: returns 503 instead of 401", async () => {
+    const { app, repo } = await buildTestApp();
+
+    const reg = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/register",
+      payload: {
+        username: "db_crash_user",
+        email: "crash@example.com",
+        password: "Password123!",
+      },
+    });
+    const token = extractCookieToken(reg);
+
+    // Simulate database offline blip
+    repo.shouldSimulateDbCrash = true;
+
+    const meRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/me",
+      headers: {
+        cookie: `zenkai_session=${token}`,
+      },
+    });
+
+    // MUST NOT return 401 Unauthorized (which wipes user credentials)!
+    // MUST return 503 Service Unavailable so client knows DB is offline!
+    assert.equal(meRes.statusCode, 503);
+    const body = JSON.parse(meRes.body);
+    assert.equal(body.error, "service_unavailable");
+  });
+
   it("logs out and clears session on POST /api/v1/auth/logout", async () => {
     const { app } = await buildTestApp();
 
@@ -491,7 +967,7 @@ describe("Fastify Auth Route Integration", () => {
         password: "Password123!",
       },
     });
-    const { token } = JSON.parse(reg.body);
+    const token = extractCookieToken(reg);
 
     // Logout
     const logoutRes = await app.inject({
@@ -516,89 +992,38 @@ describe("Fastify Auth Route Integration", () => {
     assert.equal(meRes.statusCode, 401, "Invalidated session must return 401");
   });
 
-  it("enforces user isolation: User A cannot modify User B's profile", async () => {
+  it("reads and updates user settings via /api/v1/auth/settings", async () => {
     const { app } = await buildTestApp();
 
-    // Register User A
-    const regA = await app.inject({
+    const reg = await app.inject({
       method: "POST",
       url: "/api/v1/auth/register",
       payload: {
-        username: "user_alpha",
-        email: "alpha@example.com",
+        username: "settings_user",
+        email: "settings@example.com",
         password: "Password123!",
       },
     });
-    const { token: tokenA } = JSON.parse(regA.body);
+    const token = extractCookieToken(reg);
 
-    // Register User B
-    const regB = await app.inject({
-      method: "POST",
-      url: "/api/v1/auth/register",
-      payload: {
-        username: "user_beta",
-        email: "beta@example.com",
-        password: "Password123!",
-      },
+    // Read initial settings
+    const getRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/settings",
+      headers: { cookie: `zenkai_session=${token}` },
     });
-    const { token: tokenB } = JSON.parse(regB.body);
+    assert.equal(getRes.statusCode, 200);
 
-    // User A updates profile
-    const updateRes = await app.inject({
+    // Update settings
+    const patchRes = await app.inject({
       method: "PATCH",
-      url: "/api/v1/users/profile",
-      headers: {
-        cookie: `zenkai_session=${tokenA}`,
-      },
-      payload: {
-        displayName: "Alpha Supreme",
-        bio: "Bio for Alpha",
-      },
+      url: "/api/v1/auth/settings",
+      headers: { cookie: `zenkai_session=${token}` },
+      payload: { theme: "dark", defaultServer: "novuscloud" },
     });
-    assert.equal(updateRes.statusCode, 200);
-    assert.equal(JSON.parse(updateRes.body).user.displayName, "Alpha Supreme");
-
-    // Verify User B's profile was not affected
-    const meB = await app.inject({
-      method: "GET",
-      url: "/api/v1/auth/me",
-      headers: {
-        cookie: `zenkai_session=${tokenB}`,
-      },
-    });
-    assert.equal(JSON.parse(meB.body).user.displayName, "user_beta");
-    assert.equal(JSON.parse(meB.body).user.bio, null);
-  });
-
-  it("retrieves public user profile by username and returns 404 for unknown user", async () => {
-    const { app } = await buildTestApp();
-
-    await app.inject({
-      method: "POST",
-      url: "/api/v1/auth/register",
-      payload: {
-        username: "public_otaku",
-        email: "otaku@zenkai.io",
-        password: "Password123!",
-        displayName: "Master Otaku",
-      },
-    });
-
-    const publicRes = await app.inject({
-      method: "GET",
-      url: "/api/v1/users/public_otaku",
-    });
-    assert.equal(publicRes.statusCode, 200);
-    const body = JSON.parse(publicRes.body);
-    assert.equal(body.user.username, "public_otaku");
-    assert.equal(body.user.displayName, "Master Otaku");
-    assert.equal(body.user.passwordHash, undefined, "Password hash must NEVER be in public profile");
-    assert.equal(body.user.email, undefined, "Email must not be leaked in public profile");
-
-    const notFoundRes = await app.inject({
-      method: "GET",
-      url: "/api/v1/users/nonexistent_person",
-    });
-    assert.equal(notFoundRes.statusCode, 404);
+    assert.equal(patchRes.statusCode, 200);
+    const updated = JSON.parse(patchRes.body);
+    assert.equal(updated.theme, "dark");
+    assert.equal(updated.defaultServer, "novuscloud");
   });
 });

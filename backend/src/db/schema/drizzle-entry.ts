@@ -15,6 +15,8 @@ export * from "./novel";
 export * from "./providers";
 export * from "./schedule";
 export * from "./users";
+export * from "./oauthAccounts";
+export * from "./accountSecurity";
 export * from "./library";
 export * from "./progress";
 export * from "./playback_reports";

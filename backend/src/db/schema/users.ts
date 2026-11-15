@@ -24,6 +24,7 @@ export const users = pgTable(
     // Encrypted settings stored as base64-encoded JSON blob
     // Contains: defaultServer, subtitleLanguage, theme, cardDensity, readerLayout, motionPreference
     settings: text("settings"),
+    emailVerified: boolean("email_verified").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
