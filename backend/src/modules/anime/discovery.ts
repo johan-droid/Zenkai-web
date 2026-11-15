@@ -425,96 +425,101 @@ export class DiscoveryService {
    */
   async home(perPage = 10): Promise<HomePayload> {
     const size = normalisePaging(1, perPage).perPage;
+    const cacheKey = `discovery:home:v1:n${size}`;
 
-    const section = async (load: () => Promise<DiscoveryResult>): Promise<HomeSection> => {
-      try {
-        const result = await load();
-        return { status: "ok", items: result.items };
-      } catch (error) {
-        const reason = error instanceof AppError ? error.reason : "upstream_error";
-        return { status: "unavailable", items: [], reason };
-      }
-    };
-
-    // Upcoming is a different shape to a discovery card, so it gets its own
-    // section type rather than being forced through DiscoveryCard.
-    const upcoming = async (): Promise<HomeSection> => {
-      if (!this.upcomingSource) {
-        return { status: "unavailable", items: [], reason: "not_configured" };
-      }
-      try {
-        const rows = await this.upcomingSource.upcoming({ limit: size });
-        if (rows.length > 0) {
-          return {
-            status: "ok",
-            items: rows.map((row) => ({
-              id: null,
-              anilistId: row.anilistId != null ? String(row.anilistId) : "",
-              title: row.title,
-              titles: { romaji: null, english: null, native: null, synonyms: [] },
-              coverUrl: row.coverUrl,
-              coverImageLarge: null,
-              bannerUrl: null,
-              format: null,
-              status: null,
-              season: null,
-              seasonYear: null,
-              year: null,
-              averageScore: null,
-              totalEpisodes: null,
-              popularity: null,
-              genres: [],
-              isAdult: false,
-              // Carried through so a client can show "in 3 days" without a
-              // second request, and so the shelf is not ambiguous about which
-              // episode it is listing.
-              episodeNumber: row.episodeNumber,
-              airingAt: new Date(row.airingAt).toISOString(),
-            })) as unknown as DiscoveryCard[],
-          };
+    const { value } = await cache.remember<HomePayload>(cacheKey, 180, async () => {
+      const section = async (load: () => Promise<DiscoveryResult>): Promise<HomeSection> => {
+        try {
+          const result = await load();
+          return { status: "ok", items: result.items };
+        } catch (error) {
+          const reason = error instanceof AppError ? error.reason : "upstream_error";
+          return { status: "unavailable", items: [], reason };
         }
-      } catch {
-        // Proceed to provider fallback
-      }
+      };
 
-      // Resilient fallback: browse upstream upcoming anime from AniList
-      try {
-        const page = await this.provider.browse({
-          status: "NOT_YET_RELEASED",
-          sort: "POPULARITY_DESC",
-          perPage: size,
-        });
-        if (page?.items && page.items.length > 0) {
-          return {
-            status: "ok",
-            items: dedupeByIdentity(page.items.map((summary) => toCard(summary, null))),
-          };
+      // Upcoming is a different shape to a discovery card, so it gets its own
+      // section type rather than being forced through DiscoveryCard.
+      const upcoming = async (): Promise<HomeSection> => {
+        if (!this.upcomingSource) {
+          return { status: "unavailable", items: [], reason: "not_configured" };
         }
-      } catch (error) {
-        const reason = error instanceof AppError ? error.reason : "upstream_error";
-        return { status: "unavailable", items: [], reason };
-      }
+        try {
+          const rows = await this.upcomingSource.upcoming({ limit: size });
+          if (rows.length > 0) {
+            return {
+              status: "ok",
+              items: rows.map((row) => ({
+                id: null,
+                anilistId: row.anilistId != null ? String(row.anilistId) : "",
+                title: row.title,
+                titles: { romaji: null, english: null, native: null, synonyms: [] },
+                coverUrl: row.coverUrl,
+                coverImageLarge: null,
+                bannerUrl: null,
+                format: null,
+                status: null,
+                season: null,
+                seasonYear: null,
+                year: null,
+                averageScore: null,
+                totalEpisodes: null,
+                popularity: null,
+                genres: [],
+                isAdult: false,
+                // Carried through so a client can show "in 3 days" without a
+                // second request, and so the shelf is not ambiguous about which
+                // episode it is listing.
+                episodeNumber: row.episodeNumber,
+                airingAt: new Date(row.airingAt).toISOString(),
+              })) as unknown as DiscoveryCard[],
+            };
+          }
+        } catch {
+          // Proceed to provider fallback
+        }
 
-      return { status: "unavailable", items: [], reason: "empty" };
-    };
+        // Resilient fallback: browse upstream upcoming anime from AniList
+        try {
+          const page = await this.provider.browse({
+            status: "NOT_YET_RELEASED",
+            sort: "POPULARITY_DESC",
+            perPage: size,
+          });
+          if (page?.items && page.items.length > 0) {
+            return {
+              status: "ok",
+              items: dedupeByIdentity(page.items.map((summary) => toCard(summary, null))),
+            };
+          }
+        } catch (error) {
+          const reason = error instanceof AppError ? error.reason : "upstream_error";
+          return { status: "unavailable", items: [], reason };
+        }
 
-    const [trending, popular, seasonal, recent, topRated, upcomingShelf] = await Promise.all([
-      section(() => this.ranking("trending", { perPage: size })),
-      section(() => this.ranking("popular", { perPage: size })),
-      section(() => this.ranking("seasonal", { perPage: size })),
-      section(() => this.recent({ perPage: size })),
-      section(() => this.ranking("topRated", { perPage: size })),
-      upcoming(),
-    ]);
+        return { status: "unavailable", items: [], reason: "empty" };
+      };
 
-    return {
-      trending,
-      popular,
-      seasonal,
-      recent,
-      topRated,
-      upcoming: upcomingShelf,
-    };
+      const [trending, popular, seasonal, recent, topRated, upcomingShelf] = await Promise.all([
+        section(() => this.ranking("trending", { perPage: size })),
+        section(() => this.ranking("popular", { perPage: size })),
+        section(() => this.ranking("seasonal", { perPage: size })),
+        section(() => this.recent({ perPage: size })),
+        section(() => this.ranking("topRated", { perPage: size })),
+        upcoming(),
+      ]);
+
+      return {
+        trending,
+        popular,
+        seasonal,
+        recent,
+        topRated,
+        upcoming: upcomingShelf,
+      };
+    });
+
+    return value;
   }
 }
 

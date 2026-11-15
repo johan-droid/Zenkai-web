@@ -253,6 +253,29 @@ export function VideoPlayer({
     setManualButton(null);
   };
 
+  const validTracks = useMemo(() => {
+    if (!execution.subtitles || !Array.isArray(execution.subtitles)) return [];
+    return execution.subtitles.filter(
+      (t) =>
+        t &&
+        typeof t.url === "string" &&
+        t.url.trim().length > 0 &&
+        typeof t.language === "string" &&
+        !t.url.startsWith("javascript:") &&
+        !t.url.startsWith("data:"),
+    );
+  }, [execution.subtitles]);
+
+  const defaultTrackIndex = useMemo(() => {
+    if (validTracks.length === 0) return -1;
+    const enIdx = validTracks.findIndex(
+      (t) =>
+        t.language.toLowerCase().includes("english") ||
+        t.language.toLowerCase().trim() === "en",
+    );
+    return enIdx !== -1 ? enIdx : 0;
+  }, [validTracks]);
+
   return (
     <div className="relative group">
       <MediaPlayer
@@ -267,18 +290,14 @@ export function VideoPlayer({
         className="aspect-video w-full overflow-hidden rounded-2xl bg-black"
       >
         <MediaProvider>
-          {execution.subtitles?.map((track, i) => (
+          {validTracks.map((track, i) => (
             <Track
               key={`${track.url}-${i}`}
               src={track.url}
               kind="subtitles"
               label={track.language}
               lang={track.language.toLowerCase().slice(0, 2)}
-              default={
-                i === 0 ||
-                track.language.toLowerCase().includes("english") ||
-                track.language.toLowerCase() === "en"
-              }
+              default={i === defaultTrackIndex}
             />
           ))}
         </MediaProvider>

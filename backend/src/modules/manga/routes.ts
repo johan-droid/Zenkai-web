@@ -12,6 +12,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { cache } from "../../cache/index.js";
 import type { MangaService } from "./service.js";
 import { MANGA_SORTS } from "./repository.js";
 
@@ -57,35 +58,41 @@ export function registerMangaRoutes(app: FastifyInstance, service: MangaService)
   /** Catalogue listing, served from Postgres. */
   app.get("/api/v1/manga", async (request, reply) => {
     const query = parseOrThrow(listQuery, request.query);
+    const cacheKey = `manga:catalogue:v2:${query.limit}:${query.offset}:${query.genre ?? "-"}:${query.status ?? "-"}:${query.sort ?? "-"}:${query.includeAdult ? "1" : "0"}`;
 
-    const { items, total } = await service.list({
-      limit: query.limit,
-      offset: query.offset,
-      genre: query.genre,
-      status: query.status,
-      includeAdult: query.includeAdult,
-      sort: query.sort,
-    });
+    const { value } = await cache.remember(cacheKey, 180, () =>
+      service.list({
+        limit: query.limit,
+        offset: query.offset,
+        genre: query.genre,
+        status: query.status,
+        includeAdult: query.includeAdult,
+        sort: query.sort,
+      }),
+    );
 
     reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
-    return { items, total, limit: query.limit, offset: query.offset };
+    return { items: value.items, total: value.total, limit: query.limit, offset: query.offset };
   });
 
   /** Catalogue alias to guard against /catalogue resolving as :id and failing with 502 */
   app.get("/api/v1/manga/catalogue", async (request, reply) => {
     const query = parseOrThrow(listQuery, request.query);
+    const cacheKey = `manga:catalogue:v2:${query.limit}:${query.offset}:${query.genre ?? "-"}:${query.status ?? "-"}:${query.sort ?? "-"}:${query.includeAdult ? "1" : "0"}`;
 
-    const { items, total } = await service.list({
-      limit: query.limit,
-      offset: query.offset,
-      genre: query.genre,
-      status: query.status,
-      includeAdult: query.includeAdult,
-      sort: query.sort,
-    });
+    const { value } = await cache.remember(cacheKey, 180, () =>
+      service.list({
+        limit: query.limit,
+        offset: query.offset,
+        genre: query.genre,
+        status: query.status,
+        includeAdult: query.includeAdult,
+        sort: query.sort,
+      }),
+    );
 
     reply.header("cache-control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
-    return { items, total, limit: query.limit, offset: query.offset };
+    return { items: value.items, total: value.total, limit: query.limit, offset: query.offset };
   });
 
   /** Title search, database first with a MangaDex fallback. */

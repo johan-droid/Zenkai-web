@@ -16,18 +16,62 @@ import { AppError } from "../../http/errors.js";
 import type { DiscoveryService } from "./discovery.js";
 import type { EpisodeService } from "./episodes.js";
 import type { AnimeService } from "./service.js";
-import { ANIME_SORTS } from "./repository.js";
+import { ANIME_SORTS, type AnimeSort } from "./repository.js";
+
+export const ANIME_SORT_NORMALIZATION_MAP: Record<string, AnimeSort> = Object.assign(
+  Object.create(null),
+  {
+    // Canonical sorts
+    popularity: "popularity",
+    score: "score",
+    "recently-updated": "recently-updated",
+    "recently-added": "recently-added",
+    title: "title",
+    newest: "newest",
+
+    // Provider-style uppercase sorts
+    POPULARITY_DESC: "popularity",
+    SCORE_DESC: "score",
+    START_DATE_DESC: "newest",
+    TITLE_ROMAJI: "title",
+    TITLE_ENGLISH: "title",
+    TITLE: "title",
+    UPDATED_AT_DESC: "recently-updated",
+    CREATED_AT_DESC: "recently-added",
+    ADDED_AT_DESC: "recently-added",
+  },
+);
+
+export const animeSortQuerySchema = z.string().trim().transform((val, ctx) => {
+  if (val === "TRENDING" || val === "TRENDING_DESC" || val === "trending") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "trending sort is only supported via /api/v1/anime/discovery/trending or /api/v1/anime/trending",
+    });
+    return z.NEVER;
+  }
+  if (val === "__proto__" || val === "constructor" || val === "prototype") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Invalid sort: "${val}"`,
+    });
+    return z.NEVER;
+  }
+  const normalized = Object.hasOwn(ANIME_SORT_NORMALIZATION_MAP, val)
+    ? ANIME_SORT_NORMALIZATION_MAP[val]
+    : undefined;
+  if (!normalized) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Invalid sort: "${val}". Supported sorts: ${ANIME_SORTS.join(", ")}, POPULARITY_DESC, SCORE_DESC, START_DATE_DESC, TITLE_ROMAJI, UPDATED_AT_DESC, ADDED_AT_DESC`,
+    });
+    return z.NEVER;
+  }
+  return normalized;
+});
 
 const positiveInt = z.coerce.number().int().positive();
 const season = z.enum(["WINTER", "SPRING", "SUMMER", "FALL"]);
-const sort = z.enum([
-  "TRENDING",
-  "POPULARITY_DESC",
-  "SCORE_DESC",
-  "START_DATE_DESC",
-  "FAVOURITES_DESC",
-  "TITLE_ROMAJI",
-]);
 
 const pagination = {
   page: z.coerce.number().int().min(1).default(1),
@@ -41,15 +85,14 @@ const listQuery = z.object({
   status: z.enum(["FINISHED", "RELEASING", "NOT_YET_RELEASED", "CANCELLED", "HIATUS"]).optional(),
   genre: z.string().trim().min(1).max(64).optional(),
   format: z.enum(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL", "MUSIC"]).optional(),
-  // Catalogue orderings only (P17). "trending" is not here on purpose: it is an
-  // upstream signal with no column behind it, so it stays on the discovery route
-  // rather than being silently served as popularity.
-  sort: z.enum(ANIME_SORTS).optional(),
+  sort: animeSortQuerySchema.optional(),
+  q: z.string().trim().min(1).max(120).optional(),
 });
 
 const searchQuery = z.object({
   q: z.string().trim().min(1, "q is required").max(120),
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  sort: animeSortQuerySchema.optional(),
 });
 
 const animeIdParam = z.object({
@@ -112,6 +155,7 @@ export function registerAnimeRoutes(
       genre: query.genre,
       format: query.format,
       sort: query.sort,
+      q: query.q,
     });
 
     // Discovery cards, the same shape home and search return (P17).
@@ -128,8 +172,8 @@ export function registerAnimeRoutes(
    * frontend asks for the page size it renders rather than walking pages.
    */
   app.get("/api/v1/anime/search", async (request) => {
-    const { q, limit } = parseOrThrow(searchQuery, request.query);
-    const items = await service.search(q, limit);
+    const { q, limit, sort } = parseOrThrow(searchQuery, request.query);
+    const items = await service.search(q, limit, sort);
     return { query: q, limit, items };
   });
 

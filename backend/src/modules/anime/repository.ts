@@ -110,6 +110,7 @@ export interface AnimeListOptions {
   genre?: string;
   format?: string;
   sort?: AnimeSort;
+  q?: string;
 }
 
 /** Stable, URL-safe identifier derived from the canonical title. */
@@ -626,6 +627,17 @@ export class AnimeRepository {
     }
     if (options.status) conditions.push(eq(anime.status, options.status));
     if (options.format) conditions.push(eq(anime.format, options.format));
+    if (options.q) {
+      const qNorm = normalizeTitle(options.q);
+      conditions.push(
+        or(
+          ilike(anime.canonicalTitle, `%${options.q}%`),
+          ilike(anime.romajiTitle, `%${options.q}%`),
+          ilike(anime.englishTitle, `%${options.q}%`),
+          qNorm ? ilike(anime.canonicalTitle, `%${qNorm}%`) : undefined,
+        )!,
+      );
+    }
 
     const base = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -698,9 +710,19 @@ export class AnimeRepository {
    * `AnimeService.search` returns cards too, so the endpoint answers with one
    * shape regardless of whether the answer came from Postgres or upstream.
    */
-  async search(query: string, limit: number): Promise<DiscoveryCard[]> {
+  async search(query: string, limit: number, sort?: AnimeSort): Promise<DiscoveryCard[]> {
     const normalized = normalizeTitle(query);
     if (!normalized) return [];
+
+    const order: Record<AnimeSort, ReturnType<typeof desc>[]> = {
+      popularity: [desc(anime.popularity), desc(anime.averageScore)],
+      score: [desc(anime.averageScore), desc(anime.popularity)],
+      "recently-updated": [desc(anime.sourceUpdatedAt), desc(anime.popularity)],
+      "recently-added": [desc(anime.createdAt), desc(anime.popularity)],
+      title: [asc(anime.canonicalTitle)],
+      newest: [desc(anime.year), desc(anime.seasonYear), desc(anime.popularity)],
+    };
+    const orderBy = order[sort ?? "popularity"];
 
     const rows = await this.db
       .select({ record: anime })
@@ -714,7 +736,7 @@ export class AnimeRepository {
           ilike(anime.canonicalTitle, `%${query}%`),
         ),
       )
-      .orderBy(desc(anime.popularity))
+      .orderBy(...orderBy)
       .limit(limit);
 
     const genresByAnime = await genresFor(

@@ -49,7 +49,7 @@ export function useMangaShelf(limit = 14) {
 export function useAnimeMovies(limit = 14) {
   return useQuery({
     queryKey: ["zenkai", "anime-movies", limit],
-    queryFn: () => fetchAnimeBrowse({ format: "MOVIE", perPage: limit, sort: "POPULARITY_DESC" }),
+    queryFn: () => fetchAnimeBrowse({ format: "MOVIE", perPage: limit, sort: "popularity" }),
     staleTime: 10 * 60_000,
     gcTime: 30 * 60_000,
   });

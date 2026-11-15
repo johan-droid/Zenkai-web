@@ -44,6 +44,43 @@ export function isAllowedEmbedOrigin(rawUrl?: string): boolean {
 }
 
 /**
+ * Validates that an embed URL is structurally safe:
+ * - Scheme must be http or https (no file:, javascript:, data:, blob:)
+ * - Host must not be localhost, loopback, or RFC-1918 private subnets
+ * - Domain must match the approved provider allowlist
+ */
+export function isSafeEmbedUrl(rawUrl?: string): boolean {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host === "::1" ||
+      host.endsWith(".local") ||
+      host.endsWith(".internal") ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      host.startsWith("172.16.") ||
+      host.startsWith("172.17.") ||
+      host.startsWith("172.18.") ||
+      host.startsWith("172.19.") ||
+      host.startsWith("172.2") ||
+      host.startsWith("172.30.") ||
+      host.startsWith("172.31.")
+    ) {
+      return false;
+    }
+    return isAllowedEmbedOrigin(rawUrl);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Zenkai CinePlayer Embed Player (P6/P8).
  *
  * Provides a clean theater wrapper around streaming mirrors:
@@ -66,7 +103,21 @@ function EmbedPlayerInner({
   const [loaded, setLoaded] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isOriginAllowed = useMemo(() => isAllowedEmbedOrigin(execution.url), [execution.url]);
+  const isOriginAllowed = useMemo(() => isSafeEmbedUrl(execution.url), [execution.url]);
+
+  const handleOpenExternal = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!execution.url || !isSafeEmbedUrl(execution.url)) return;
+      const proceed = window.confirm(
+        "Notice: You are leaving Zenkai's isolated player to open an external third-party stream. External websites may contain unverified content, popups, or ads. Do you wish to proceed?",
+      );
+      if (proceed) {
+        window.open(execution.url, "_blank", "noopener,noreferrer");
+      }
+    },
+    [execution.url],
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -129,15 +180,14 @@ function EmbedPlayerInner({
             <RefreshCw className="size-3.5" />
           </button>
           {execution.url && !execution.url.startsWith("file:") && (
-            <a
-              href={execution.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in new window"
+            <button
+              type="button"
+              onClick={handleOpenExternal}
+              title="Open in new window (isolated)"
               className="flex size-7 items-center justify-center rounded-lg bg-black/60 text-zinc-400 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
             >
               <ExternalLink className="size-3.5" />
-            </a>
+            </button>
           )}
           <button
             type="button"
@@ -201,14 +251,13 @@ function EmbedPlayerInner({
                     Reload Mirror
                   </button>
                   {execution.url && !execution.url.startsWith("file:") && (
-                    <a
-                      href={execution.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={handleOpenExternal}
                       className="rounded-xl border border-[#c8102e]/50 bg-[#c8102e]/20 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-[#c8102e]/40 transition-colors"
                     >
                       Open in New Tab
-                    </a>
+                    </button>
                   )}
                 </div>
               )}

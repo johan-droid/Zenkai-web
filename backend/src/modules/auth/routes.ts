@@ -198,7 +198,7 @@ export function registerAuthRoutes(app: FastifyInstance, authService: AuthServic
       await authService.logout(token).catch(() => {});
     }
     clearSessionCookie(reply);
-    return reply.code(200).send({ loggedOut: true });
+    return reply.code(200).send({ success: true, loggedOut: true });
   });
 
   /**

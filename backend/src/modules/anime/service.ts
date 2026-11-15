@@ -13,7 +13,7 @@ import { AppError } from "../../http/errors.js";
 import { AnilistProvider } from "../../providers/metadata/anilist.js";
 import type { AnimeDetail, BrowseQuery, ProviderEpisode } from "../../providers/metadata/types.js";
 import type { ProviderEpisodeInfo, ResolveRequest, StreamingProvider } from "../../providers/streaming/types.js";
-import { AnimeRepository, type AnimeListOptions } from "./repository.js";
+import { AnimeRepository, type AnimeListOptions, type AnimeSort } from "./repository.js";
 import { toCard, type DiscoveryCard } from "./discovery.js";
 
 /** Discovery buckets and their TTLs, from P2. */
@@ -220,11 +220,22 @@ export class AnimeService {
     try {
       return await this.repo.list(options);
     } catch {
+      const sortMap: Record<AnimeSort, NonNullable<BrowseQuery["sort"]>> = {
+        popularity: "POPULARITY_DESC",
+        score: "SCORE_DESC",
+        "recently-updated": "START_DATE_DESC",
+        "recently-added": "START_DATE_DESC",
+        title: "TITLE_ROMAJI",
+        newest: "START_DATE_DESC",
+      };
+
       const page = await this.#anilist.browse({
         page: Math.floor(options.offset / options.limit) + 1,
         perPage: options.limit,
         season: options.season,
         seasonYear: options.seasonYear,
+        sort: options.sort ? sortMap[options.sort] : undefined,
+        search: options.q,
       });
 
       return {
@@ -237,16 +248,29 @@ export class AnimeService {
   /**
    * Title search, with a provider fallback when the database has no match or is down.
    */
-  async search(query: string, limit: number): Promise<DiscoveryCard[]> {
+  async search(query: string, limit: number, sort?: AnimeSort): Promise<DiscoveryCard[]> {
     let local: DiscoveryCard[] = [];
     try {
-      local = await this.repo.search(query, limit);
+      local = await this.repo.search(query, limit, sort);
     } catch {
       local = [];
     }
     if (local.length > 0) return local;
 
-    const page = await this.#anilist.browse({ search: query, perPage: limit });
+    const sortMap: Record<AnimeSort, NonNullable<BrowseQuery["sort"]>> = {
+      popularity: "POPULARITY_DESC",
+      score: "SCORE_DESC",
+      "recently-updated": "START_DATE_DESC",
+      "recently-added": "START_DATE_DESC",
+      title: "TITLE_ROMAJI",
+      newest: "START_DATE_DESC",
+    };
+
+    const page = await this.#anilist.browse({
+      search: query,
+      perPage: limit,
+      sort: sort ? sortMap[sort] : undefined,
+    });
 
     const localIds = await Promise.all(
       page.items.map((summary) => this.repo.upsert(summary).catch(() => null)),
