@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
-import { ExternalLink, Maximize2, RefreshCw } from "lucide-react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
+import { ExternalLink, Maximize2, RefreshCw, ShieldAlert } from "lucide-react";
 import type { PlaybackExecution } from "@/lib/api/zenkai";
 
 export interface EmbedPlayerProps {
@@ -10,6 +10,37 @@ export interface EmbedPlayerProps {
   episodeNumber?: number;
   onNext?: () => void;
   hasNext?: boolean;
+}
+
+/**
+ * Strict provider origin allowlist for isolated embed streaming.
+ * Rejects unverified third-party ad networks, pop-under origins, and malicious redirects.
+ */
+export const ALLOWED_EMBED_ORIGINS = [
+  "cdn.4animo.xyz",
+  "flixera.co",
+  "zangetsu.cc",
+  "megacloud.tv",
+  "rapid-cloud.ru",
+  "rabbitstream.net",
+  "animesalt.cc",
+  "animesalt.to",
+  "novuscloud.buzz",
+  "megaplay.buzz",
+];
+
+export function isAllowedEmbedOrigin(rawUrl?: string): boolean {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    return ALLOWED_EMBED_ORIGINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -35,6 +66,7 @@ function EmbedPlayerInner({
   const [loaded, setLoaded] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isOriginAllowed = useMemo(() => isAllowedEmbedOrigin(execution.url), [execution.url]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -118,65 +150,85 @@ function EmbedPlayerInner({
         </div>
       </div>
 
-      {/* Loading Overlay */}
-      {!loaded && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#0a0a0f] backdrop-blur-sm">
-          <div className="relative flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-red-600 to-red-800 p-2.5 shadow-lg shadow-red-700/30 animate-pulse">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 884 457"
-              role="img"
-              aria-label="Zenkai logo"
-              className="h-full w-full"
-            >
-              <path fill="#ffffff" d="M728 0H301L173 151l135-94h254L0 454h577l137-155-144 98H187L728 0Z" />
-              <path fill="#f2f2f2" d="M884 0h-93L248 377h93L884 0Z" />
-            </svg>
+      {!isOriginAllowed ? (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#0a0a0f] p-6 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30">
+            <ShieldAlert className="size-6" />
           </div>
-          <div className="flex flex-col items-center gap-1 text-center">
-            <span className="text-sm font-semibold tracking-wide text-white">
-              Connecting to {execution.providerName || "Stream Server"}...
-            </span>
-            <span className="text-xs text-zinc-400">
-              Loading CinePlayer stream ({execution.language.toUpperCase()})
-            </span>
+          <div className="max-w-md space-y-1">
+            <h4 className="text-sm font-semibold text-white">External Embed Provider Blocked</h4>
+            <p className="text-xs text-zinc-400">
+              The provider origin is not on Zenkai&apos;s approved ad-free allowlist. For your security and to prevent unverified popups, this embed has been quarantined.
+            </p>
           </div>
-
-          {timedOut && (
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={onReload}
-                className="rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 transition-colors"
-              >
-                Reload Mirror
-              </button>
-              {execution.url && !execution.url.startsWith("file:") && (
-                <a
-                  href={execution.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-xl border border-[#c8102e]/50 bg-[#c8102e]/20 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-[#c8102e]/40 transition-colors"
+          <div className="mt-2 text-xs font-mono text-zinc-500">
+            {execution.url ? new URL(execution.url).hostname : "unknown"}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Loading Overlay */}
+          {!loaded && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#0a0a0f] backdrop-blur-sm">
+              <div className="relative flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-red-600 to-red-800 p-2.5 shadow-lg shadow-red-700/30 animate-pulse">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 884 457"
+                  role="img"
+                  aria-label="Zenkai logo"
+                  className="h-full w-full"
                 >
-                  Open in New Tab
-                </a>
+                  <path fill="#ffffff" d="M728 0H301L173 151l135-94h254L0 454h577l137-155-144 98H187L728 0Z" />
+                  <path fill="#f2f2f2" d="M884 0h-93L248 377h93L884 0Z" />
+                </svg>
+              </div>
+              <div className="flex flex-col items-center gap-1 text-center">
+                <span className="text-sm font-semibold tracking-wide text-white">
+                  Connecting to {execution.providerName || "Stream Server"}...
+                </span>
+                <span className="text-xs text-zinc-400">
+                  Loading CinePlayer stream ({execution.language.toUpperCase()})
+                </span>
+              </div>
+
+              {timedOut && (
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onReload}
+                    className="rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 transition-colors"
+                  >
+                    Reload Mirror
+                  </button>
+                  {execution.url && !execution.url.startsWith("file:") && (
+                    <a
+                      href={execution.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-xl border border-[#c8102e]/50 bg-[#c8102e]/20 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-[#c8102e]/40 transition-colors"
+                    >
+                      Open in New Tab
+                    </a>
+                  )}
+                </div>
               )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* The Iframe */}
-      {execution.url && !execution.url.startsWith("file:") ? (
-        <iframe
-          src={execution.url}
-          title={title ? `${title} - Episode ${episodeNumber ?? ""}` : "Zenkai CinePlayer"}
-          className="absolute inset-0 h-full w-full border-0"
-          allowFullScreen
-          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-          onLoad={() => setLoaded(true)}
-        />
-      ) : null}
+          {/* Sandboxed Isolated Iframe */}
+          {execution.url && !execution.url.startsWith("file:") ? (
+            <iframe
+              src={execution.url}
+              title={title ? `${title} - Episode ${episodeNumber ?? ""}` : "Zenkai CinePlayer"}
+              className="absolute inset-0 h-full w-full border-0"
+              sandbox="allow-scripts allow-forms"
+              referrerPolicy="no-referrer"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              onLoad={() => setLoaded(true)}
+            />
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

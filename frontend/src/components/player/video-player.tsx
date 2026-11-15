@@ -1,6 +1,6 @@
 "use client";
 
-import { MediaPlayer, MediaProvider, useMediaPlayer, useMediaRemote } from "@vidstack/react";
+import { MediaPlayer, MediaProvider, Track, useMediaPlayer, useMediaRemote } from "@vidstack/react";
 import { DefaultVideoLayout, defaultLayoutIcons } from "@vidstack/react/player/layouts/default";
 import type { MediaProviderAdapter } from "@vidstack/react";
 import { isHLSProvider } from "@vidstack/react";
@@ -266,7 +266,22 @@ export function VideoPlayer({
         onError={(detail) => handlers.current.onError(detail)}
         className="aspect-video w-full overflow-hidden rounded-2xl bg-black"
       >
-        <MediaProvider />
+        <MediaProvider>
+          {execution.subtitles?.map((track, i) => (
+            <Track
+              key={`${track.url}-${i}`}
+              src={track.url}
+              kind="subtitles"
+              label={track.language}
+              lang={track.language.toLowerCase().slice(0, 2)}
+              default={
+                i === 0 ||
+                track.language.toLowerCase().includes("english") ||
+                track.language.toLowerCase() === "en"
+              }
+            />
+          ))}
+        </MediaProvider>
         <DefaultVideoLayout icons={defaultLayoutIcons} noModal />
         <MediaEffects
           execution={execution}

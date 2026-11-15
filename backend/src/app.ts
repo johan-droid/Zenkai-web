@@ -396,9 +396,17 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
         headers.referer = referer;
       }
 
+      const combinedAllowlist = [
+        ...config.mangaContentAllowlist,
+        ...config.novelContentAllowlist,
+        ...config.playbackProxyAllowlist,
+      ];
+
       for (let hop = 0; hop <= maxRedirects; hop++) {
         // Enforce SSRF protection on every hop (blocks private IP, loopback, cloud metadata)
-        await assertSafeUrl(currentUrl);
+        const { url: safeUrlObj, address: safeIp } = await assertSafeUrl(currentUrl, {
+          allowlist: combinedAllowlist.length > 0 ? combinedAllowlist : undefined,
+        });
 
         try {
           const controller = new AbortController();
@@ -436,14 +444,14 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
             throw new Error(`Upstream returned ${res.status}`);
           }
         } catch (fetchErr) {
-          // If direct fetch failed, fallback to safe curl for the verified URL
-          await assertSafeUrl(currentUrl);
-
+          // If direct fetch failed, fallback to safe curl for the verified URL with pinned IP
+          const port = safeUrlObj.port || (safeUrlObj.protocol === "https:" ? "443" : "80");
           const curlArgs = [
             "-s",
             "--max-time", "15",
             "--proto", "=http,https",
             "--max-redirs", "0",
+            "--resolve", `${safeUrlObj.hostname}:${port}:${safeIp}`,
           ];
           if (referer) {
             curlArgs.push("-H", `referer: ${referer}`);
