@@ -119,3 +119,4 @@ describe("Embed Player Security & Origin Isolation", () => {
     assert.equal(isAllowedEmbedOrigin(""), false);
   });
 });
+
