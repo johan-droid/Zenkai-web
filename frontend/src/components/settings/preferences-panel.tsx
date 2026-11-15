@@ -476,6 +476,7 @@ export function PreferencesPanel() {
                     <label className="text-xs font-medium text-muted-foreground">Password</label>
                     <Input
                       type="password"
+                      autoComplete="current-password"
                       placeholder="••••••••"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
@@ -524,6 +525,7 @@ export function PreferencesPanel() {
                     <label className="text-xs font-medium text-muted-foreground">Password (min 8 chars)</label>
                     <Input
                       type="password"
+                      autoComplete="new-password"
                       placeholder="••••••••"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
