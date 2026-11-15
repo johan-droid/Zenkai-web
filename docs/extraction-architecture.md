@@ -17,7 +17,7 @@ flowchart TD
         Route_Novel["/api/v1/novel/*"]
         Route_Proxy["/api/v1/proxy (SSRF Guarded)"]
         
-        ShieldMgr["Zenkai Shield Token Manager\n(PoW Solver & Auto-Refresh)"]
+        ShieldMgr["Zenkai Shield Token Manager\n(Configured Auth Header & Zero PoW Bypass)"]
         
         subgraph Adapters ["Provider Adapters"]
             Adp_MD["MangaDex Native Adapter"]
